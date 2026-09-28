@@ -1,12 +1,13 @@
 import { githubActionSnippet, TOKEN_SECRET_NAME } from '@deployhealth/core';
-import { getProjectForOwner } from '@deployhealth/db';
-import Link from 'next/link';
+import { getClientForOwner, getProjectForOwner, listClients } from '@deployhealth/db';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/auth';
+import { Breadcrumb } from '@/components/breadcrumb';
 import { CodeBlock } from '@/components/code-block';
 import { appUrl } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
+import { ProjectSettingsForm } from './project-settings-form';
 import { RegenerateToken } from './regenerate-token';
 
 export const dynamic = 'force-dynamic';
@@ -15,8 +16,13 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const user = await requireUser();
   const { projectId } = await params;
   if (!isUuid(projectId)) notFound();
-  const project = await getProjectForOwner(getDb(), projectId, user.id);
+  const db = getDb();
+  const project = await getProjectForOwner(db, projectId, user.id);
   if (!project) notFound();
+  const [client, clients] = await Promise.all([
+    project.clientId ? getClientForOwner(db, user.id, project.clientId) : null,
+    listClients(db, user.id),
+  ]);
 
   const url = await appUrl();
   const snippet = githubActionSnippet({ appUrl: url });
@@ -26,11 +32,27 @@ node deployhealth-scan.mjs --dry-run`;
   return (
     <div className="max-w-3xl space-y-10">
       <div>
-        <Link href={`/projects/${project.id}`} className="text-sm text-gray-500 hover:text-gray-900">
-          ← {project.name}
-        </Link>
+        <Breadcrumb
+          items={[
+            { label: 'Clients', href: '/clients' },
+            client ? { label: client.name, href: `/clients/${client.slug}` } : { label: 'No client', href: '/clients#no-client' },
+            { label: project.name, href: `/projects/${project.id}` },
+            { label: 'Settings' },
+          ]}
+        />
         <h1 className="mt-2 text-2xl font-semibold">Settings</h1>
       </div>
+
+      <section>
+        <h2 className="text-lg font-semibold">Client &amp; alerts</h2>
+        <p className="mt-1 mb-3 text-sm text-gray-600">Group this project under a client, and choose where alerts are sent.</p>
+        <ProjectSettingsForm
+          projectId={project.id}
+          clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+          clientId={project.clientId}
+          alertWebhookUrl={project.alertWebhookUrl}
+        />
+      </section>
 
       <section>
         <h2 className="text-lg font-semibold">Ingest token</h2>

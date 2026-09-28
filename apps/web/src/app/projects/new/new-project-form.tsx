@@ -1,15 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { TokenReveal } from '@/components/token-reveal';
 import { createProjectAction, type CreateProjectState } from '../actions';
 
 const input =
   'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500';
 
-export function NewProjectForm() {
+export function NewProjectForm({ clients, defaultClientId }: { clients: Array<{ id: string; name: string }>; defaultClientId: string }) {
   const [state, action, pending] = useActionState<CreateProjectState, FormData>(createProjectAction, { status: 'idle' });
+  const [clientChoice, setClientChoice] = useState(defaultClientId);
 
   if (state.status === 'created') {
     return (
@@ -46,6 +47,26 @@ export function NewProjectForm() {
         <input name="repoFullName" required placeholder="acme/storefront" className={input} />
         {fields?.repoFullName && <span className="mt-1 block text-sm text-red-600">{fields.repoFullName}</span>}
       </label>
+      <label className="block">
+        <span className="text-sm font-medium">Client</span>
+        <select name="clientId" value={clientChoice} onChange={(e) => setClientChoice(e.target.value)} className={input}>
+          <option value="">No client</option>
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+          <option value="__new__">+ New client…</option>
+        </select>
+        {fields?.clientId && <span className="mt-1 block text-sm text-red-600">{fields.clientId}</span>}
+      </label>
+      {clientChoice === '__new__' && (
+        <label className="block">
+          <span className="text-sm font-medium">New client name</span>
+          <input name="newClientName" required maxLength={80} placeholder="Acme Corp" className={input} autoFocus />
+          {fields?.newClientName && <span className="mt-1 block text-sm text-red-600">{fields.newClientName}</span>}
+        </label>
+      )}
       <button
         disabled={pending}
         className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
