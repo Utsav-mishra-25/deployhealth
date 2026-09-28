@@ -11,6 +11,7 @@ export interface LatencyPoint {
 }
 
 const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const msLabel = (ms: number) => (ms >= 1000 ? `${Number((ms / 1000).toFixed(1))} s` : `${ms} ms`);
 
 /** p50/p95 latency per hour over the last 24h. Rendered only in the browser (local time labels). */
 export function LatencyChart({ data }: { data: LatencyPoint[] }) {
@@ -28,7 +29,7 @@ export function LatencyChart({ data }: { data: LatencyPoint[] }) {
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke="#f3f4f6" vertical={false} />
           <XAxis dataKey="hour" tickFormatter={timeLabel} tick={{ fontSize: 11, fill: '#6b7280' }} minTickGap={24} />
-          <YAxis unit=" ms" width={60} tick={{ fontSize: 11, fill: '#6b7280' }} />
+          <YAxis tickFormatter={msLabel} width={60} tick={{ fontSize: 11, fill: '#6b7280' }} />
           <Tooltip labelFormatter={(v) => timeLabel(String(v))} formatter={(value, name) => [`${value} ms`, String(name)]} />
           <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
           <Line type="monotone" dataKey="p50" stroke="#059669" strokeWidth={2} dot={false} isAnimationActive={false} />
