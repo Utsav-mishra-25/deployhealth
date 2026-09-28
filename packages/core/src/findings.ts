@@ -81,6 +81,19 @@ export function summarize(findings: readonly Pick<FindingRow, 'kind' | 'var_name
   return { missing: names.missing.size, unused: names.unused.size, mismatch: names.mismatch.size };
 }
 
+/**
+ * MISSING variables in `current` that were not MISSING in `previous` (sorted). With no previous
+ * scan to compare against, every current MISSING variable counts as new.
+ */
+export function newMissingVars(
+  current: readonly Pick<FindingRow, 'kind' | 'var_name'>[],
+  previous: readonly Pick<FindingRow, 'kind' | 'var_name'>[] | null,
+): string[] {
+  const before = new Set((previous ?? []).filter((f) => f.kind === 'missing').map((f) => f.var_name));
+  const now = new Set(current.filter((f) => f.kind === 'missing').map((f) => f.var_name));
+  return [...now].filter((name) => !before.has(name)).sort();
+}
+
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
