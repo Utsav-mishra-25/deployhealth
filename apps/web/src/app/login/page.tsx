@@ -11,7 +11,7 @@ const ERRORS: Record<string, string> = {
 };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  if (await auth()) redirect('/projects');
+  if (await auth()) redirect('/clients');
   const { error } = await searchParams;
   const env = serverEnv();
   const github = Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET);
@@ -20,7 +20,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div className="mx-auto mt-16 max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
       <h1 className="text-xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-gray-600">Track env var drift and uptime for your deploys.</p>
+      <p className="mt-1 text-sm text-gray-600">One page for every client project you maintain.</p>
 
       {error && (
         <p role="alert" className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
@@ -33,7 +33,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <form
             action={async () => {
               'use server';
-              await signIn('github', { redirectTo: '/projects' });
+              await signIn('github', { redirectTo: '/clients' });
             }}
           >
             <button className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">
@@ -45,7 +45,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <form
             action={async () => {
               'use server';
-              await signIn('demo', { redirectTo: '/projects' });
+              await signIn('demo', { redirectTo: '/clients' });
             }}
           >
             <button className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">

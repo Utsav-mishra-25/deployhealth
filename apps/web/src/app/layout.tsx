@@ -5,7 +5,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'deployhealth',
-  description: 'Is this deploy configured correctly, and is it up?',
+  description: 'One page for every client project you maintain: is the config sane, is it up, and did the last deploy break it.',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -15,7 +15,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
         <header className="border-b border-gray-200 bg-white">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-            <Link href={session ? '/projects' : '/'} className="font-semibold tracking-tight">
+            <Link href={session ? '/clients' : '/'} className="font-semibold tracking-tight">
               deploy<span className="text-emerald-600">health</span>
             </Link>
             {session?.user && (
