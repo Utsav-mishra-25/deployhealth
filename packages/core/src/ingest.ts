@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import { CLI_BUNDLE_PATH, TOKEN_PREFIX, TOKEN_SECRET_NAME } from './constants';
 import { FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
 
 /** Upper bound on findings per scan; protects the ingest endpoint from runaway payloads. */
@@ -29,8 +30,6 @@ export interface IngestResponse {
   counts: FindingCounts;
 }
 
-export const TOKEN_PREFIX = 'dh_';
-
 /** A new ingest token: `dh_` + 32 random bytes (base64url). Shown to the user once. */
 export function generateToken(): string {
   return TOKEN_PREFIX + randomBytes(32).toString('base64url');
@@ -52,12 +51,6 @@ export function parseBearer(header: string | null | undefined): string | null {
   const token = match?.[1];
   return token?.startsWith(TOKEN_PREFIX) ? token : null;
 }
-
-/** Name of the repository secret the snippet expects. */
-export const TOKEN_SECRET_NAME = 'DEPLOYHEALTH_TOKEN';
-
-/** Path (on the web app) of the single-file CLI bundle the snippet downloads. */
-export const CLI_BUNDLE_PATH = '/deployhealth-scan.mjs';
 
 /**
  * Copy-pasteable GitHub Actions workflow that scans the repo on every push to `branch` and

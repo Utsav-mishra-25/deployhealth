@@ -1,4 +1,5 @@
 export * from './types';
+export * from './constants';
 export { parseEnv, type EnvEntry, type EnvParseResult } from './env-parser';
 export { languageForFile, scanSource, SCANNED_EXTENSIONS, type Language } from './scanner';
 export { analyzeScope, compareFindings, summarize } from './findings';
