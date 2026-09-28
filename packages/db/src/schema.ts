@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   pgEnum,
@@ -28,6 +29,24 @@ export const users = pgTable('users', {
   createdAt: ts('created_at').notNull().defaultNow(),
 });
 
+/** A freelancer's client. Deleting one unassigns its projects (projects.client_id → null). */
+export const clients = pgTable(
+  'clients',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** URL-friendly, unique per user, stable across renames. */
+    slug: text('slug').notNull(),
+    contactEmail: text('contact_email'),
+    notes: text('notes'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('clients_user_slug_uq').on(t.userId, t.slug)],
+);
+
 export const projects = pgTable(
   'projects',
   {
@@ -42,9 +61,16 @@ export const projects = pgTable(
     apiTokenHash: text('api_token_hash').notNull().unique(),
     /** Short, non-secret hint shown in the UI, e.g. "dh_…a1b2". */
     apiTokenHint: text('api_token_hint').notNull(),
+    /** Optional grouping. Must belong to the same user (enforced in queries). */
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    /** Slack/Discord-compatible incoming webhook; receives {text} when alerts open and resolve. */
+    alertWebhookUrl: text('alert_webhook_url'),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('projects_owner_name_uq').on(t.ownerId, t.name)],
+  (t) => [
+    uniqueIndex('projects_owner_name_uq').on(t.ownerId, t.name),
+    index('projects_client_idx').on(t.clientId),
+  ],
 );
 
 /** One row per commit per project. Re-ingesting the same sha adds a scan to the existing deploy. */
@@ -102,23 +128,39 @@ export const findings = pgTable(
   (t) => [index('findings_scan_kind_idx').on(t.scanId, t.kind)],
 );
 
-/** Phase 2: URLs the worker checks on a schedule. */
-export const endpoints = pgTable('endpoints', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  url: text('url').notNull(),
-  method: text('method', { enum: ['GET', 'HEAD'] })
-    .notNull()
-    .default('GET'),
-  intervalSeconds: integer('interval_seconds').notNull().default(60),
-  expectedStatus: integer('expected_status').notNull().default(200),
-  enabled: boolean('enabled').notNull().default(true),
-  createdAt: ts('created_at').notNull().defaultNow(),
-});
+/** URLs the worker checks. The scheduler claims rows whose next_check_at has passed. */
+export const endpoints = pgTable(
+  'endpoints',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    method: text('method', { enum: ['GET', 'HEAD'] })
+      .notNull()
+      .default('GET'),
+    intervalSeconds: integer('interval_seconds').notNull().default(60),
+    expectedStatus: integer('expected_status').notNull().default(200),
+    enabled: boolean('enabled').notNull().default(true),
+    /** New endpoints are due immediately. */
+    nextCheckAt: ts('next_check_at').notNull().defaultNow(),
+    /** Failed checks since the last ok one; drives the alert threshold. */
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('endpoints_project_idx').on(t.projectId),
+    index('endpoints_due_idx')
+      .on(t.nextCheckAt)
+      .where(sql`${t.enabled}`),
+    check('endpoints_method_check', sql`${t.method} in ('GET', 'HEAD')`),
+    check('endpoints_interval_check', sql`${t.intervalSeconds} in (60, 300, 900)`),
+    check('endpoints_expected_status_check', sql`${t.expectedStatus} between 100 and 599`),
+  ],
+);
 
-/** Phase 2: one row per uptime check. High volume, so a bigint identity key. */
+/** One row per uptime check. High volume, so a bigint identity key; pruned after 30 days. */
 export const checks = pgTable(
   'checks',
   {
@@ -133,10 +175,14 @@ export const checks = pgTable(
     ok: boolean('ok').notNull(),
     error: text('error'),
   },
-  (t) => [index('checks_endpoint_time_idx').on(t.endpointId, t.checkedAt.desc())],
+  (t) => [
+    index('checks_endpoint_time_idx').on(t.endpointId, t.checkedAt.desc()),
+    // Append-only by time, so a tiny BRIN index is enough for the nightly prune.
+    index('checks_checked_at_brin').using('brin', t.checkedAt),
+  ],
 );
 
-/** Phase 2: raised by the worker; see the correlation rule in the README. */
+/** Raised by the worker; see the alert rule in the README. At most one open alert per endpoint. */
 export const alerts = pgTable(
   'alerts',
   {
@@ -144,7 +190,9 @@ export const alerts = pgTable(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    /** Plain text until Phase 2 settles the set of kinds. */
+    /** The endpoint that is failing (null for future project-level alert kinds). */
+    endpointId: uuid('endpoint_id').references(() => endpoints.id, { onDelete: 'cascade' }),
+    /** 'endpoint_down' today; plain text so new kinds need no enum migration. */
     kind: text('kind').notNull(),
     message: text('message').notNull(),
     createdAt: ts('created_at').notNull().defaultNow(),
@@ -156,10 +204,14 @@ export const alerts = pgTable(
     index('alerts_open_idx')
       .on(t.projectId)
       .where(sql`${t.resolvedAt} is null`),
+    uniqueIndex('alerts_one_open_per_endpoint')
+      .on(t.endpointId)
+      .where(sql`${t.resolvedAt} is null`),
   ],
 );
 
 export type User = typeof users.$inferSelect;
+export type Client = typeof clients.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Deploy = typeof deploys.$inferSelect;
 export type Scan = typeof scans.$inferSelect;
