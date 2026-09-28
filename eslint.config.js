@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/test/fixtures/**',
       '**/playwright-report/**',
       '**/test-results/**',
+      'apps/web/public/deployhealth-scan.mjs',
     ],
   },
   js.configs.recommended,
@@ -27,6 +28,7 @@ export default tseslint.config(
   {
     files: ['apps/web/**/*.{ts,tsx}'],
     plugins: { '@next/next': nextPlugin },
+    settings: { next: { rootDir: 'apps/web/' } },
     rules: {
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs['core-web-vitals'].rules,
