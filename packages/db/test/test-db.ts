@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { createDb, type Db, type DbHandle } from '../src/client';
-import { projects, users } from '../src/schema';
+import { clients, endpoints, projects, users } from '../src/schema';
 
 export const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ?? 'postgres://deployhealth:deployhealth@localhost:5432/deployhealth_test';
@@ -12,7 +12,7 @@ export function openTestDb(): DbHandle {
 /** Empty every table between tests. */
 export async function truncateAll(db: Db): Promise<void> {
   await db.execute(
-    sql`truncate table users, projects, deploys, scans, findings, endpoints, checks, alerts restart identity cascade`,
+    sql`truncate table users, clients, projects, deploys, scans, findings, endpoints, checks, alerts restart identity cascade`,
   );
 }
 
@@ -38,4 +38,20 @@ export async function makeProject(db: Db, ownerId: string, name = `project${++co
     })
     .returning();
   return project!;
+}
+
+export async function makeClient(db: Db, userId: string, name = `client${++counter}`) {
+  const [client] = await db
+    .insert(clients)
+    .values({ userId, name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') })
+    .returning();
+  return client!;
+}
+
+export async function makeEndpoint(db: Db, projectId: string, overrides: Partial<typeof endpoints.$inferInsert> = {}) {
+  const [endpoint] = await db
+    .insert(endpoints)
+    .values({ projectId, url: `https://example.com/health-${++counter}`, ...overrides })
+    .returning();
+  return endpoint!;
 }

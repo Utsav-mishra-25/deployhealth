@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { alerts, deploys, findings, projects, scans, users } from '../src/schema';
-import { makeProject, makeUser, openTestDb, truncateAll } from './test-db';
+import { alerts, clients, deploys, findings, projects, scans, users } from '../src/schema';
+import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
 const { db } = handle;
@@ -30,6 +30,7 @@ describe('schema', () => {
     expect(result.rows.map((r) => r.table_name)).toEqual([
       'alerts',
       'checks',
+      'clients',
       'deploys',
       'endpoints',
       'findings',
@@ -109,5 +110,57 @@ describe('schema', () => {
         apiTokenHint: 'x',
       }),
     ).rejects.toMatchObject({ cause: { code: '23505' } }); // unique_violation
+  });
+
+  it('keeps client slugs unique per user only', async () => {
+    const a = await makeUser(db);
+    const b = await makeUser(db);
+    await makeClient(db, a.id, 'Acme');
+    await expect(makeClient(db, a.id, 'Acme')).rejects.toMatchObject({ cause: { code: '23505' } });
+    await expect(makeClient(db, b.id, 'Acme')).resolves.toBeTruthy();
+  });
+
+  it('unassigns projects when their client is deleted, and deletes clients with their user', async () => {
+    const user = await makeUser(db);
+    const client = await makeClient(db, user.id);
+    const project = await makeProject(db, user.id);
+    await db.update(projects).set({ clientId: client.id }).where(eq(projects.id, project.id));
+
+    await db.delete(clients).where(eq(clients.id, client.id));
+    const [after] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(after?.clientId).toBeNull();
+
+    await makeClient(db, user.id);
+    await db.delete(users).where(eq(users.id, user.id));
+    expect(await db.select().from(clients)).toEqual([]);
+  });
+
+  it('defaults new endpoints to due now with no failures', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const before = Date.now();
+    const endpoint = await makeEndpoint(db, project.id);
+    expect(endpoint).toMatchObject({ method: 'GET', intervalSeconds: 60, expectedStatus: 200, enabled: true, consecutiveFailures: 0 });
+    expect(endpoint.nextCheckAt.getTime()).toBeGreaterThanOrEqual(before - 5_000);
+  });
+
+  it('rejects invalid endpoint intervals, methods and expected statuses', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    for (const bad of [{ intervalSeconds: 120 }, { expectedStatus: 700 }]) {
+      await expect(makeEndpoint(db, project.id, bad)).rejects.toMatchObject({ cause: { code: '23514' } }); // check_violation
+    }
+    await expect(
+      db.execute(sql`insert into endpoints (project_id, url, method) values (${project.id}, 'https://x.dev', 'POST')`),
+    ).rejects.toMatchObject({ cause: { code: '23514' } });
+  });
+
+  it('allows only one open alert per endpoint', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const endpoint = await makeEndpoint(db, project.id);
+    const open = { projectId: project.id, endpointId: endpoint.id, kind: 'endpoint_down', message: 'down' };
+    const [first] = await db.insert(alerts).values(open).returning();
+    await expect(db.insert(alerts).values(open)).rejects.toMatchObject({ cause: { code: '23505' } });
+
+    await db.update(alerts).set({ resolvedAt: new Date() }).where(eq(alerts.id, first!.id));
+    await expect(db.insert(alerts).values(open)).resolves.toBeTruthy();
   });
 });
