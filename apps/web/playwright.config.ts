@@ -10,7 +10,10 @@ export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/global-setup.ts',
   workers: 1,
-  timeout: 60_000,
+  timeout: 120_000,
+  // `next dev` compiles each route on first visit (Recharts makes the project page slow), so
+  // give assertions more room than the 5s default.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
