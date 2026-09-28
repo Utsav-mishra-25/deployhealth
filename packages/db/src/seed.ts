@@ -247,8 +247,10 @@ export async function seed(db: Db, now = new Date()): Promise<SeedResult> {
   const firstFailure = new Date(deployedAt.getTime() + SCENARIO.failureAfterDeployMinutes * 60_000);
   const apiHealthy = history({ now, intervalSeconds: 60, baseLatencyMs: 85, seed: 1, until: firstFailure, blipEvery: 2_900 });
   const apiFailing: CheckOutcome[] = [];
+  const failRand = random(5);
   for (let t = firstFailure.getTime(); t <= now.getTime() - 5_000; t += 60_000) {
-    apiFailing.push({ checkedAt: new Date(t), statusCode: 503, latencyMs: 38, ok: false, error: 'Expected 200, got 503' });
+    const latencyMs = 25 + Math.round(failRand() * 30);
+    apiFailing.push({ checkedAt: new Date(t), statusCode: 503, latencyMs, ok: false, error: 'Expected 200, got 503' });
   }
   await insertChecks(db, api!.id, apiHealthy);
   await replayChecks(db, api!.id, apiFailing);
