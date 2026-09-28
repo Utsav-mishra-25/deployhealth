@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { FINDING_KINDS, type FindingCounts } from './types';
+import { FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
 
 /** Upper bound on findings per scan; protects the ingest endpoint from runaway payloads. */
 export const MAX_FINDINGS = 10_000;
@@ -15,7 +15,7 @@ export const findingRowSchema = z.object({
 
 /** Body of `POST /api/ingest/scan`. Shared by the CLI (sender) and the web app (receiver). */
 export const ingestPayloadSchema = z.object({
-  sha: z.string().regex(/^[0-9a-f]{7,64}$/i, 'sha must be a hex commit id'),
+  sha: z.string().regex(SHA_PATTERN, 'sha must be a hex commit id'),
   branch: z.string().min(1).max(255),
   timestamp: z.iso.datetime({ offset: true }),
   findings: z.array(findingRowSchema).max(MAX_FINDINGS),

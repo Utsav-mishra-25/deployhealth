@@ -20,6 +20,9 @@ export interface Reference {
 export const FINDING_KINDS = ['missing', 'unused', 'mismatch'] as const;
 export type FindingKind = (typeof FINDING_KINDS)[number];
 
+/** A full or abbreviated git commit id. */
+export const SHA_PATTERN = /^[0-9a-f]{7,64}$/i;
+
 /**
  * One finding, in exactly the shape stored in the `findings` table and sent to the ingest API.
  *
