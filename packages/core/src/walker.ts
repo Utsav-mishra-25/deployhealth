@@ -18,6 +18,12 @@ export interface WalkOptions {
   include: (relPath: string, name: string) => boolean;
   /** Extra gitignore-style patterns applied at the root, e.g. `packages/core/test/**`. */
   exclude?: readonly string[];
+  /**
+   * Files (by base name) listed even when a .gitignore matches them. Used for `.env` files,
+   * which are almost always gitignored but are exactly what the scanner needs to read.
+   * `exclude` still applies to them.
+   */
+  keepIgnored?: (name: string) => boolean;
   skipDirs?: ReadonlySet<string>;
   respectGitignore?: boolean;
 }
@@ -30,7 +36,7 @@ export interface WalkResult {
 
 /**
  * Recursively list files under `root`. Honors .gitignore files at every level plus `exclude`,
- * never follows symlinks, and always skips `skipDirs`.
+ * never follows symlinks, and always skips `skipDirs`. Ignored directories are never entered.
  */
 export async function walk(root: string, options: WalkOptions): Promise<WalkResult> {
   const skipDirs = options.skipDirs ?? DEFAULT_SKIP_DIRS;
@@ -38,8 +44,7 @@ export async function walk(root: string, options: WalkOptions): Promise<WalkResu
   const files: string[] = [];
   const warnings: Warning[] = [];
 
-  let rootMatcher = GitignoreMatcher.empty();
-  if (options.exclude?.length) rootMatcher = rootMatcher.extend('', options.exclude.join('\n'));
+  const excluded = GitignoreMatcher.empty().extend('', (options.exclude ?? []).join('\n'));
 
   async function visit(relDir: string, matcher: GitignoreMatcher): Promise<void> {
     const absDir = relDir === '' ? root : join(root, relDir);
@@ -60,16 +65,17 @@ export async function walk(root: string, options: WalkOptions): Promise<WalkResu
       const relPath = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
 
       if (entry.isDirectory()) {
-        if (skipDirs.has(entry.name) || matcher.ignores(relPath, true)) continue;
+        if (skipDirs.has(entry.name) || excluded.ignores(relPath, true) || matcher.ignores(relPath, true)) continue;
         await visit(relPath, matcher);
       } else if (entry.isFile()) {
-        if (!options.include(relPath, entry.name) || matcher.ignores(relPath, false)) continue;
+        if (!options.include(relPath, entry.name) || excluded.ignores(relPath, false)) continue;
+        if (matcher.ignores(relPath, false) && !options.keepIgnored?.(entry.name)) continue;
         files.push(relPath);
       }
     }
   }
 
-  await visit('', rootMatcher);
+  await visit('', GitignoreMatcher.empty());
   files.sort();
   return { files, warnings };
 }

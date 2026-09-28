@@ -13,3 +13,6 @@ test-results/
 .env
 .env.local
 .env.*.local
+# ...except the scanner fixture, which needs real ones.
+!packages/core/test/fixtures/**/.env
+!packages/core/test/fixtures/**/.env.local
