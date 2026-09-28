@@ -1,7 +1,7 @@
-import { summarize, type FindingCounts, type FindingRow } from '@deployhealth/core';
+import { summarize, uptimeStatus, type FindingCounts, type FindingRow, type UptimeStatus } from '@deployhealth/core';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { deploys, findings, projects, scans, users, type Deploy, type Project, type Scan, type User } from './schema';
+import { alerts, checks, clients, deploys, endpoints, findings, projects, scans, users, type Deploy, type Project, type Scan, type User } from './schema';
 
 // ---------------------------------------------------------------------------------------------
 // Users
@@ -51,15 +51,31 @@ export class DuplicateProjectNameError extends Error {
   }
 }
 
+export class ClientNotFoundError extends Error {
+  constructor() {
+    super('That client does not exist.');
+    this.name = 'ClientNotFoundError';
+  }
+}
+
 export interface NewProjectInput {
   ownerId: string;
   name: string;
   repoFullName: string;
   apiTokenHash: string;
   apiTokenHint: string;
+  /** Must be one of the owner's clients. */
+  clientId?: string | null;
 }
 
 export async function createProject(db: Db, input: NewProjectInput): Promise<Project> {
+  if (input.clientId) {
+    const [owned] = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(and(eq(clients.id, input.clientId), eq(clients.userId, input.ownerId)));
+    if (!owned) throw new ClientNotFoundError();
+  }
   try {
     const [project] = await db.insert(projects).values(input).returning();
     return project!;
@@ -105,9 +121,11 @@ export interface ProjectListItem {
   id: string;
   name: string;
   repoFullName: string;
+  clientId: string | null;
   createdAt: Date;
   lastDeploy: { sha: string; branch: string; deployedAt: Date } | null;
   counts: FindingCounts | null;
+  uptime: UptimeStatus;
 }
 
 /** The owner's projects, newest first, each with its latest deploy and that deploy's latest scan. */
@@ -116,6 +134,7 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     id: string;
     name: string;
     repo_full_name: string;
+    client_id: string | null;
     created_at: string;
     sha: string | null;
     branch: string | null;
@@ -123,10 +142,14 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     missing_count: number | null;
     unused_count: number | null;
     mismatch_count: number | null;
+    enabled_endpoints: number;
+    open_alerts: number;
+    failing_endpoints: number;
   }>(sql`
-    select p.id, p.name, p.repo_full_name, p.created_at,
+    select p.id, p.name, p.repo_full_name, p.client_id, p.created_at,
            d.sha, d.branch, d.deployed_at,
-           s.missing_count, s.unused_count, s.mismatch_count
+           s.missing_count, s.unused_count, s.mismatch_count,
+           u.enabled_endpoints, u.open_alerts, u.failing_endpoints
     from ${projects} p
     left join lateral (
       select id, sha, branch, deployed_at from ${deploys}
@@ -136,6 +159,16 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
       select missing_count, unused_count, mismatch_count from ${scans}
       where deploy_id = d.id order by created_at desc limit 1
     ) s on true
+    left join lateral (
+      select count(*)::int as enabled_endpoints,
+             count(*) filter (where exists (
+               select 1 from ${alerts} a where a.endpoint_id = e.id and a.resolved_at is null
+             ))::int as open_alerts,
+             count(*) filter (where (
+               select c.ok from ${checks} c where c.endpoint_id = e.id order by c.checked_at desc limit 1
+             ) = false)::int as failing_endpoints
+      from ${endpoints} e where e.project_id = p.id and e.enabled
+    ) u on true
     where p.owner_id = ${ownerId}
     order by p.created_at desc
   `);
@@ -144,6 +177,7 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     id: row.id,
     name: row.name,
     repoFullName: row.repo_full_name,
+    clientId: row.client_id,
     createdAt: new Date(row.created_at),
     lastDeploy:
       row.sha && row.branch && row.deployed_at
@@ -153,6 +187,11 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
       row.missing_count === null
         ? null
         : { missing: row.missing_count, unused: row.unused_count ?? 0, mismatch: row.mismatch_count ?? 0 },
+    uptime: uptimeStatus({
+      enabledEndpoints: row.enabled_endpoints,
+      openAlerts: row.open_alerts,
+      failingEndpoints: row.failing_endpoints,
+    }),
   }));
 }
 
