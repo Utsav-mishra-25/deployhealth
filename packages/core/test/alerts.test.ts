@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import {
+  alertOpenedMessage,
+  alertResolvedMessage,
+  decideAlert,
+  endpointLabel,
+  formatDuration,
+  uptimeStatus,
+  webhookPayload,
+  type AlertAction,
+} from '../src/alerts';
+import { newMissingVars } from '../src/findings';
+
+/** Feed a sequence of check results through the state machine, tracking state like the worker does. */
+function run(results: boolean[]): AlertAction[] {
+  let failures = 0;
+  let hasOk = false;
+  let open = false;
+  return results.map((ok) => {
+    failures = ok ? 0 : failures + 1;
+    hasOk ||= ok;
+    const action = decideAlert({ ok, consecutiveFailures: failures, hasOkHistory: hasOk, hasOpenAlert: open });
+    if (action === 'open') open = true;
+    if (action === 'resolve') open = false;
+    return action;
+  });
+}
+
+describe('decideAlert', () => {
+  it('opens on the second consecutive failure after an ok check, and resolves on the next ok', () => {
+    expect(run([true, false, false, false, true])).toEqual(['none', 'none', 'open', 'none', 'resolve']);
+  });
+
+  it('ignores a single failure', () => {
+    expect(run([true, false, true, false, true])).toEqual(['none', 'none', 'none', 'none', 'none']);
+  });
+
+  it('never alerts for an endpoint that has never been up', () => {
+    expect(run([false, false, false, false])).toEqual(['none', 'none', 'none', 'none']);
+  });
+
+  it('starts counting once the endpoint has worked', () => {
+    expect(run([false, false, true, false, false])).toEqual(['none', 'none', 'none', 'none', 'open']);
+  });
+
+  it('keeps one alert open through a long outage and can open again after recovery', () => {
+    expect(run([true, false, false, false, false, true, false, false])).toEqual([
+      'none',
+      'none',
+      'open',
+      'none',
+      'none',
+      'resolve',
+      'none',
+      'open',
+    ]);
+  });
+
+  it('never opens a second alert while one is open', () => {
+    expect(decideAlert({ ok: false, consecutiveFailures: 9, hasOkHistory: true, hasOpenAlert: true })).toBe('none');
+  });
+});
+
+describe('alert messages', () => {
+  const deployedAt = new Date('2026-09-28T12:00:00Z');
+  const deploy = { sha: 'b52952e8192c38c054e53b5447ea20de88f2e2e9', deployedAt };
+  const at = (minutes: number) => new Date(deployedAt.getTime() + minutes * 60_000);
+
+  it('names the deploy and the new MISSING vars', () => {
+    expect(
+      alertOpenedMessage({
+        endpointUrl: 'https://api.acme.com/health',
+        firstFailureAt: at(4),
+        deploy,
+        newMissing: ['REDIS_URL', 'STRIPE_KEY'],
+      }),
+    ).toBe('api.acme.com started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY');
+  });
+
+  it('uses the singular for one variable', () => {
+    expect(alertOpenedMessage({ endpointUrl: 'https://x.dev', firstFailureAt: at(12.5), deploy, newMissing: ['A'] })).toBe(
+      'x.dev started failing 12m after deploy b52952e, which introduced 1 missing env var: A',
+    );
+  });
+
+  it('says so when the linked deploy had no new findings', () => {
+    expect(alertOpenedMessage({ endpointUrl: 'https://x.dev', firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
+      'x.dev started failing under a minute after deploy b52952e, which had no new config findings',
+    );
+  });
+
+  it('says so when there was no deploy in the window', () => {
+    expect(alertOpenedMessage({ endpointUrl: 'https://x.dev:8443/', firstFailureAt: at(0), deploy: null, newMissing: [] })).toBe(
+      'x.dev:8443 started failing; no deploy in the 30 minutes before the first failure',
+    );
+  });
+
+  it('describes resolution and webhook payloads', () => {
+    expect(alertResolvedMessage({ endpointUrl: 'https://x.dev', openedAt: at(0), resolvedAt: at(75) })).toBe(
+      'x.dev is back up (alert open for 1h 15m)',
+    );
+    expect(webhookPayload('opened', 'shop', 'x.dev started failing')).toEqual({ text: '[down] shop: x.dev started failing' });
+    expect(webhookPayload('resolved', 'shop', 'x.dev is back up')).toEqual({ text: '[resolved] shop: x.dev is back up' });
+  });
+
+  it('formats durations and labels', () => {
+    expect([0, 59_999, 60_000, 3_600_000, 3_660_000].map(formatDuration)).toEqual(['under a minute', 'under a minute', '1m', '1h', '1h 1m']);
+    expect(endpointLabel('https://api.acme.com/health?x=1')).toBe('api.acme.com');
+    expect(endpointLabel('not a url')).toBe('not a url');
+  });
+});
+
+describe('newMissingVars', () => {
+  const missing = (var_name: string) => ({ kind: 'missing' as const, var_name });
+
+  it('returns MISSING vars that were not MISSING in the previous scan', () => {
+    expect(
+      newMissingVars(
+        [missing('STRIPE_KEY'), missing('REDIS_URL'), missing('REDIS_URL'), missing('OLD'), { kind: 'unused', var_name: 'U' }],
+        [missing('OLD'), { kind: 'unused', var_name: 'REDIS_URL' }],
+      ),
+    ).toEqual(['REDIS_URL', 'STRIPE_KEY']);
+  });
+
+  it('treats everything as new without a previous scan, and nothing as new when unchanged', () => {
+    expect(newMissingVars([missing('B'), missing('A')], null)).toEqual(['A', 'B']);
+    expect(newMissingVars([missing('A')], [missing('A')])).toEqual([]);
+  });
+});
+
+describe('uptimeStatus', () => {
+  it.each([
+    [{ enabledEndpoints: 0, openAlerts: 0, failingEndpoints: 0 }, 'no_endpoints'],
+    [{ enabledEndpoints: 2, openAlerts: 1, failingEndpoints: 1 }, 'down'],
+    [{ enabledEndpoints: 2, openAlerts: 0, failingEndpoints: 1 }, 'degraded'],
+    [{ enabledEndpoints: 2, openAlerts: 0, failingEndpoints: 0 }, 'up'],
+  ] as const)('%o → %s', (input, expected) => {
+    expect(uptimeStatus(input)).toBe(expected);
+  });
+});
