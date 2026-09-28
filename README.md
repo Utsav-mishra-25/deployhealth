@@ -1,29 +1,47 @@
 # deployhealth
 
-Most outages after a deploy aren't exotic. A new env var that nobody set, a secret renamed in
-code but not in `.env.example`, a config value that quietly drifted. deployhealth puts those two
-signals side by side on one timeline per project:
+**One page for every client project you maintain: is the config sane, is it up, and did the
+last deploy break it.**
 
-- **Config health.** A GitHub Action scans each commit for env vars that are referenced but
-  never defined, defined but never used, or out of sync between `.env` and `.env.example`.
-- **Uptime.** A worker checks your endpoints (Phase 2).
+If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
+env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
+projects by client and puts two signals on each one:
 
-When a deploy is followed by failures, the dashboard shows exactly which variables that deploy
-newly broke.
+- **Config health.** A GitHub Action scans every push for env vars that are referenced but never
+  defined, defined but never used, or out of sync between `.env` and `.env.example`.
+- **Uptime.** A worker checks your health endpoints every 1, 5 or 15 minutes.
+
+When an endpoint goes down shortly after a deploy, the alert names the deploy and the variables
+it newly left undefined:
+
+> api.acme.com started failing 4m after deploy b52952e, which introduced 2 missing env vars:
+> REDIS_URL, STRIPE_KEY
 
 ## Screenshots
 
 **Phase 1: config health**
 
 > _Screenshot placeholder: project page with the latest scan summary, findings grouped by kind
-> (file:line), and the deploy history._
+> (file:line) and the deploy history._
 
 > _Screenshot placeholder: creating a project, with the one-time token and the GitHub Action
 > snippet._
 
-**Phase 2: uptime and correlation**
+**Phase 2: clients, uptime and alerts**
 
-> _Screenshot placeholder: timeline with deploys, check latency and alerts linked to deploys._
+> _Screenshot placeholder: /clients, every client with its projects, findings badges, last deploy
+> and uptime badge._
+
+> _Screenshot placeholder: project page with the open-alert banner, endpoint uptime, p50/p95
+> latency chart and recent checks._
+
+## Phases
+
+| Phase | Status | What it adds |
+| --- | --- | --- |
+| 1. Config health | Done | GitHub Action + CLI, ingest API, findings per deploy, project pages, GitHub login |
+| 2. Clients, uptime and alerts | Done | Clients, uptime checks from a worker, alerts linked to deploys, Slack/Discord webhooks |
+| Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
 
@@ -38,17 +56,22 @@ cp apps/worker/.env.example apps/worker/.env
 cp packages/db/.env.example packages/db/.env
 
 pnpm db:migrate
-pnpm db:seed                                      # demo user, 1 project, 10 deploys; prints a token
+pnpm db:seed                                      # demo data (below); prints an ingest token
 pnpm dev                                          # web on http://localhost:3000, plus the worker
 ```
 
-Open http://localhost:3000 and choose **Continue with the demo account**. This option exists
-only when `AUTH_DEMO_LOGIN=1` and the app is not running in production. To sign in with GitHub
-locally instead, create a GitHub OAuth app with callback URL
-`http://localhost:3000/api/auth/callback/github` and set `AUTH_GITHUB_ID` and
-`AUTH_GITHUB_SECRET` in `apps/web/.env.local`.
+Open http://localhost:3000 and choose **Continue with the demo account**. This option exists only
+when `AUTH_DEMO_LOGIN=1` and the app is not running in production. To sign in with GitHub instead,
+create a GitHub OAuth app with callback URL `http://localhost:3000/api/auth/callback/github` and
+set `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` in `apps/web/.env.local`.
 
-Tests: `pnpm test` (unit, needs the Postgres from docker compose) and `pnpm e2e` (Playwright
+The seed creates two clients (Acme Corp, Northwind Bakery) and three projects, one without a
+client. Four endpoints come with a week of checks. One is scripted: acme-storefront's last deploy
+introduces two undefined variables, its API starts failing four minutes later, and an open alert
+links the two. Healthy seeded endpoints point at `example.com`/`.org`/`.net` so a running worker
+keeps them green; the failing one uses `api.acme.example`, which never resolves.
+
+Tests: `pnpm test` (unit; needs the Postgres from docker compose) and `pnpm e2e` (Playwright
 smoke test). See [CLAUDE.md](CLAUDE.md) for details.
 
 ## Deploy to Railway
@@ -56,79 +79,130 @@ smoke test). See [CLAUDE.md](CLAUDE.md) for details.
 The repo defines two Railway services, **web** and **worker**, plus Railway's Postgres.
 
 1. Create a Railway project and add **PostgreSQL**.
-2. Add a service from this GitHub repo and name it `web`. In its settings:
-   - *Config-as-code path*: `apps/web/railway.json`. Leave the root directory as the repo root,
+2. Add a service from this GitHub repo and name it `web`:
+   - *Config-as-code path*: `apps/web/railway.json`. Keep the root directory at the repo root,
      because the build needs the whole workspace.
    - *Variables*:
      - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
      - `AUTH_SECRET` = output of `openssl rand -base64 32`
-     - `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` from a GitHub OAuth app whose callback URL is
+     - `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` from a GitHub OAuth app with callback URL
        `https://<your-web-domain>/api/auth/callback/github`
    - *Networking*: generate a public domain.
 3. Add a second service from the same repo and name it `worker`:
    - *Config-as-code path*: `apps/worker/railway.json`
    - *Variables*: `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
-4. Deploy. The web service runs the database migrations as its pre-deploy step
+4. Deploy. The web service applies migrations in its pre-deploy step
    (`node packages/db/dist/migrate.js`) and is health-checked at `/api/health`. The worker starts
-   pg-boss, which creates its own `pgboss` schema.
+   pg-boss (which creates its own `pgboss` schema) and begins checking endpoints within a minute.
 
-Railway picks Node 22 from `.nvmrc` / `engines`, and pnpm from the `packageManager` field.
-Never set `AUTH_DEMO_LOGIN` in production. Even if you did, the demo provider is not
-registered when `NODE_ENV=production`.
+Railway picks Node 22 from `.nvmrc` / `engines`, and pnpm from `packageManager`. Never set
+`AUTH_DEMO_LOGIN` in production; even if you did, the demo provider isn't registered when
+`NODE_ENV=production`.
 
 ## How it works
 
-### Ingest flow
+### Config: the ingest flow
 
 ```
-GitHub push ─▶ Action ─▶ deployhealth-scan (runs in CI) ─▶ POST /api/ingest/scan ─▶ Postgres ─▶ dashboard
+git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/ingest/scan ─▶ Postgres ─▶ dashboard
 ```
 
-1. **Create a project.** You get an ingest token (`dh_…`, shown once; only its SHA-256 is stored)
-   and a workflow snippet. Save the token as the repo secret `DEPLOYHEALTH_TOKEN` and commit the
-   snippet as `.github/workflows/deployhealth.yml`.
+1. **Create a project** (optionally under a client). You get an ingest token (`dh_…`, shown once;
+   only its SHA-256 is stored) and a workflow snippet. Save the token as the repo secret
+   `DEPLOYHEALTH_TOKEN` and commit the snippet as `.github/workflows/deployhealth.yml`.
 2. **On every push**, the Action downloads the CLI from your deployhealth instance
-   (`/deployhealth-scan.mjs`, a single 11 KB file with no dependencies, so nothing is installed
-   from npm) and runs it in the checkout with the commit sha and branch.
-3. **The scanner** walks the repo (respecting `.gitignore`; skipping `node_modules`, `dist`,
-   `.git`, `.next` and virtualenvs). It finds env var references in JS/TS
-   (`process.env.X`, `process.env["X"]`, `import.meta.env.X`), Python (`os.environ["X"]`,
-   `os.environ.get("X")`, `os.getenv("X")`), Go (`os.Getenv("X")`, `os.LookupEnv("X")`) and Ruby
-   (`ENV["X"]`, `ENV.fetch("X")`). It reads `.env`, `.env.example` and `.env.local`, even when
-   they are gitignored.
-   - **Env scopes (monorepos).** Every directory containing an env file is a scope. Each source
-     file is checked against its nearest scope, so `apps/web/src/x.ts` is compared with
+   (`/deployhealth-scan.mjs`, one 11 KB file with no dependencies) and runs it on the checkout with
+   the commit sha and branch.
+3. **The scanner** walks the repo, respecting `.gitignore` and skipping `node_modules`, `dist`,
+   `.git`, `.next` and virtualenvs. It finds references in JS/TS (`process.env.X`,
+   `process.env["X"]`, `import.meta.env.X`), Python (`os.environ["X"]`, `os.environ.get("X")`,
+   `os.getenv("X")`), Go (`os.Getenv("X")`, `os.LookupEnv("X")`) and Ruby (`ENV["X"]`,
+   `ENV.fetch("X")`), and reads `.env`, `.env.example` and `.env.local`.
+   - **Env scopes (monorepos).** Every directory with an env file is a scope, and each source file
+     is checked against its nearest one. So `apps/web/src/x.ts` is compared with
      `apps/web/.env.example`, not with another package's.
    - Findings are **MISSING** (referenced, not defined in the scope), **UNUSED** (defined, never
      referenced) and **MISMATCH** (in `.env` but not `.env.example`, or the reverse), each with
      `file:line`.
 4. **The CLI posts** `{ sha, branch, timestamp, findings[] }` with `Authorization: Bearer <token>`.
-5. **The server** authenticates the token first (by hash), then validates the payload with the
-   same schema the CLI was built against. In one transaction it creates the **deploy** for that
-   sha, or reuses it if CI re-runs; stores a **scan** with counts it computes itself (distinct
-   variables per kind); and stores every **finding**.
-6. **The project page** shows the latest scan's counts, findings grouped by kind with
-   `file:line`, and the deploy history. Click any deploy to see its findings.
+5. **The server** checks the token (by hash) before reading the body, validates the payload with
+   the schema the CLI was built against, then in one transaction:
+   - creates the **deploy** for that sha, or reuses it when CI re-runs;
+   - stores a **scan** with counts it computes itself;
+   - stores every **finding**.
 
-Run the scanner without sending anything: `node deployhealth-scan.mjs --dry-run` (add `--json`,
-`--ignore NAME_*`, `--exclude path/`).
+Try the scanner locally: `node deployhealth-scan.mjs --dry-run` (add `--json`, `--ignore NAME_*`,
+`--exclude path/`).
 
-### Correlation rule (Phase 2)
+### Uptime: the worker
 
-The worker checks each endpoint on its interval and records status and latency. An alert is
-raised when **both** of these hold:
+- **`check-endpoints`** runs every minute on pg-boss (singleton, so runs never overlap). One
+  statement claims every enabled endpoint whose `next_check_at` has passed and moves it forward
+  by its interval (`FOR UPDATE SKIP LOCKED`, so two workers never double-check). Claimed
+  endpoints are then checked, up to 10 at a time.
+- **A check** is one request (GET or HEAD) with a 10 s budget that follows up to 5 redirects. It's
+  ok when the final status equals the expected status (default 200). Timeouts, DNS failures, TLS
+  errors, refused connections and wrong statuses are recorded as failures with a short reason.
+  Response bodies are never read.
+- **`prune-checks`** runs nightly (03:17 UTC) and deletes checks older than 30 days.
 
-- the endpoint has recorded **at least one ok check** (a URL that has never worked doesn't alert), and
-- it then fails **2 consecutive checks**.
+### Alerts and the correlation rule
 
-The alert is linked to the **most recent deploy in the 30 minutes before the first failure**, if
-there is one. Its message compares that deploy's scan with the **previous deploy's scan for the
-same project** and lists only the MISSING variables that are **new** in this deploy. If there
-are none, the message says the deploy had no new findings. Either way, it points you straight to
-what changed.
+After every check, the worker applies one rule in the same transaction that records the check:
+
+- **Open** an alert when an endpoint has failed **2 checks in a row** and has **at least one ok
+  check in its history**. A URL that has never worked doesn't alert. There's at most one open
+  alert per endpoint (enforced by a unique index).
+- **Resolve** it on the endpoint's next ok check.
+
+When an alert opens, deployhealth finds the project's **most recent deploy in the 30 minutes
+before the first failed check**. It then compares that deploy's latest scan with the previous
+deploy's latest scan, and the message lists only MISSING variables that are **new** in this
+deploy:
+
+- `api.acme.com started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY`
+- `api.acme.com started failing 4m after deploy b52952e, which had no new config findings`
+- `api.acme.com started failing; no deploy in the 30 minutes before the first failure`
+
+If the project has an **alert webhook URL** (Slack incoming webhook, or Discord's with `/slack`
+appended), deployhealth POSTs `{"text": "…"}` when the alert opens and again when it resolves. A
+failed delivery is logged and retried at most once.
+
+### SSRF protection
+
+Endpoint and webhook URLs are user input, so they're checked twice:
+
+- **On save:** only http/https, no credentials, and the host must not be (or resolve to) loopback,
+  RFC1918, link-local, cloud metadata (`169.254.169.254`, `100.100.100.200`, `fd00:ec2::254`),
+  CGNAT, multicast or reserved addresses.
+- **At connect time:** a guarded DNS lookup repeats the check on the address the socket is about to
+  use. That covers every redirect hop and DNS rebinding.
+
+## Known limitations
+
+- **The CLI download isn't pinned.** The Action fetches `/deployhealth-scan.mjs` from your instance
+  on every run, with no version or checksum. Whoever controls that instance controls what runs in
+  your CI. To avoid it, vendor the file into the repo or check a SHA-256 before running it.
+- **MISMATCH needs a committed `.env`, or a platform integration.** CI checkouts rarely contain a
+  `.env`, so MISMATCH only appears for repos that commit one (e.g. non-secret defaults). Comparing
+  against the real variables on Vercel, Railway or Fly would need a platform integration; there
+  isn't one yet.
+- **Deploy time means scan time.** A deploy's time is when CI reported it, not when your platform
+  finished rolling it out. If the rollout lags the push by more than 30 minutes, the alert won't
+  link it.
+- **One vantage point.** Checks come from wherever the worker runs (one Railway region). A network
+  problem between that region and your endpoint looks like downtime; the 2-failure threshold
+  softens this but doesn't remove it.
+- **Minute resolution.** Intervals are 1, 5 or 15 minutes, and a check can run up to a minute late.
+  Uptime is shown for 24 hours and 7 days, and history is kept for 30 days.
+- **Regex scanning.** References inside comments and strings count; aliased or destructured access
+  (`const { X } = process.env`) is missed; only `.env`, `.env.example` and `.env.local` are read
+  automatically.
+- **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team
+  sharing).
 
 ## Repository layout
 
-`apps/web` (Next.js), `apps/worker` (pg-boss), `packages/core` (scanner, CLI, shared contract),
-`packages/db` (Drizzle schema, migrations, queries, seed). See [CLAUDE.md](CLAUDE.md) for the
-full map and conventions.
+`apps/web` (Next.js), `apps/worker` (pg-boss), `packages/core` (scanner, CLI, SSRF guard, alert
+rules), `packages/db` (Drizzle schema, migrations, queries, seed). See [CLAUDE.md](CLAUDE.md) for
+the full map and conventions.
