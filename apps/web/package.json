@@ -1,0 +1,31 @@
+{
+  "name": "@deployhealth/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "pnpm --filter @deployhealth/core build && node scripts/copy-cli.mjs",
+    "dev": "next dev --port 3000",
+    "build": "node scripts/copy-cli.mjs && next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@deployhealth/core": "workspace:*",
+    "@deployhealth/db": "workspace:*",
+    "next": "15.5.26",
+    "next-auth": "5.0.0-beta.32",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "vitest": "^4.1.11"
+  }
+}
