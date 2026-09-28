@@ -15,6 +15,7 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       'apps/web/public/deployhealth-scan.mjs',
+      'packages/core/bin/**',
     ],
   },
   js.configs.recommended,
