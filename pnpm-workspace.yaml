@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 10 skips dependency install scripts unless they are allowed here.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp

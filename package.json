@@ -1,0 +1,29 @@
+{
+  "name": "deployhealth",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @deployhealth/web --filter @deployhealth/worker dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @deployhealth/db generate",
+    "db:migrate": "pnpm --filter @deployhealth/db migrate",
+    "db:seed": "pnpm --filter @deployhealth/db seed",
+    "e2e": "pnpm --filter @deployhealth/web e2e"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "15.5.26",
+    "@types/node": "^22.20.4",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

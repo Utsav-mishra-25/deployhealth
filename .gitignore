@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+next-env.d.ts
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log
+.DS_Store
+
+# Real env files stay local; only .env.example is committed.
+.env
+.env.local
+.env.*.local
