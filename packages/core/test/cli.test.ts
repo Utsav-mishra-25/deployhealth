@@ -89,6 +89,8 @@ describe('reporting', () => {
     const payload = ingestPayloadSchema.parse(JSON.parse(body));
     expect(payload).toMatchObject({ sha: SHA, branch: 'main', timestamp: '2026-09-28T12:00:00.000Z' });
     expect(payload.findings).toHaveLength(17);
+    expect(payload.variables).toHaveLength(15);
+    expect(payload.variables).toContainEqual({ var_name: 'API_KEY', scope: 'apps/admin', defined_in: [] });
     expect(out.stdout).toContain('reported a1b2c3d on main: 9 missing, 4 unused, 3 mismatch (deploy dep-1)');
   });
 

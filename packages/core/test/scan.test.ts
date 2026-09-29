@@ -98,6 +98,39 @@ describe('scanProject on the fixture', () => {
     expect(result.sourceFiles).toBe(6);
   });
 
+  it('lists every referenced variable per scope with the env files that define it, names only', async () => {
+    const result = await scanProject(root);
+    const v = (var_name: string, scope: string, defined_in: string[]) => ({ var_name, scope, defined_in });
+    expect(result.variables).toEqual([
+      v('API_KEY', '', ['.env.example', '.env']),
+      v('AWS_REGION', '', []),
+      v('DATABASE_URL', '', ['.env.example', '.env']),
+      v('GO_TOKEN', '', []),
+      v('LOG_LEVEL', '', []),
+      v('NODE_ENV', '', []),
+      v('PORT', '', ['.env.example', '.env']),
+      v('REGION', '', []),
+      v('SENTRY_DSN', '', ['.env.example']),
+      v('SMTP_HOST', '', []),
+      v('VITE_API_URL', '', ['.env.local']),
+      v('VITE_FEATURE_FLAG', '', []),
+      v('WORKER_DEBUG', '', []),
+      v('ADMIN_SECRET', 'apps/admin', ['.env.example']),
+      v('API_KEY', 'apps/admin', []),
+    ]);
+    // Undefined in its scope is exactly what MISSING means.
+    const undefinedNames = new Set(result.variables.filter((x) => x.defined_in.length === 0).map((x) => x.var_name));
+    expect(undefinedNames).toEqual(new Set(result.findings.filter((f) => f.kind === 'missing').map((f) => f.var_name)));
+    // Unused and env-only names (LEGACY_TOKEN, OLD_FLAG, LOCAL_ONLY) aren't required, so they're not listed.
+    expect(result.variables.map((x) => x.var_name)).not.toEqual(expect.arrayContaining(['LEGACY_TOKEN']));
+  });
+
+  it('leaves ignored names out of the variable list too', async () => {
+    const result = await scanProject(root, { ignore: ['NODE_ENV', 'VITE_*'] });
+    expect(result.variables.map((x) => x.var_name)).not.toEqual(expect.arrayContaining(['NODE_ENV']));
+    expect(result.variables.some((x) => x.var_name.startsWith('VITE_'))).toBe(false);
+  });
+
   it('never reads decoys', async () => {
     const names = (await scanProject(root)).findings.map((f) => f.var_name);
     expect(names.filter((n) => n.startsWith('FROM_'))).toEqual([]);

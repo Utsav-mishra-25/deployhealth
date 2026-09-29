@@ -41,6 +41,25 @@ describe('ingestPayloadSchema', () => {
     expect(ingestPayloadSchema.safeParse({ ...valid, ...override }).success).toBe(false);
   });
 
+  it('accepts variables as names plus env file names, and payloads from older CLIs without them', () => {
+    const variables = [
+      { var_name: 'DATABASE_URL', scope: '', defined_in: ['.env.example', '.env'] },
+      { var_name: 'REDIS_URL', scope: 'apps/api', defined_in: [] },
+    ];
+    expect(ingestPayloadSchema.parse({ ...valid, variables }).variables).toEqual(variables);
+    expect(ingestPayloadSchema.parse(valid).variables).toBeUndefined();
+  });
+
+  it.each([
+    ['a value smuggled into the name', { var_name: 'STRIPE_KEY=sk_live_123', scope: '', defined_in: [] }],
+    ['a name with spaces', { var_name: 'STRIPE KEY', scope: '', defined_in: [] }],
+    ['a name starting with a digit', { var_name: '1KEY', scope: '', defined_in: [] }],
+    ['a value in defined_in', { var_name: 'STRIPE_KEY', scope: '', defined_in: ['sk_live_123'] }],
+    ['an unknown env file', { var_name: 'STRIPE_KEY', scope: '', defined_in: ['.env.production'] }],
+  ])('rejects variables with %s', (_label, variable) => {
+    expect(ingestPayloadSchema.safeParse({ ...valid, variables: [variable] }).success).toBe(false);
+  });
+
   it('caps the number of findings', () => {
     const findings = Array.from({ length: MAX_FINDINGS + 1 }, () => valid.findings[0]);
     expect(ingestPayloadSchema.safeParse({ ...valid, findings }).success).toBe(false);
