@@ -1,4 +1,4 @@
-import { ensureDevUser, upsertGithubUser } from '@deployhealth/db';
+import { ensureDevUser, linkInstallationsForUser, upsertGithubUser } from '@deployhealth/db';
 import NextAuth, { type DefaultSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { serverEnv } from '@/env';
@@ -54,6 +54,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
             email: gh.email,
             avatarUrl: gh.avatar_url,
           });
+          // GitHub App installations this account made before signing up become theirs now.
+          await linkInstallationsForUser(getDb(), dbUser.id, dbUser.githubId);
           token.userId = dbUser.id;
           token.login = dbUser.login;
         } else if (account?.provider === 'dev' && user?.id) {

@@ -13,7 +13,7 @@ export const CLI_BUNDLE_DEPRECATION = [
 const config: NextConfig = {
   // The workspace packages ship TypeScript source.
   transpilePackages: ['@deployhealth/core', '@deployhealth/db'],
-  serverExternalPackages: ['pg'],
+  serverExternalPackages: ['pg', 'pg-boss'],
   // Lint runs once for the whole repo (`pnpm lint`), not inside `next build`.
   eslint: { ignoreDuringBuilds: true },
   poweredByHeader: false,
