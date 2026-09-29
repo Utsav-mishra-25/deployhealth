@@ -14,7 +14,11 @@ export interface CheckEndpointsDeps {
   log: (message: string) => void;
   /** Checks run in parallel, up to this many at a time. */
   concurrency?: number;
+  /** Resolves at `until` (or at once if it has passed). Tests pass a fake clock. */
+  sleepUntil?: (until: Date) => Promise<void>;
 }
+
+const realSleepUntil = (until: Date) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, until.getTime() - Date.now())));
 
 export interface CheckEndpointsSummary {
   checked: number;
@@ -28,28 +32,40 @@ export interface CheckEndpointsSummary {
  * The `check-endpoints` job (every minute): claim due endpoints, check them, record each result
  * (which may open or resolve an alert) and send webhooks for alert events. One endpoint's error
  * never stops the others.
+ *
+ * Each claimed endpoint has a start time (`runAt`) that keeps checks of one hostname at least
+ * 10 seconds apart across all users. Endpoints sharing a start time form a wave; waves run in
+ * order, each no earlier than its start time (never early, so the spacing only ever grows).
  */
 export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEndpointsSummary> {
   const due = await deps.claimDue();
   const summary: CheckEndpointsSummary = { checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0 };
+  const sleepUntil = deps.sleepUntil ?? realSleepUntil;
 
-  await forEachLimited(due, deps.concurrency ?? 10, async (endpoint) => {
-    try {
-      const outcome = await deps.check(endpoint);
-      const { event } = await deps.record(endpoint.id, outcome);
-      summary.checked++;
-      if (!outcome.ok) summary.failed++;
-      if (!event) return;
-      summary[event.type === 'opened' ? 'opened' : 'resolved']++;
-      deps.log(`[alert] ${event.type}: ${event.projectName}: ${event.message}`);
-      if (event.webhookUrl) await deps.notify(event.webhookUrl, webhookPayload(event.type, event.projectName, event.message));
-    } catch (error) {
-      summary.errors++;
-      deps.log(`[check] ${endpoint.url} could not be processed: ${(error as Error).message}`);
-    }
-  });
-
+  const waves = new Map<number, DueEndpoint[]>();
+  for (const endpoint of due) waves.set(endpoint.runAt.getTime(), [...(waves.get(endpoint.runAt.getTime()) ?? []), endpoint]);
+  for (const at of [...waves.keys()].sort((a, b) => a - b)) {
+    await sleepUntil(new Date(at));
+    await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary));
+  }
   return summary;
+}
+
+/** Check one endpoint, record the result, and send the webhook for an alert event, if any. */
+async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary: CheckEndpointsSummary): Promise<void> {
+  try {
+    const outcome = await deps.check(endpoint);
+    const { event } = await deps.record(endpoint.id, outcome);
+    summary.checked++;
+    if (!outcome.ok) summary.failed++;
+    if (!event) return;
+    summary[event.type === 'opened' ? 'opened' : 'resolved']++;
+    deps.log(`[alert] ${event.type}: ${event.projectName}: ${event.message}`);
+    if (event.webhookUrl) await deps.notify(event.webhookUrl, webhookPayload(event.type, event.projectName, event.message));
+  } catch (error) {
+    summary.errors++;
+    deps.log(`[check] ${endpoint.url} could not be processed: ${(error as Error).message}`);
+  }
 }
 
 /** The nightly `prune-checks` job: delete checks older than the retention window. */

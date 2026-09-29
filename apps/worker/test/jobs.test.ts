@@ -3,13 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { CheckResult } from '../src/check';
 import { checkEndpoints, pruneOldChecks, reseedDemo } from '../src/jobs';
 
-const due = (id: string, url = `https://${id}.example/`): DueEndpoint => ({
+const T0 = new Date('2026-09-28T12:00:00Z');
+const due = (id: string, url = `https://${id}.example/`, runAt = T0): DueEndpoint => ({
   id,
   projectId: 'p1',
   url,
+  hostname: new URL(url).hostname,
   method: 'GET',
   intervalSeconds: 60,
   expectedStatus: 200,
+  runAt,
 });
 
 const result = (ok: boolean): CheckResult => ({
@@ -77,6 +80,36 @@ describe('checkEndpoints job', () => {
     });
     expect(summary).toMatchObject({ checked: 6, errors: 1 });
     expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it('runs waves in start-time order, each no earlier than its start, so one host is never hit twice in 10s', async () => {
+    const events: string[] = [];
+    let clock = T0.getTime();
+    const at = (s: number) => new Date(T0.getTime() + s * 1000);
+    await checkEndpoints({
+      // Two checks of shared.example (10s apart) and one of other.example, claimed out of order.
+      claimDue: async () => [due('s2', 'https://shared.example/2', at(10)), due('o', 'https://other.example/', at(0)), due('s1', 'https://shared.example/1', at(0))],
+      check: async (t) => {
+        events.push(`check ${t.url} at +${(clock - T0.getTime()) / 1000}s`);
+        clock += 3_000; // each check takes 3s
+        return result(true);
+      },
+      record: async () => ({ consecutiveFailures: 0, event: null }),
+      notify: async () => true,
+      log: () => {},
+      concurrency: 1,
+      sleepUntil: async (until) => {
+        events.push(`wait until +${(until.getTime() - T0.getTime()) / 1000}s`);
+        clock = Math.max(clock, until.getTime());
+      },
+    });
+    expect(events).toEqual([
+      'wait until +0s',
+      'check https://other.example/ at +0s',
+      'check https://shared.example/1 at +3s',
+      'wait until +10s',
+      'check https://shared.example/2 at +10s',
+    ]);
   });
 
   it('does nothing when nothing is due', async () => {
