@@ -164,8 +164,9 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 - `https://<your-domain>/login` shows **Sign in with GitHub**, and signing in lands on `/clients`.
 - Worker logs show `[worker] ready: check-endpoints every minute, prune-checks nightly`, then one
   `[check] {...}` line per minute once you have endpoints.
-- `https://<your-domain>/deployhealth-scan.mjs` downloads the CLI (about 11 KB). The GitHub Action
-  snippet on each project's settings page uses it.
+- A project's settings page shows the GitHub Action, which runs `npx --yes deployhealth-scan@<version>`
+  from npm. (`https://<your-domain>/deployhealth-scan.mjs` still serves the old CLI download for
+  older workflows, with a `Deprecation` header.)
 - With the demo on: `https://<your-domain>/demo` shows Acme Corp and Northwind Bakery without
   signing in, the worker log shows `[reseed-demo] demo data restored in …ms` after each start, and
   within a couple of minutes "Acme API" is failing for real (its checks show `Expected 200, got 503`).

@@ -34,7 +34,8 @@ with `file:line` for every finding and a history per deploy.
 
 ![Findings grouped by kind with file:line, and the deploy history with each deploy's counts](docs/screenshots/findings-and-deploys.png)
 
-Setup is one token and one workflow file:
+Setup is one token and one workflow file. The scanner is the MIT-licensed npm package
+[`deployhealth-scan`](https://www.npmjs.com/package/deployhealth-scan), pinned to an exact version:
 
 ![Creating a project: the one-time ingest token and the GitHub Action to commit](docs/screenshots/create-project.png)
 
@@ -166,9 +167,10 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
 1. **Create a project** (optionally under a client). You get an ingest token (`dh_…`, shown once;
    only its SHA-256 is stored) and a workflow snippet. Save the token as the repo secret
    `DEPLOYHEALTH_TOKEN` and commit the snippet as `.github/workflows/deployhealth.yml`.
-2. **On every push**, the Action downloads the CLI from your deployhealth instance
-   (`/deployhealth-scan.mjs`, one 12 KB file with no dependencies) and runs it on the checkout with
-   the commit sha and branch.
+2. **On every push**, the Action runs the CLI from npm, pinned to an exact version
+   (`npx --yes deployhealth-scan@0.1.0`: one 12 KB file, no dependencies), on the checkout with the
+   commit sha and branch. The job's token is read-only (`permissions: contents: read`), and the
+   workflow runs on pushes only, never on pull requests from forks, since it reads a secret.
 3. **The scanner** walks the repo, respecting `.gitignore` and skipping `node_modules`, `dist`,
    `.git`, `.next` and virtualenvs. It finds references in JS/TS (`process.env.X`,
    `process.env["X"]`, `import.meta.env.X`), Python (`os.environ["X"]`, `os.environ.get("X")`,
@@ -189,8 +191,18 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    - stores a **scan** with counts it computes itself;
    - stores every **finding** and **variable**.
 
-Try the scanner locally: `node deployhealth-scan.mjs --dry-run` (add `--json`, `--ignore NAME_*`,
-`--exclude path/`).
+Try the scanner locally: `npx deployhealth-scan@0.1.0 --dry-run` (add `--json`, `--ignore NAME_*`,
+`--exclude path/`). This repository scans itself the same way on every push to `main`
+([`.github/workflows/deployhealth.yml`](.github/workflows/deployhealth.yml)).
+
+### Deprecated: downloading the CLI from your instance
+
+Workflows created before the npm package download `/deployhealth-scan.mjs` from your deployhealth
+instance with `curl` and run it with `node`. That file is still served, now with a `Deprecation`
+header, and will be removed in a later release. To migrate, copy the new workflow from the
+project's settings page, or replace the `curl …` and `node "$RUNNER_TEMP/deployhealth-scan.mjs"`
+lines with `npx --yes deployhealth-scan@0.1.0` and the same flags, then add `permissions:
+contents: read` to the job and `package-manager-cache: false` to `actions/setup-node`.
 
 ### Uptime: the worker
 
@@ -262,9 +274,10 @@ Endpoint and webhook URLs are user input, so they're checked twice:
 
 ## Known limitations
 
-- **The CLI download isn't pinned.** The Action fetches `/deployhealth-scan.mjs` from your instance
-  on every run, with no version or checksum. Whoever controls that instance controls what runs in
-  your CI. To avoid it, vendor the file into the repo or check a SHA-256 before running it.
+- **Old workflows still download the CLI unpinned.** Workflows written before the npm package fetch
+  `/deployhealth-scan.mjs` from your instance on every run, with no version or checksum, so
+  whoever controls that instance controls what runs in their CI. New snippets pin an npm version;
+  [migrate](#deprecated-downloading-the-cli-from-your-instance) the old ones.
 - **MISMATCH needs a committed `.env`, or a platform integration.** CI checkouts rarely contain a
   `.env`, so MISMATCH only appears for repos that commit one (e.g. non-secret defaults). Comparing
   against the real variables on Vercel, Railway or Fly would need a platform integration; there
