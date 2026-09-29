@@ -53,15 +53,23 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
 }
 
 /** The nightly `prune-checks` job: delete checks older than the retention window. */
+/**
+ * Nightly: first roll every complete UTC day up into daily stats (monthly reports read those),
+ * then delete raw checks from whole days more than 30 days back. If the rollup fails, nothing is
+ * deleted, so no day is ever lost.
+ */
 export async function pruneOldChecks(deps: {
+  rollup: (before: Date) => Promise<number>;
   prune: (olderThan: Date) => Promise<number>;
   now?: () => Date;
   log: (message: string) => void;
 }): Promise<number> {
   const now = (deps.now ?? (() => new Date()))();
-  const cutoff = new Date(now.getTime() - CHECK_RETENTION_DAYS * 24 * 3_600_000);
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const rolled = await deps.rollup(new Date(today));
+  const cutoff = new Date(today - CHECK_RETENTION_DAYS * 24 * 3_600_000);
   const deleted = await deps.prune(cutoff);
-  deps.log(`[prune] deleted ${deleted} checks older than ${cutoff.toISOString()}`);
+  deps.log(`[prune] rolled up ${rolled} endpoint-days; deleted ${deleted} checks before ${cutoff.toISOString()}`);
   return deleted;
 }
 

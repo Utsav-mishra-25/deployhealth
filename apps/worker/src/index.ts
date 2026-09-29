@@ -1,4 +1,4 @@
-import { claimDueEndpoints, createDb, pruneChecks, recordCheck } from '@deployhealth/db';
+import { claimDueEndpoints, createDb, pruneChecks, recordCheck, rollupChecks } from '@deployhealth/db';
 import { seed } from '@deployhealth/db/seed';
 import { PgBoss } from 'pg-boss';
 import { runCheck } from './check';
@@ -12,7 +12,8 @@ const log = (message: string) => console.log(message);
  * pg-boss queues, all `singleton` so runs never overlap:
  * - check-endpoints, every minute: checks whatever is due (per-endpoint intervals live in
  *   endpoints.next_check_at, so there is no per-endpoint cron);
- * - prune-checks, nightly at 03:17 UTC: deletes checks older than 30 days;
+ * - prune-checks, nightly at 03:17 UTC: rolls complete days up into daily stats, then deletes
+ *   raw checks from whole days more than 30 days back;
  * - reseed-demo, only when DEMO_PUBLIC=1: nightly at 04:41 UTC and once on start.
  */
 async function main(): Promise<void> {
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
   });
 
   await boss.work(PRUNE_QUEUE, async () => {
-    await pruneOldChecks({ prune: (olderThan) => pruneChecks(db, olderThan), log });
+    await pruneOldChecks({ rollup: (before) => rollupChecks(db, before), prune: (olderThan) => pruneChecks(db, olderThan), log });
   });
 
   await boss.createQueue(RESEED_QUEUE, { policy: 'singleton', retryLimit: 2 });

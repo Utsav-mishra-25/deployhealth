@@ -307,6 +307,24 @@ async function latestScanFindings(tx: Tx, deployId: string) {
 }
 
 /** Delete checks older than `olderThan`. Returns how many were removed. */
+/**
+ * Roll raw checks up into endpoint_daily_stats: one row per endpoint per complete UTC day before
+ * `before` (normally today's midnight UTC). Recomputes every such day that still has raw checks,
+ * so it's idempotent and picks up checks recorded just after midnight. Returns the rows written.
+ */
+export async function rollupChecks(db: Db, before: Date): Promise<number> {
+  const cutoff = startOfUtcDay(before).toISOString();
+  const result = await db.execute(sql`
+    insert into ${endpointDailyStats} (endpoint_id, day, checks, ok)
+    select endpoint_id, (checked_at at time zone 'UTC')::date, count(*)::int, (count(*) filter (where ok))::int
+    from ${checks}
+    where checked_at < ${cutoff}::timestamptz
+    group by 1, 2
+    on conflict (endpoint_id, day) do update set checks = excluded.checks, ok = excluded.ok
+  `);
+  return result.rowCount ?? 0;
+}
+
 export async function pruneChecks(db: Db, olderThan: Date): Promise<number> {
   const deleted = await db.delete(checks).where(lt(checks.checkedAt, olderThan)).returning({ id: checks.id });
   return deleted.length;
