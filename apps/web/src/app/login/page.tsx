@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { auth, signIn } from '@/auth';
 import { serverEnv } from '@/env';
+import Link from 'next/link';
 import { isDemoLoginEnabled } from '@/lib/auth-providers';
 
 export const dynamic = 'force-dynamic';
@@ -60,6 +61,16 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </p>
         )}
       </div>
+
+      {env.DEMO_PUBLIC === '1' && (
+        <p className="mt-6 border-t border-gray-100 pt-4 text-center text-sm text-gray-600">
+          Just looking?{' '}
+          <Link href="/demo" className="font-medium text-emerald-700 hover:underline">
+            See a live demo
+          </Link>
+          , no sign-in needed.
+        </p>
+      )}
     </div>
   );
 }
