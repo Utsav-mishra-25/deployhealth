@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { MAX_WEBHOOK_BODY_BYTES } from '@deployhealth/core';
+import { MAX_WEBHOOK_BODY_BYTES, type PrCheckJobData } from '@deployhealth/core';
 import type { InstallationInput } from '@deployhealth/db';
 import { z } from 'zod';
 import { readBodyUpTo } from './read-body';
@@ -8,11 +8,7 @@ import { readBodyUpTo } from './read-body';
 export const WEBHOOK_RATE_LIMIT = { limit: 120, windowMs: 60_000 };
 
 /** What the webhook queues for the worker; the job reads the pull request's current state itself. */
-export interface PrCheckJob {
-  installationId: number;
-  repoFullName: string;
-  prNumber: number;
-}
+export type PrCheckJob = PrCheckJobData;
 
 export interface GithubWebhookDeps {
   /** GITHUB_APP_WEBHOOK_SECRET; undefined means the App isn't configured (404). */

@@ -138,11 +138,19 @@ describe('pruneOldChecks job', () => {
         calls.push(`prune before ${olderThan.toISOString()}`);
         return 42;
       },
+      pruneDeliveries: async (olderThan) => {
+        calls.push(`deliveries before ${olderThan.toISOString()}`);
+        return 3;
+      },
       now: () => new Date('2026-09-30T03:17:00Z'),
       log: () => {},
     });
     expect(deleted).toBe(42);
-    expect(calls).toEqual(['rollup before 2026-09-30T00:00:00.000Z', 'prune before 2026-08-31T00:00:00.000Z']);
+    expect(calls).toEqual([
+      'rollup before 2026-09-30T00:00:00.000Z',
+      'prune before 2026-08-31T00:00:00.000Z',
+      'deliveries before 2026-09-29T03:17:00.000Z', // GitHub delivery ids are kept 24 hours
+    ]);
   });
 
   it('deletes nothing when the rollup fails', async () => {

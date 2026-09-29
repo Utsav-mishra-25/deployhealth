@@ -38,3 +38,11 @@ export const CHECK_RETENTION_DAYS = 30;
 
 /** pg-boss queue for GitHub App pull request checks: web enqueues from the webhook, the worker runs it. */
 export const PR_CHECK_QUEUE = 'pr-check';
+
+/** A queued pull request check. The worker reads the pull request's current head when it runs. */
+export interface PrCheckJobData {
+  /** GitHub's installation id (not ours). */
+  installationId: number;
+  repoFullName: string;
+  prNumber: number;
+}
