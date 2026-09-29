@@ -14,6 +14,9 @@ export const HOST_CHECK_SPACING_MS = 10_000;
 /** POST /api/ingest/scan request body. */
 export const MAX_INGEST_BODY_BYTES = 5 * 1024 * 1024;
 
+/** POST /api/github/webhook request body (GitHub's own cap is 25 MB; real deliveries are far smaller). */
+export const MAX_WEBHOOK_BODY_BYTES = 5 * 1024 * 1024;
+
 /** A pull request check fetches at most this many files from GitHub (base and head together)... */
 export const MAX_PR_CHECK_FILES = 2_000;
 /** ...and at most this many bytes of file content. */

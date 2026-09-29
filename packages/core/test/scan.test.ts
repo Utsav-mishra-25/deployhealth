@@ -1,10 +1,10 @@
-import { appendFile, cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { summarize } from '../src/findings';
-import { scanProject } from '../src/scan';
+import { scanFiles, scanProject, selectTreeFiles } from '../src/scan';
 import type { FindingRow } from '../src/types';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/project/', import.meta.url));
@@ -77,6 +77,51 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
+});
+
+/** Every file under `dir` (like a git tree that committed everything), POSIX paths. */
+async function allFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  return entries.filter((e) => e.isFile()).map((e) => join(e.parentPath, e.name).slice(dir.length + 1).split('\\').join('/'));
+}
+
+describe('scanFiles + selectTreeFiles (git trees)', () => {
+  it('select the same files and give exactly the same result as scanProject on a directory', async () => {
+    const paths = await allFiles(root);
+    expect(paths).toEqual(expect.arrayContaining(['node_modules/lib/index.js', 'generated/client.ts', 'README.md']));
+    const readGitignore: string[] = [];
+    const selected = await selectTreeFiles(paths, async (path) => {
+      readGitignore.push(path);
+      return readFile(join(root, path), 'utf8');
+    });
+    expect(readGitignore).toEqual(['.gitignore']);
+    expect(selected).not.toEqual(expect.arrayContaining(['node_modules/lib/index.js']));
+    expect(selected).toEqual(expect.arrayContaining(['.env', '.env.local', 'src/server.ts'])); // env files kept though gitignored
+    const files = new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const)));
+    expect(await scanFiles(files)).toEqual(await scanProject(root));
+  });
+
+  it("never reads a .gitignore inside a skipped or ignored directory, and applies nested ones", async () => {
+    const tree: Record<string, string> = {
+      '.gitignore': 'build/\n',
+      'build/.gitignore': '!*\n',
+      'build/out.ts': 'process.env.FROM_BUILD',
+      'node_modules/.gitignore': '',
+      'packages/a/.gitignore': 'secret.ts\n',
+      'packages/a/secret.ts': 'process.env.IGNORED',
+      'packages/a/.env': 'KEPT=1',
+      'packages/a/index.ts': 'process.env.KEPT',
+    };
+    const read: string[] = [];
+    const selected = await selectTreeFiles(Object.keys(tree), async (path) => {
+      read.push(path);
+      return tree[path]!;
+    });
+    expect(read.sort()).toEqual(['.gitignore', 'packages/a/.gitignore']);
+    expect(selected).toEqual(['packages/a/.env', 'packages/a/index.ts']);
+    const result = await scanFiles(new Map(selected.map((p) => [p, tree[p]!])));
+    expect(result.references).toEqual([{ name: 'KEPT', file: 'packages/a/index.ts', line: 1, column: 1, syntax: 'process.env', scope: 'packages/a' }]);
+  });
 });
 
 describe('scanProject on the fixture', () => {

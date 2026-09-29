@@ -5,7 +5,8 @@ import { analyzeScope, compareFindings, requiredVariables, summarize, type Scope
 import { createNameFilter } from './glob';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource } from './scanner';
 import { ENV_FILE_BASENAMES, type FindingCounts, type FindingRow, type Reference, type RequiredVariable, type Warning } from './types';
-import { walk } from './walker';
+import { GitignoreMatcher } from './gitignore';
+import { DEFAULT_SKIP_DIRS, walk } from './walker';
 
 /** Env files read in every scope. Other names (e.g. `.env.production`) are ignored. */
 export const ENV_FILE_NAMES: ReadonlySet<string> = new Set(ENV_FILE_BASENAMES);
@@ -19,6 +20,8 @@ export interface ScanOptions {
 
 export interface ScanResult {
   findings: FindingRow[];
+  /** Every reference found, with the scope it was checked against. */
+  references: Array<Reference & { scope: string }>;
   /** Every referenced variable per scope, with the env files that define it (names only). */
   variables: RequiredVariable[];
   counts: FindingCounts;
@@ -40,11 +43,33 @@ export interface ScanResult {
  */
 export async function scanProject(root: string, options: ScanOptions = {}): Promise<ScanResult> {
   const { files, warnings } = await walk(root, {
-    include: (relPath, name) => ENV_FILE_NAMES.has(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase()),
+    include: isScannable,
     exclude: options.exclude,
     keepIgnored: (name) => ENV_FILE_NAMES.has(name),
   });
+  return analyzeFiles(files, (file) => readFile(join(root, file), 'utf8'), warnings, options);
+}
 
+/**
+ * `scanProject` over files already in memory (e.g. blobs from a git tree), keyed by POSIX path
+ * relative to the repo root. Pick the paths with `selectTreeFiles` so the rules are the same.
+ */
+export async function scanFiles(files: ReadonlyMap<string, string>, options: Pick<ScanOptions, 'ignore'> = {}): Promise<ScanResult> {
+  const paths = [...files.keys()].filter((path) => isScannable(path, posix.basename(path))).sort();
+  return analyzeFiles(paths, async (path) => files.get(path)!, [], options);
+}
+
+/** Env files and source files in a scanned language. */
+function isScannable(relPath: string, name: string): boolean {
+  return ENV_FILE_NAMES.has(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
+}
+
+async function analyzeFiles(
+  files: readonly string[],
+  read: (file: string) => Promise<string>,
+  warnings: Warning[],
+  options: ScanOptions,
+): Promise<ScanResult> {
   const envFiles: ScopeEnvFile[] = [];
   const sourceFiles: string[] = [];
   for (const file of files) {
@@ -53,7 +78,7 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
       sourceFiles.push(file);
       continue;
     }
-    const { entries, invalid } = parseEnv(await readFile(join(root, file), 'utf8'));
+    const { entries, invalid } = parseEnv(await read(file));
     for (const { line } of invalid) warnings.push({ file, line, message: 'ignored a line that is not KEY=value' });
     envFiles.push({ path: file, name, entries });
   }
@@ -63,7 +88,7 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
   for (const file of sourceFiles) {
     const language = languageForFile(file);
     if (!language) continue;
-    const refs = scanSource(await readFile(join(root, file), 'utf8'), language, file);
+    const refs = scanSource(await read(file), language, file);
     if (refs.length === 0) continue;
     const scope = nearestScope(dirOf(file), scopeDirs);
     referencesByScope.set(scope, [...(referencesByScope.get(scope) ?? []), ...refs]);
@@ -88,9 +113,13 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
       isIgnored,
     }),
   );
+  const references = scopes
+    .flatMap((scope) => (referencesByScope.get(scope) ?? []).filter((r) => !isIgnored(r.name)).map((r) => ({ ...r, scope })))
+    .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
 
   return {
     findings,
+    references,
     variables,
     counts: summarize(findings),
     scopes,
@@ -98,6 +127,48 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
     envFiles: envFiles.map((f) => f.path),
     warnings,
   };
+}
+
+/**
+ * The files `scanProject` would read, chosen from a git tree's blob paths instead of a directory:
+ * the same skipped directories, nested `.gitignore` files (read top-down through `readGitignore`,
+ * so ones inside ignored directories are never read) and env files kept even when ignored.
+ * Returns the paths to fetch, sorted.
+ */
+export async function selectTreeFiles(
+  paths: readonly string[],
+  readGitignore: (path: string) => Promise<string>,
+  { skipDirs = DEFAULT_SKIP_DIRS }: { skipDirs?: ReadonlySet<string> } = {},
+): Promise<string[]> {
+  const gitignores = new Set(paths.filter((p) => posix.basename(p) === '.gitignore'));
+  const matchers = new Map<string, GitignoreMatcher | null>(); // null: the directory is skipped or ignored
+
+  async function matcherFor(dir: string): Promise<GitignoreMatcher | null> {
+    const known = matchers.get(dir);
+    if (known !== undefined) return known;
+    let matcher: GitignoreMatcher | null;
+    if (dir === '') {
+      matcher = GitignoreMatcher.empty();
+    } else {
+      const parent = await matcherFor(dirOf(dir));
+      matcher = parent && !skipDirs.has(posix.basename(dir)) && !parent.ignores(dir, true) ? parent : null;
+    }
+    const ignoreFile = dir === '' ? '.gitignore' : `${dir}/.gitignore`;
+    if (matcher && gitignores.has(ignoreFile)) matcher = matcher.extend(dir, await readGitignore(ignoreFile));
+    matchers.set(dir, matcher);
+    return matcher;
+  }
+
+  const selected: string[] = [];
+  for (const path of [...paths].sort()) {
+    const name = posix.basename(path);
+    if (!isScannable(path, name)) continue;
+    const matcher = await matcherFor(dirOf(path));
+    if (!matcher) continue;
+    if (matcher.ignores(path, false) && !ENV_FILE_NAMES.has(name)) continue;
+    selected.push(path);
+  }
+  return selected;
 }
 
 function dirOf(path: string): string {
