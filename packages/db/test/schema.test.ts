@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { alerts, clients, deploys, findings, projects, scans, users } from '../src/schema';
+import { alerts, clients, deploys, endpointDailyStats, endpoints, findings, projects, scans, scanVariables, users } from '../src/schema';
 import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
@@ -32,9 +32,11 @@ describe('schema', () => {
       'checks',
       'clients',
       'deploys',
+      'endpoint_daily_stats',
       'endpoints',
       'findings',
       'projects',
+      'scan_variables',
       'scans',
       'users',
     ]);
@@ -162,5 +164,52 @@ describe('schema', () => {
 
     await db.update(alerts).set({ resolvedAt: new Date() }).where(eq(alerts.id, first!.id));
     await expect(db.insert(alerts).values(open)).resolves.toBeTruthy();
+  });
+
+  it('limits endpoint names to 60 non-blank characters', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    await expect(makeEndpoint(db, project.id, { name: 'Acme API' })).resolves.toMatchObject({ name: 'Acme API' });
+    await expect(makeEndpoint(db, project.id, { name: 'x'.repeat(60) })).resolves.toBeTruthy();
+    await expect(makeEndpoint(db, project.id, { name: 'x'.repeat(61) })).rejects.toMatchObject({ cause: { code: '22001' } }); // string_data_right_truncation
+    await expect(makeEndpoint(db, project.id, { name: '   ' })).rejects.toMatchObject({ cause: { code: '23514' } });
+    expect((await makeEndpoint(db, project.id)).name).toBeNull();
+  });
+
+  it('caps deploy notes at 20,000 characters', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    await db.update(projects).set({ deployNotes: 'x'.repeat(20_000) }).where(eq(projects.id, project.id));
+    await expect(
+      db.update(projects).set({ deployNotes: 'x'.repeat(20_001) }).where(eq(projects.id, project.id)),
+    ).rejects.toMatchObject({ cause: { code: '23514' } });
+  });
+
+  it('stores scan variables per scope and deletes them with their scan', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const deploy = await makeDeploy(project.id, 'cafe01');
+    const [scan] = await db.insert(scans).values({ deployId: deploy.id, missingCount: 0, unusedCount: 0, mismatchCount: 0 }).returning();
+    await db.insert(scanVariables).values([
+      { scanId: scan!.id, scope: '', varName: 'DATABASE_URL', definedIn: ['.env.example'] },
+      { scanId: scan!.id, scope: 'apps/web', varName: 'DATABASE_URL' },
+    ]);
+    expect((await db.select().from(scanVariables)).map((v) => v.definedIn)).toEqual([['.env.example'], []]);
+    await expect(db.insert(scanVariables).values({ scanId: scan!.id, scope: '', varName: 'DATABASE_URL' })).rejects.toMatchObject({
+      cause: { code: '23505' },
+    });
+    await db.delete(scans).where(eq(scans.id, scan!.id));
+    expect(await db.select().from(scanVariables)).toEqual([]);
+  });
+
+  it('keeps one daily stat per endpoint and day, with ok never above checks', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const endpoint = await makeEndpoint(db, project.id);
+    await db.insert(endpointDailyStats).values({ endpointId: endpoint.id, day: '2026-09-01', checks: 1440, ok: 1439 });
+    await expect(
+      db.insert(endpointDailyStats).values({ endpointId: endpoint.id, day: '2026-09-01', checks: 1, ok: 1 }),
+    ).rejects.toMatchObject({ cause: { code: '23505' } });
+    await expect(
+      db.insert(endpointDailyStats).values({ endpointId: endpoint.id, day: '2026-09-02', checks: 1, ok: 2 }),
+    ).rejects.toMatchObject({ cause: { code: '23514' } });
+    await db.delete(endpoints).where(eq(endpoints.id, endpoint.id));
+    expect(await db.select().from(endpointDailyStats)).toEqual([]);
   });
 });

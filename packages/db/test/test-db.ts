@@ -12,7 +12,7 @@ export function openTestDb(): DbHandle {
 /** Empty every table between tests. */
 export async function truncateAll(db: Db): Promise<void> {
   await db.execute(
-    sql`truncate table users, clients, projects, deploys, scans, findings, endpoints, checks, alerts restart identity cascade`,
+    sql`truncate table users, clients, projects, deploys, scans, findings, scan_variables, endpoints, checks, endpoint_daily_stats, alerts restart identity cascade`,
   );
 }
 
