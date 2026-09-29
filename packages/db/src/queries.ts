@@ -60,6 +60,8 @@ export class ClientNotFoundError extends Error {
 }
 
 export interface NewProjectInput {
+  /** Normally generated; the demo seed passes fixed ids so /demo links survive a reseed. */
+  id?: string;
   ownerId: string;
   name: string;
   repoFullName: string;
