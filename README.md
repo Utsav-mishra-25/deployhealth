@@ -41,6 +41,24 @@ Setup is one token and one workflow file. The scanner is the MIT-licensed npm pa
 
 ![Creating a project: the one-time ingest token and the GitHub Action to commit](docs/screenshots/create-project.png)
 
+### Pull request checks
+
+Install the deployhealth GitHub App on a repository and every pull request gets one comment,
+updated on each push, headed **deployhealth · env check**:
+
+- the env vars the pull request **adds, removes or renames**, with `file:line`;
+- new ones **missing from `.env.example`** (in the scope that reads them);
+- **committed `.env` files** (`.env`, `.env.local`, `.env.*.local`) and **secret-shaped strings**
+  on added lines (AWS, GitHub and Slack tokens, private keys, deployhealth tokens), reported by
+  location only, never by value.
+
+A `deployhealth / env` check run goes with it. Each project picks a mode: **comment** (the check is
+neutral when something is flagged), **strict** (it fails, so branch protection can block the
+merge) or **off**. Pull requests from coding agents (Claude, Codex, Copilot, Cursor, Devin) are
+marked, and each client page counts the month's agent pull requests that added undeclared env vars.
+
+![The pull request comment: variables added, renamed and removed, the ones missing from .env.example, a committed .env.local and a possible secret](docs/screenshots/pr-comment.png)
+
 ### Uptime, alerts, and the deploy that caused them
 
 Endpoints get a status, "Down for 22m", 24-hour and 7-day uptime, a p50/p95 latency chart and
@@ -117,6 +135,7 @@ self-host, not to offer as a competing hosted service; converts to MIT two years
 | 1. Config health | Done | GitHub Action + CLI, ingest API, findings per deploy, project pages, GitHub login |
 | 2. Clients, uptime and alerts | Done | Clients, uptime checks from a worker, alerts linked to deploys, Slack/Discord webhooks |
 | 3. Demo, handoff and reports | Done | Public read-only demo, endpoint names, handoff export, monthly client reports with share links |
+| 4. Security and pull requests | Done | CLI on npm, hard caps, /security, GitHub App env checks on every pull request |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -269,6 +288,29 @@ one derived from `AUTH_SECRET`). The link opens that one report without an accou
 route is rate-limited per IP. Links are stateless: nothing is stored, and the only way to revoke
 them is to rotate the key, which revokes all of them.
 
+### Pull requests: the GitHub App
+
+```
+PR opened / pushed ─▶ GitHub ─▶ POST /api/github/webhook ─▶ pr-check job ─▶ worker reads the PR ─▶ comment + check run
+```
+
+1. **The webhook** (`/api/github/webhook`) verifies `X-Hub-Signature-256` with a constant-time
+   compare before reading anything, rate-limits each installation to 120 deliveries a minute, drops
+   redeliveries by `X-GitHub-Delivery`, handles installation events itself and queues a `pr-check`
+   job for new pull request heads. It answers 202 at once, calls no GitHub API and logs no bodies.
+2. **Whose project.** An installation is linked to the deployhealth account whose GitHub id
+   installed it (from the signed delivery, never from a URL). A pull request is checked only for
+   that account's project with the same repository, so claiming someone else's repo name in a
+   project gets you nothing.
+3. **The worker** signs an App JWT, swaps it for an installation token (reused until it expires),
+   and reads the pull request's head and merge base: both git trees, then only the files the
+   scanner reads (same rules as the CLI, including `.gitignore`), each distinct blob once, plus the
+   pull request's diff for secret patterns. At most 2,000 files and 20 MB; past that the check
+   says so and stays neutral. All of it goes through the SSRF-guarded client, to api.github.com only.
+4. **The report** is stored per head (`pr_checks`), the one comment is updated in place (found by a
+   hidden `<!-- deployhealth-env-check -->` marker if needed), and the head gets its check run.
+   Running a head again changes nothing new.
+
 ### SSRF protection
 
 Endpoint and webhook URLs are user input, so they're checked twice:
@@ -314,6 +356,10 @@ request checks read at most **2,000 files and 20 MB** per pull request.
   automatically.
 - **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team
   sharing).
+- **Pull request checks follow the installer.** An App installed by an org admin checks pull
+  requests only for that admin's deployhealth projects. Very large repositories (more than GitHub
+  lists in one tree, or past the 2,000-file / 20 MB caps) aren't checked. Secret detection is a
+  small set of fixed-prefix formats, not a full secret scanner.
 
 ## Repository layout
 
