@@ -1,0 +1,40 @@
+{
+  "name": "deployhealth-scan",
+  "version": "0.1.0",
+  "description": "Find env var drift in a repo (read in code but never defined, defined but never read, out of sync between env files) and report it to deployhealth.",
+  "license": "MIT",
+  "author": "Utsav Mishra",
+  "type": "module",
+  "bin": {
+    "deployhealth-scan": "dist/deployhealth-scan.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Utsav-mishra-25/deployhealth.git",
+    "directory": "packages/core/npm"
+  },
+  "homepage": "https://github.com/Utsav-mishra-25/deployhealth/tree/main/packages/core/npm#readme",
+  "bugs": "https://github.com/Utsav-mishra-25/deployhealth/issues",
+  "keywords": [
+    "env",
+    "environment-variables",
+    "dotenv",
+    "env-drift",
+    "ci",
+    "github-actions",
+    "deployhealth"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prepack": "node -e \"require('node:fs').accessSync('dist/deployhealth-scan.mjs')\""
+  }
+}

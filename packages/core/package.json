@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:npm": "tsup && node scripts/pack-npm.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

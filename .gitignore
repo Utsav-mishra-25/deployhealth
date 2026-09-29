@@ -19,3 +19,5 @@ test-results/
 
 # Copied from packages/core/dist at build time.
 apps/web/public/deployhealth-scan.mjs
+# Copied from packages/core by `build:npm` (npm/dist is covered by dist/ above).
+packages/core/npm/LICENSE
