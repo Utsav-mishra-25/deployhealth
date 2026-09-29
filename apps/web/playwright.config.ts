@@ -22,11 +22,12 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    // The demo login only exists outside production, so the smoke test runs against `next dev`.
+    // The dev login only exists outside production, so the smoke test runs against `next dev`,
+    // with the public demo switched on.
     command: `pnpm exec next dev --port ${PORT}`,
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: true,
-    env: { AUTH_DEMO_LOGIN: '1' },
+    env: { AUTH_DEMO_LOGIN: '1', DEMO_PUBLIC: '1' },
     timeout: 120_000,
   },
 });
