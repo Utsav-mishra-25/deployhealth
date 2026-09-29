@@ -36,14 +36,27 @@ export function endpointLabel(url: string): string {
   }
 }
 
-/** "under a minute", "4m", "1h 5m". */
+/** "under a minute", "4m", "1h 5m", "2d 3h". */
 export function formatDuration(ms: number): string {
   const minutes = Math.floor(Math.max(0, ms) / 60_000);
   if (minutes < 1) return 'under a minute';
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${days}d ${rest}h` : `${days}d`;
+}
+
+/**
+ * The note next to a status badge while the latest check is failing: "Down for 21m" (open alert)
+ * or "Failing for 1m" (not alerting yet). `since` is the first failed check of the current run.
+ */
+export function failingFor(state: 'down' | 'failing', since: Date, now: Date): string {
+  return `${state === 'down' ? 'Down' : 'Failing'} for ${formatDuration(now.getTime() - since.getTime())}`;
 }
 
 export interface AlertOpenedInput {
