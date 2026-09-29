@@ -1,14 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { parseEnv } from './env-parser';
-import { analyzeScope, compareFindings, summarize, type ScopeEnvFile } from './findings';
+import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource } from './scanner';
-import type { FindingCounts, FindingRow, Reference, Warning } from './types';
+import { ENV_FILE_BASENAMES, type FindingCounts, type FindingRow, type Reference, type RequiredVariable, type Warning } from './types';
 import { walk } from './walker';
 
 /** Env files read in every scope. Other names (e.g. `.env.production`) are ignored. */
-export const ENV_FILE_NAMES: ReadonlySet<string> = new Set(['.env', '.env.example', '.env.local']);
+export const ENV_FILE_NAMES: ReadonlySet<string> = new Set(ENV_FILE_BASENAMES);
 
 export interface ScanOptions {
   /** Variable-name globs to skip in every section, e.g. `NODE_ENV` or `NEXT_PUBLIC_*`. */
@@ -19,6 +19,8 @@ export interface ScanOptions {
 
 export interface ScanResult {
   findings: FindingRow[];
+  /** Every referenced variable per scope, with the env files that define it (names only). */
+  variables: RequiredVariable[];
   counts: FindingCounts;
   /** Directories (relative, '' = root) that own env files, i.e. the scopes that were checked. */
   scopes: string[];
@@ -78,9 +80,18 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
       }),
     )
     .sort(compareFindings);
+  const variables = scopes.flatMap((scope) =>
+    requiredVariables({
+      scope,
+      references: referencesByScope.get(scope) ?? [],
+      envFiles: envFiles.filter((f) => dirOf(f.path) === scope),
+      isIgnored,
+    }),
+  );
 
   return {
     findings,
+    variables,
     counts: summarize(findings),
     scopes,
     sourceFiles: sourceFiles.length,

@@ -1,5 +1,5 @@
 import type { EnvEntry } from './env-parser';
-import type { FindingCounts, FindingKind, FindingRow, Reference } from './types';
+import { ENV_FILE_BASENAMES, type FindingCounts, type FindingKind, type FindingRow, type Reference, type RequiredVariable } from './types';
 
 /** An env file that belongs to a scope. `path` is relative to the scan root. */
 export interface ScopeEnvFile {
@@ -63,6 +63,22 @@ function firstOccurrences(entries: EnvEntry[]): EnvEntry[] {
 }
 
 const KIND_ORDER: Record<FindingKind, number> = { missing: 0, unused: 1, mismatch: 2 };
+
+/**
+ * Every variable the scope's code references (ignored names aside), sorted by name, with the
+ * scope's env files that define it in ENV_FILE_BASENAMES order. Names only: env values are never
+ * read into the result. An empty `defined_in` is a MISSING variable.
+ */
+export function requiredVariables({ scope, references, envFiles, isIgnored }: ScopeInput & { scope: string }): RequiredVariable[] {
+  const names = [...new Set(references.map((r) => r.name))].filter((name) => !isIgnored(name)).sort();
+  return names.map((var_name) => ({
+    var_name,
+    scope,
+    defined_in: ENV_FILE_BASENAMES.filter((basename) =>
+      envFiles.some((f) => f.name === basename && f.entries.some((e) => e.key === var_name)),
+    ),
+  }));
+}
 
 /** Deterministic order: kind, then variable name, then file, then line. */
 export function compareFindings(a: FindingRow, b: FindingRow): number {

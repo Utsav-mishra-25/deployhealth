@@ -17,6 +17,24 @@ export interface Reference {
   syntax: Syntax;
 }
 
+/** The env files read in every scope, in the order handoffs and reports list them. */
+export const ENV_FILE_BASENAMES = ['.env.example', '.env', '.env.local'] as const;
+export type EnvFileBasename = (typeof ENV_FILE_BASENAMES)[number];
+
+/** How the scanner matches a variable name; the ingest schema enforces the same shape. */
+export const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * A variable the code references, in the env scope it belongs to, with the scope's env files that
+ * define it. Names only, never values. Empty `defined_in` means it is MISSING.
+ */
+export interface RequiredVariable {
+  var_name: string;
+  /** Directory that owns the env files, relative to the repo root; '' is the root. */
+  scope: string;
+  defined_in: EnvFileBasename[];
+}
+
 export const FINDING_KINDS = ['missing', 'unused', 'mismatch'] as const;
 export type FindingKind = (typeof FINDING_KINDS)[number];
 
