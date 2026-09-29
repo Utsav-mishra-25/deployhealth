@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { PUBLISHED_CLI_VERSION } from '../src/constants';
 import {
   generateToken,
   githubActionSnippet,
@@ -8,6 +11,7 @@ import {
   parseBearer,
   tokenHint,
 } from '../src/ingest';
+import { CLI_VERSION } from '../src/version';
 
 const valid = {
   sha: 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0',
@@ -95,16 +99,37 @@ describe('tokens', () => {
 });
 
 describe('githubActionSnippet', () => {
-  it('points at the app, reads the token from a repo secret and passes sha and branch', () => {
+  it('runs the pinned npm release with the token from a repo secret, and passes sha and branch', () => {
     const yaml = githubActionSnippet({ appUrl: 'https://dh.example.com/' });
-    expect(yaml).toContain('curl -fsSL https://dh.example.com/deployhealth-scan.mjs -o "$RUNNER_TEMP/deployhealth-scan.mjs"');
-    expect(yaml).toContain('--url https://dh.example.com \\');
+    expect(yaml).toContain(`npx --yes deployhealth-scan@${PUBLISHED_CLI_VERSION} \\\n            --url https://dh.example.com \\`);
     expect(yaml).toContain('DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}');
     expect(yaml).toContain('--token "$DEPLOYHEALTH_TOKEN"');
-    expect(yaml).toContain('--sha "${{ github.sha }}"');
-    expect(yaml).toContain('--branch "${{ github.ref_name }}"');
+    expect(yaml).toContain('--sha "$GITHUB_SHA"');
+    expect(yaml).toContain('--branch "$GITHUB_REF_NAME"');
     expect(yaml).toContain('branches: [main]');
     expect(yaml).not.toContain('dh.example.com//');
+    expect(yaml).not.toContain('curl');
+  });
+
+  it('is read-only and safe to paste: job-level contents: read, no expressions in the script, no forks', () => {
+    const yaml = githubActionSnippet({ appUrl: 'https://dh.example.com' });
+    expect(yaml).toContain('  env-scan:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n');
+    expect(yaml).toContain('persist-credentials: false');
+    // setup-node v5 would otherwise look for pnpm/yarn in repos whose package.json pins one, and fail.
+    expect(yaml).toContain('node-version: 22\n          package-manager-cache: false\n');
+    expect(yaml).toMatch(/^# Must not run on pull_request events from forks/m);
+    expect(yaml).not.toMatch(/^\s*pull_request/m);
+    const script = yaml.slice(yaml.indexOf('run: |'));
+    expect(script).not.toContain('${{');
+  });
+
+  it('pins the version this repo dogfoods, which is a real release', () => {
+    expect(PUBLISHED_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    const workflow = readFileSync(fileURLToPath(new URL('../../../.github/workflows/deployhealth.yml', import.meta.url)), 'utf8');
+    expect(workflow).toContain(`npx --yes deployhealth-scan@${PUBLISHED_CLI_VERSION} \\`);
+    // The source version can run ahead of the published one while a release is pending, never behind.
+    const rank = (v: string) => v.split('.').reduce((n, part) => n * 1000 + Number(part), 0);
+    expect(rank(CLI_VERSION)).toBeGreaterThanOrEqual(rank(PUBLISHED_CLI_VERSION));
   });
 
   it('uses the given branch', () => {

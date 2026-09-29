@@ -28,7 +28,7 @@ Create a project in deployhealth, add its ingest token as the repository secret
 ```yaml
 name: deployhealth
 
-# Push events only. The token is a secret, so never run this on pull_request events from forks.
+# Must not run on pull_request events from forks: the job reads a repository secret.
 on:
   push:
     branches: [main]
@@ -40,9 +40,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
       - name: Scan env vars and report to deployhealth
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
@@ -50,8 +53,8 @@ jobs:
           npx --yes deployhealth-scan@0.1.0 \
             --url https://deployhealth-production.up.railway.app \
             --token "$DEPLOYHEALTH_TOKEN" \
-            --sha "${{ github.sha }}" \
-            --branch "${{ github.ref_name }}"
+            --sha "$GITHUB_SHA" \
+            --branch "$GITHUB_REF_NAME"
 ```
 
 Pin the version (`@0.1.0`) so an update never runs in your CI unreviewed. For a self-hosted

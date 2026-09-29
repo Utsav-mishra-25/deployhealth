@@ -1,8 +1,9 @@
 import { defineConfig } from 'tsup';
 
 /**
- * One self-contained file (zod bundled in, only Node built-ins imported). The web app serves it
- * at /deployhealth-scan.mjs so the GitHub Actions snippet can download it without npm.
+ * One self-contained file (only Node built-ins imported). `build:npm` publishes it as the npm
+ * package deployhealth-scan; the web app also still serves it at /deployhealth-scan.mjs
+ * (deprecated) for workflows written before the npm package.
  */
 export default defineConfig({
   entry: { 'deployhealth-scan': 'src/bin.ts' },

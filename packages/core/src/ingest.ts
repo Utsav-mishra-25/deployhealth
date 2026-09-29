@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { CLI_BUNDLE_PATH, TOKEN_PREFIX, TOKEN_SECRET_NAME } from './constants';
+import { CLI_NPM_PACKAGE, PUBLISHED_CLI_VERSION, TOKEN_PREFIX, TOKEN_SECRET_NAME } from './constants';
 import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
 
 /** Upper bound on findings per scan; protects the ingest endpoint from runaway payloads. */
@@ -66,15 +66,22 @@ export function parseBearer(header: string | null | undefined): string | null {
   return token?.startsWith(TOKEN_PREFIX) ? token : null;
 }
 
+/** The pinned CLI invocation, e.g. `npx --yes deployhealth-scan@0.1.0`. */
+export const cliNpx = (version: string = PUBLISHED_CLI_VERSION) => `npx --yes ${CLI_NPM_PACKAGE}@${version}`;
+export const CLI_NPX = cliNpx();
+
 /**
  * Copy-pasteable GitHub Actions workflow that scans the repo on every push to `branch` and
- * reports to the deployhealth instance at `appUrl`.
+ * reports to the deployhealth instance at `appUrl`. It runs the pinned npm release with a
+ * read-only token, and passes sha and branch through the runner's env (no `${{ }}` in the script).
+ * `version` defaults to the published CLI; the npm README pins the version it ships with.
  */
-export function githubActionSnippet({ appUrl, branch = 'main' }: { appUrl: string; branch?: string }): string {
+export function githubActionSnippet({ appUrl, branch = 'main', version }: { appUrl: string; branch?: string; version?: string }): string {
   const url = appUrl.replace(/\/+$/, '');
   return `# .github/workflows/deployhealth.yml
 name: deployhealth
 
+# Must not run on pull_request events from forks: the job reads a repository secret.
 on:
   push:
     branches: [${branch}]
@@ -82,20 +89,24 @@ on:
 jobs:
   env-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
       - name: Scan env vars and report to deployhealth
         env:
           ${TOKEN_SECRET_NAME}: \${{ secrets.${TOKEN_SECRET_NAME} }}
         run: |
-          curl -fsSL ${url}${CLI_BUNDLE_PATH} -o "$RUNNER_TEMP/deployhealth-scan.mjs"
-          node "$RUNNER_TEMP/deployhealth-scan.mjs" \\
+          ${cliNpx(version)} \\
             --url ${url} \\
             --token "$${TOKEN_SECRET_NAME}" \\
-            --sha "\${{ github.sha }}" \\
-            --branch "\${{ github.ref_name }}"
+            --sha "$GITHUB_SHA" \\
+            --branch "$GITHUB_REF_NAME"
 `;
 }

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { githubActionSnippet } from '../src/ingest';
 import { CLI_VERSION } from '../src/version';
 
 const CORE = fileURLToPath(new URL('..', import.meta.url));
@@ -25,6 +26,13 @@ describe('the deployhealth-scan npm package', () => {
     // Provenance ties the package to this repository, so the URL must be exactly the repo's.
     expect(manifest.repository.url).toBe('git+https://github.com/Utsav-mishra-25/deployhealth.git');
     expect(readFileSync(`${NPM}README.md`, 'utf8')).toContain(`npx deployhealth-scan@${CLI_VERSION} `);
+  });
+
+  it("README's workflow is exactly the snippet the settings page generates", () => {
+    const readme = readFileSync(`${NPM}README.md`, 'utf8');
+    const yaml = /```yaml\n([\s\S]*?)```/.exec(readme)?.[1];
+    const snippet = githubActionSnippet({ appUrl: 'https://deployhealth-production.up.railway.app', version: CLI_VERSION });
+    expect(yaml).toBe(snippet.slice(snippet.indexOf('\n') + 1)); // minus the "# .github/workflows/…" line
   });
 
   describe('after build:npm', () => {
