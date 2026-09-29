@@ -6,7 +6,7 @@ import { isDemoLoginEnabled } from '@/lib/auth-providers';
 export const dynamic = 'force-dynamic';
 
 const ERRORS: Record<string, string> = {
-  CredentialsSignin: 'The demo user does not exist yet. Run `pnpm db:seed` and try again.',
+  CredentialsSignin: 'The dev sign-in failed. Check that the database is reachable and migrated.',
   OAuthCallbackError: 'GitHub sign-in was cancelled or failed. Please try again.',
 };
 
@@ -45,11 +45,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <form
             action={async () => {
               'use server';
-              await signIn('demo', { redirectTo: '/clients' });
+              await signIn('dev', { redirectTo: '/clients' });
             }}
           >
             <button className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">
-              Continue with the demo account
+              Continue as dev user
             </button>
           </form>
         )}

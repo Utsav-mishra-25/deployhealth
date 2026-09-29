@@ -1,4 +1,4 @@
-import { DEMO_GITHUB_ID, getUserByGithubId, upsertGithubUser } from '@deployhealth/db';
+import { ensureDevUser, upsertGithubUser } from '@deployhealth/db';
 import NextAuth, { type DefaultSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { serverEnv } from '@/env';
@@ -38,8 +38,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
     session: { strategy: 'jwt' },
     pages: { signIn: '/login' },
     providers: buildProviders(env, async () => {
-      const user = await getUserByGithubId(getDb(), DEMO_GITHUB_ID);
-      return user ? { id: user.id, name: user.name, email: user.email, image: user.avatarUrl } : null;
+      const user = await ensureDevUser(getDb());
+      return { id: user.id, name: user.name, email: user.email, image: user.avatarUrl };
     }),
     callbacks: {
       // Runs with `account`/`profile` only at sign-in; afterwards the JWT already carries userId.
@@ -56,9 +56,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
           });
           token.userId = dbUser.id;
           token.login = dbUser.login;
-        } else if (account?.provider === 'demo' && user?.id) {
+        } else if (account?.provider === 'dev' && user?.id) {
           token.userId = user.id;
-          token.login = 'demo';
+          token.login = 'dev';
         }
         return token;
       },
