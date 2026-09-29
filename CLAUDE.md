@@ -242,11 +242,22 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - The package is `packages/core/npm`, outside the pnpm workspace (MIT, no dependencies, one bin).
   `pnpm --filter @deployhealth/core build:npm` bundles the CLI and fills `npm/dist` and
   `npm/LICENSE`; `test/npm-package.test.ts` checks the manifest, the packed file list and the bin.
-- To release: bump the version in both `npm/package.json` and `src/version.ts`, commit, then either
-  publish from a machine (`npm publish` in `packages/core/npm`, no provenance) or run the manual
-  **Publish CLI** workflow (`.github/workflows/publish-cli.yml`), which publishes with provenance
-  once npm trusted publishing is configured for that workflow.
-- Published versions are immutable. Snippets and docs pin an exact version (`npx deployhealth-scan@x.y.z`).
+- Two versions: `CLI_VERSION` (`src/version.ts`, = `npm/package.json`, what the next publish ships)
+  and `PUBLISHED_CLI_VERSION` (`src/constants.ts`, what the Action snippet, the settings page and
+  this repo's `.github/workflows/deployhealth.yml` pin). Tests keep each group in sync, and the
+  first never behind the second.
+- To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
+  must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
+  `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow
+  (`.github/workflows/publish-cli.yml`), which adds provenance once npm trusted publishing is set up.
+  (2) Only once it's on npm, bump `PUBLISHED_CLI_VERSION` and the dogfood workflow.
+- Published versions are immutable. Snippets and docs pin an exact version (`npx --yes deployhealth-scan@x.y.z`).
+- The generated workflow: push events only (never `pull_request` from forks: it reads a secret),
+  job-level `permissions: contents: read`, `persist-credentials: false`, and
+  `package-manager-cache: false` on setup-node (v5 otherwise looks for pnpm/yarn and fails). Sha and
+  branch come from `$GITHUB_SHA` / `$GITHUB_REF_NAME`, never `${{ }}` inside the script.
+- `/deployhealth-scan.mjs` is still served (deprecated, `Deprecation` + `Link` headers from
+  `next.config.ts`) for older workflows. Removal is a later phase.
 
 ## Worker jobs
 
