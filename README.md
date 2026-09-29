@@ -3,37 +3,85 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
+**[Try the live demo →](#try-the-demo)** · no sign-up, read-only sample data · **[Free during beta](#pricing)**
+
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
-projects by client and puts two signals on each one:
+projects by client and watches both halves:
 
 - **Config health.** A GitHub Action scans every push for env vars that are referenced but never
   defined, defined but never used, or out of sync between `.env` and `.env.example`.
 - **Uptime.** A worker checks your health endpoints every 1, 5 or 15 minutes.
 
-When an endpoint goes down shortly after a deploy, the alert names the deploy and the variables
-it newly left undefined:
+When an endpoint goes down shortly after a deploy, the alert names the deploy and the variables it
+newly left undefined:
 
-> api.acme.com started failing 4m after deploy b52952e, which introduced 2 missing env vars:
+> Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars:
 > REDIS_URL, STRIPE_KEY
 
-## Screenshots
+And when a contract ends, or a month does, it writes the paperwork: a **handoff document** for the
+client and a **monthly report** you can share with a link.
 
-**Phase 1: config health**
+![Every client with its projects: env findings, last deploy, and uptime ("Acme API down for 22m")](docs/screenshots/clients.png)
 
-> _Screenshot placeholder: project page with the latest scan summary, findings grouped by kind
-> (file:line) and the deploy history._
+## What you get
 
-> _Screenshot placeholder: creating a project, with the one-time token and the GitHub Action
-> snippet._
+### Config health on every push
 
-**Phase 2: clients, uptime and alerts**
+Each project gets a GitHub Action. On every push it scans the repo and reports what's missing,
+unused or out of sync, per env scope (so `apps/web` is checked against `apps/web/.env.example`),
+with `file:line` for every finding and a history per deploy.
 
-> _Screenshot placeholder: /clients, every client with its projects, findings badges, last deploy
-> and uptime badge ("Down for 22m")._
+![Findings grouped by kind with file:line, and the deploy history with each deploy's counts](docs/screenshots/findings-and-deploys.png)
 
-> _Screenshot placeholder: project page with the open-alert banner, endpoint uptime, p50/p95
-> latency chart and recent checks._
+Setup is one token and one workflow file:
+
+![Creating a project: the one-time ingest token and the GitHub Action to commit](docs/screenshots/create-project.png)
+
+### Uptime, alerts, and the deploy that caused them
+
+Endpoints get a status, "Down for 22m", 24-hour and 7-day uptime, a p50/p95 latency chart and
+the last 20 checks. Alerts open after two failed checks in a row, link the deploy that preceded
+them, and can post to Slack or Discord.
+
+![A project with an open alert linked to its deploy, endpoint uptime, latency and recent checks](docs/screenshots/project.png)
+
+### Handoff export
+
+When a contract ends, **Export handoff** produces the document you give the client: every
+environment variable the code needs (names only, never values), grouped by the env file that must
+define it and flagged when missing; the monitored endpoints; the GitHub Action; open findings;
+30 days of uptime and alerts; and your "How to deploy" notes. It's a printable page (print it or
+**save it as PDF** from the browser's print dialog) and a Markdown download, built from the same
+data.
+
+![A handoff: required variables by scope with missing ones flagged, endpoints, the Action, findings and deploy notes](docs/screenshots/handoff.png)
+
+### Monthly client reports
+
+Every client gets a monthly report covering all their projects: uptime per endpoint, each incident
+(opened, resolved, how long, what happened), every deploy with the config issues it introduced or
+fixed, and what's open now. A one-line summary at the top is computed from the numbers:
+"3 projects, 99.94% uptime, 1 incident (21m), 14 deploys, 2 config issues fixed". **Share report**
+creates a signed link your client can open without an account, valid for 90 days.
+
+![A monthly report: the summary line, key numbers, uptime, the incident, and deploys with what each introduced and fixed](docs/screenshots/report.png)
+
+## Try the demo
+
+The demo is a real deployhealth instance showing sample clients (Acme Corp, Northwind Bakery), read
+only, no sign-up: `/demo` on the hosted instance.
+<!-- Replace this sentence with the hosted link once it's deployed: https://<your-domain>/demo -->
+
+Its alert is real: "Acme API" points at an endpoint that always answers 503, and the worker checks
+it every minute. The data resets to its starting state every night.
+
+To run it yourself, follow [Local setup](#local-setup) and open http://localhost:3000/demo.
+
+## Pricing
+
+**Free during beta.** Every feature, with no limits on clients, projects or endpoints. Pricing for
+the hosted version will be announced before the beta ends.
 
 ## Phases
 
@@ -41,6 +89,7 @@ it newly left undefined:
 | --- | --- | --- |
 | 1. Config health | Done | GitHub Action + CLI, ingest API, findings per deploy, project pages, GitHub login |
 | 2. Clients, uptime and alerts | Done | Clients, uptime checks from a worker, alerts linked to deploys, Slack/Discord webhooks |
+| 3. Demo, handoff and reports | Done | Public read-only demo, endpoint names, handoff export, monthly client reports with share links |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -56,31 +105,33 @@ cp apps/worker/.env.example apps/worker/.env
 cp packages/db/.env.example packages/db/.env
 
 pnpm db:migrate
-pnpm db:seed                                      # demo data (below); prints an ingest token
+pnpm db:seed                                      # the demo data (below); prints an ingest token
 pnpm dev                                          # web on http://localhost:3000, plus the worker
 ```
 
-Open http://localhost:3000 and choose **Continue with the demo account**. This option exists only
-when `AUTH_DEMO_LOGIN=1` and the app is not running in production. To sign in with GitHub instead,
-create a GitHub OAuth app with callback URL `http://localhost:3000/api/auth/callback/github` and
-set `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` in `apps/web/.env.local`.
+- **http://localhost:3000/demo** shows the seeded demo, read-only (`DEMO_PUBLIC=1` in the example env).
+- **http://localhost:3000** → **Continue as dev user** signs you in as a local account where you
+  can create clients and projects. It exists only when `AUTH_DEMO_LOGIN=1` and the app isn't
+  running in production. To sign in with GitHub instead, create a GitHub OAuth app with callback
+  URL `http://localhost:3000/api/auth/callback/github` and set `AUTH_GITHUB_ID` and
+  `AUTH_GITHUB_SECRET` in `apps/web/.env.local`.
 
-The seed creates two clients (Acme Corp, Northwind Bakery) and three projects, one without a
-client. Four endpoints come with a week of checks. One is scripted: acme-storefront's last deploy
-introduces two undefined variables, its API starts failing four minutes later, and an open alert
-links the two. Healthy seeded endpoints point at `example.com`/`.org`/`.net` so a running worker
-keeps them green; the failing one uses `api.acme.example`, which never resolves.
+The seed gives the demo user two clients (Acme Corp, Northwind Bakery) and three projects, one
+without a client, with named endpoints and a week of checks. One incident is scripted:
+acme-storefront's last deploy introduces two undefined variables, "Acme API" starts failing four
+minutes later, and an open alert links the two. Acme API points at `<DEMO_BASE_URL>/api/demo/broken`
+(always 503); the healthy endpoints point at `example.com` and `example.org`.
 
 Tests: `pnpm test` (unit; needs the Postgres from docker compose) and `pnpm e2e` (Playwright
-smoke test). See [CLAUDE.md](CLAUDE.md) for details.
+smoke tests). See [CLAUDE.md](CLAUDE.md) for details.
 
 ## Deploy to Railway
 
 deployhealth runs as three Railway services: **Postgres**, **web** and **worker**. Build, deploy
 and health-check settings are in `apps/web/railway.json` and `apps/worker/railway.json`. Both
 services build from the repo root (it's a pnpm workspace), and web applies database migrations in
-its pre-deploy step. The dashboard steps, every variable and troubleshooting are in
-[docs/deploy-railway.md](docs/deploy-railway.md).
+its pre-deploy step. With `DEMO_PUBLIC=1`, the worker creates the demo data itself. The dashboard
+steps, every variable and troubleshooting are in [docs/deploy-railway.md](docs/deploy-railway.md).
 
 ## How it works
 
@@ -94,7 +145,7 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    only its SHA-256 is stored) and a workflow snippet. Save the token as the repo secret
    `DEPLOYHEALTH_TOKEN` and commit the snippet as `.github/workflows/deployhealth.yml`.
 2. **On every push**, the Action downloads the CLI from your deployhealth instance
-   (`/deployhealth-scan.mjs`, one 11 KB file with no dependencies) and runs it on the checkout with
+   (`/deployhealth-scan.mjs`, one 12 KB file with no dependencies) and runs it on the checkout with
    the commit sha and branch.
 3. **The scanner** walks the repo, respecting `.gitignore` and skipping `node_modules`, `dist`,
    `.git`, `.next` and virtualenvs. It finds references in JS/TS (`process.env.X`,
@@ -107,12 +158,14 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    - Findings are **MISSING** (referenced, not defined in the scope), **UNUSED** (defined, never
      referenced) and **MISMATCH** (in `.env` but not `.env.example`, or the reverse), each with
      `file:line`.
-4. **The CLI posts** `{ sha, branch, timestamp, findings[] }` with `Authorization: Bearer <token>`.
+4. **The CLI posts** `{ sha, branch, timestamp, findings[], variables[] }` with
+   `Authorization: Bearer <token>`. `variables` lists every referenced name per scope with the env
+   files that define it. **Env values never leave CI**: the contract only admits names.
 5. **The server** checks the token (by hash) before reading the body, validates the payload with
    the schema the CLI was built against, then in one transaction:
    - creates the **deploy** for that sha, or reuses it when CI re-runs;
    - stores a **scan** with counts it computes itself;
-   - stores every **finding**.
+   - stores every **finding** and **variable**.
 
 Try the scanner locally: `node deployhealth-scan.mjs --dry-run` (add `--json`, `--ignore NAME_*`,
 `--exclude path/`).
@@ -127,7 +180,10 @@ Try the scanner locally: `node deployhealth-scan.mjs --dry-run` (add `--json`, `
   ok when the final status equals the expected status (default 200). Timeouts, DNS failures, TLS
   errors, refused connections and wrong statuses are recorded as failures with a short reason.
   Response bodies are never read.
-- **`prune-checks`** runs nightly (03:17 UTC) and deletes checks older than 30 days.
+- **`prune-checks`** runs nightly (03:17 UTC): it rolls every complete UTC day up into daily
+  totals, then deletes raw checks from whole days more than 30 days back. Reports read the daily
+  totals, so months stay accurate after the raw checks are gone.
+- **`reseed-demo`** (only with `DEMO_PUBLIC=1`) restores the public demo nightly and on start.
 
 ### Alerts and the correlation rule
 
@@ -138,21 +194,39 @@ After every check, the worker applies one rule in the same transaction that reco
   alert per endpoint (enforced by a unique index).
 - **Resolve** it on the endpoint's next ok check.
 
-While an endpoint is failing, its card and its project's row on /clients say for how long
-("Down for 21m"), counted from the first failed check of the current run.
+Endpoints are named in alerts by their **name** ("Acme API") when you give one, otherwise by their
+host. While an endpoint is failing, its card and its project's row on /clients say for how long
+("Acme API down for 21m"), counted from the first failed check of the current run.
 
 When an alert opens, deployhealth finds the project's **most recent deploy in the 30 minutes
 before the first failed check**. It then compares that deploy's latest scan with the previous
 deploy's latest scan, and the message lists only MISSING variables that are **new** in this
 deploy:
 
-- `api.acme.com started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY`
-- `api.acme.com started failing 4m after deploy b52952e, which had no new config findings`
-- `api.acme.com started failing; no deploy in the 30 minutes before the first failure`
+- `Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY`
+- `Acme API started failing 4m after deploy b52952e, which had no new config findings`
+- `Acme API started failing; no deploy in the 30 minutes before the first failure`
 
 If the project has an **alert webhook URL** (Slack incoming webhook, or Discord's with `/slack`
 appended), deployhealth POSTs `{"text": "…"}` when the alert opens and again when it resolves. A
 failed delivery is logged and retried at most once.
+
+### Handoff export
+
+`/projects/:id/handoff` (printable) and `/projects/:id/handoff.md` (download) render the same data:
+the latest scan's variables grouped by scope, endpoints with 30-day uptime, the Action snippet, open
+findings, 30 days of alerts and the project's deploy notes. There's no PDF library: the page has
+print styles and no external assets, so the browser's **Save as PDF** is the PDF export. Deploy
+notes are Markdown you write in project settings, rendered as untrusted content (no raw HTML, no
+images). All times are UTC.
+
+### Monthly reports and share links
+
+`/clients/:slug/report?month=YYYY-MM` covers one UTC month. **Share report** signs a link with
+HMAC-SHA256 over the client, the month and an expiry 90 days out (key: `REPORT_SHARE_SECRET`, or
+one derived from `AUTH_SECRET`). The link opens that one report without an account; the public
+route is rate-limited per IP. Links are stateless: nothing is stored, and the only way to revoke
+them is to rotate the key, which revokes all of them.
 
 ### SSRF protection
 
@@ -179,8 +253,14 @@ Endpoint and webhook URLs are user input, so they're checked twice:
 - **One vantage point.** Checks come from wherever the worker runs (one Railway region). A network
   problem between that region and your endpoint looks like downtime; the 2-failure threshold
   softens this but doesn't remove it.
-- **Minute resolution.** Intervals are 1, 5 or 15 minutes, and a check can run up to a minute late.
-  Uptime is shown for 24 hours and 7 days, and history is kept for 30 days.
+- **Minute resolution, UTC days.** Intervals are 1, 5 or 15 minutes, and a check can run up to a
+  minute late. Raw checks are kept for 30 days; daily totals are kept for reports. Reports and
+  handoffs use UTC months and days.
+- **Share links can't be revoked one by one.** They're stateless; rotating `REPORT_SHARE_SECRET`
+  revokes every link at once.
+- **The share-link rate limit is per web instance**, in memory, and resets on restart.
+- **Handoffs list the variables of the latest scan.** Scans from CLI versions before variable
+  listing only show findings until the Action runs again.
 - **Regex scanning.** References inside comments and strings count; aliased or destructured access
   (`const { X } = process.env`) is missed; only `.env`, `.env.example` and `.env.local` are read
   automatically.
@@ -190,5 +270,5 @@ Endpoint and webhook URLs are user input, so they're checked twice:
 ## Repository layout
 
 `apps/web` (Next.js), `apps/worker` (pg-boss), `packages/core` (scanner, CLI, SSRF guard, alert
-rules), `packages/db` (Drizzle schema, migrations, queries, seed). See [CLAUDE.md](CLAUDE.md) for
-the full map and conventions.
+rules, handoff and report rendering), `packages/db` (Drizzle schema, migrations, queries, seed).
+See [CLAUDE.md](CLAUDE.md) for the full map and conventions.
