@@ -9,3 +9,4 @@ export * from './ssrf';
 export * from './alerts';
 export * from './format';
 export * from './handoff';
+export * from './report';
