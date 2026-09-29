@@ -22,6 +22,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # Nothing is installed, so no cache. setup-node v5 enables one by default when package.json
+          # has a packageManager field, then fails because pnpm isn't on the runner.
+          package-manager-cache: false
       - name: Scan env vars and report to deployhealth
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
