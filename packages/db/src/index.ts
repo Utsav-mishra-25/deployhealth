@@ -4,4 +4,5 @@ export * from './queries';
 export * from './clients';
 export * from './monitoring';
 export * from './handoff';
+export * from './reports';
 export * from './demo';
