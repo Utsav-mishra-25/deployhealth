@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import type { IngestPayload, IngestResponse } from './ingest';
 import { scanProject, type ScanResult } from './scan';
 import { SHA_PATTERN, type FindingKind } from './types';
+import { CLI_VERSION } from './version';
 
 export interface CliIo {
   cwd: string;
@@ -32,6 +33,7 @@ Options:
   --exclude <pattern>  skip paths matching a gitignore-style pattern (repeatable)
   --dry-run            print the findings instead of sending them
   --json               with --dry-run, print JSON
+  -v, --version        print the version
   -h, --help           show this help
 `;
 
@@ -45,6 +47,7 @@ const OPTIONS = {
   exclude: { type: 'string', multiple: true },
   'dry-run': { type: 'boolean' },
   json: { type: 'boolean' },
+  version: { type: 'boolean', short: 'v' },
   help: { type: 'boolean', short: 'h' },
 } as const;
 
@@ -59,6 +62,10 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   }
   if (values.help) {
     io.stdout(HELP);
+    return EXIT.ok;
+  }
+  if (values.version) {
+    io.stdout(`${CLI_VERSION}\n`);
     return EXIT.ok;
   }
 

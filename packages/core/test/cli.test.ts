@@ -22,6 +22,17 @@ function makeIo(overrides: Partial<CliIo> = {}) {
   return { io, out };
 }
 
+describe('--version and --help', () => {
+  it('print to stdout and exit 0 without scanning', async () => {
+    const { io, out } = makeIo({ cwd: '/nonexistent' });
+    expect(await run(['--version'], io)).toBe(EXIT.ok);
+    expect(out.stdout).toMatch(/^\d+\.\d+\.\d+\n$/);
+    expect(await run(['-h'], io)).toBe(EXIT.ok);
+    expect(out.stdout).toContain('Usage: deployhealth-scan [options]');
+    expect(out.stderr).toBe('');
+  });
+});
+
 describe('--dry-run', () => {
   it('prints grouped findings with file:line and sends nothing', async () => {
     const { io, out } = makeIo();
