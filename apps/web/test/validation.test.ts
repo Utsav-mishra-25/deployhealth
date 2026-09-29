@@ -23,6 +23,7 @@ describe('endpointFormSchema', () => {
   it('parses a submitted form, including the checkbox and numeric fields', () => {
     const values = form({ url: ' https://api.acme.com/health ', method: 'HEAD', intervalSeconds: '900', expectedStatus: '204', enabled: 'on' });
     expect(endpointFormSchema.parse(values)).toEqual({
+      name: null,
       url: 'https://api.acme.com/health',
       method: 'HEAD',
       intervalSeconds: 900,
@@ -32,7 +33,15 @@ describe('endpointFormSchema', () => {
     expect(endpointFormSchema.parse(form({ url: 'https://x.dev', method: 'GET', intervalSeconds: '60', expectedStatus: '200' })).enabled).toBe(false);
   });
 
+  it('trims the name and treats a blank one as unset', () => {
+    const base = { url: 'https://x.dev', method: 'GET', intervalSeconds: '300', expectedStatus: '200' };
+    expect(endpointFormSchema.parse(form({ ...base, name: '  Acme API ' })).name).toBe('Acme API');
+    expect(endpointFormSchema.parse(form({ ...base, name: '   ' })).name).toBeNull();
+    expect(endpointFormSchema.parse(form({ ...base, name: 'x'.repeat(60) })).name).toHaveLength(60);
+  });
+
   it.each([
+    ['name over 60 characters', { name: 'x'.repeat(61) }],
     ['interval not in 60/300/900', { intervalSeconds: '120' }],
     ['POST method', { method: 'POST' }],
     ['status out of range', { expectedStatus: '700' }],
