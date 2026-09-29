@@ -1,9 +1,13 @@
 # Deploy to Railway
 
 deployhealth runs on Railway as three services in one project: **Postgres**, **web** (Next.js)
-and **worker** (pg-boss). The build and deploy settings live in `apps/web/railway.json` and
-`apps/worker/railway.json`, so the dashboard only needs the source, the config file path, the
-variables and a domain.
+and **worker** (pg-boss). Every build and deploy setting is entered by hand in each service's
+dashboard (steps 2.4 and 3.4), along with the source, the variables and a domain.
+
+**About `railway.json`.** Railway has deprecated config-as-code, and new services can't opt in to
+it. `apps/web/railway.json` and `apps/worker/railway.json` are kept in the repo as documentation
+only: Railway doesn't read them; they record the values the tables below tell you to enter.
+If you change one, change the dashboard (and this guide) to match.
 
 Time needed: about 15 minutes, plus a GitHub OAuth app (step 5).
 
@@ -19,7 +23,8 @@ This is a pnpm workspace: `apps/web` and `apps/worker` import `packages/core` an
 and the lockfile is at the repo root. If a service's **Root Directory** is set to `apps/web` or
 `apps/worker`, Railway builds from that folder only, `packages/` and `pnpm-lock.yaml` are missing,
 and `pnpm install` fails on the `workspace:*` dependencies. So both services build from the repo
-root, and each one points at its own config file instead.
+root, and their build and start commands pick the app with `pnpm --filter` (the `...` suffix in
+the build command builds the workspace packages it depends on first).
 
 ## 1. Create the project and the database
 
@@ -34,18 +39,30 @@ root, and each one points at its own config file instead.
 3. **Settings → Source**
    - **Root Directory:** leave empty.
    - **Branch:** `main`.
-4. **Settings → Config-as-code → Railway Config File:** `/apps/web/railway.json`.
-   The build, deploy and health-check settings then show as managed by that file:
+4. **Settings → Build** and **Settings → Deploy**: set each field by hand. The values are the
+   ones in `apps/web/railway.json`.
 
-   | Setting | Value (from the file) |
-   | --- | --- |
-   | Builder | Railpack |
-   | Build command | `pnpm --filter @deployhealth/web... build` |
-   | Pre-deploy command | `node packages/db/dist/migrate.js` (applies database migrations) |
-   | Start command | `pnpm --filter @deployhealth/web start` |
-   | Health check path | `/api/health` |
-   | Restart policy | On failure |
-   | Watch paths | `/apps/web/**`, `/packages/**` and the root workspace files |
+   | Section | Field | Value |
+   | --- | --- | --- |
+   | Build | Builder | Railpack (`RAILPACK` in the file) |
+   | Build | Build command | `pnpm --filter @deployhealth/web... build` |
+   | Build | Watch paths | the 7 patterns below, one per line |
+   | Deploy | Pre-deploy command | `node packages/db/dist/migrate.js` (applies database migrations) |
+   | Deploy | Start command | `pnpm --filter @deployhealth/web start` |
+   | Deploy | Healthcheck path | `/api/health` |
+   | Deploy | Restart policy | On Failure (`ON_FAILURE`), default max retries |
+
+   Watch paths (a push that touches none of them doesn't redeploy web):
+
+   ```
+   /apps/web/**
+   /packages/**
+   /package.json
+   /pnpm-lock.yaml
+   /pnpm-workspace.yaml
+   /tsconfig.base.json
+   /.nvmrc
+   ```
 
 5. **Variables** (**Raw Editor** is fastest):
 
@@ -75,9 +92,30 @@ root, and each one points at its own config file instead.
 1. **+ Create** → **GitHub Repo** → pick `deployhealth` again.
 2. Rename the service to **`worker`**.
 3. **Settings → Source → Root Directory:** leave empty. **Branch:** `main`.
-4. **Settings → Config-as-code → Railway Config File:** `/apps/worker/railway.json`
-   (build `pnpm --filter @deployhealth/worker... build`, start
-   `pnpm --filter @deployhealth/worker start`, restart always).
+4. **Settings → Build** and **Settings → Deploy**: set each field by hand. The values are the
+   ones in `apps/worker/railway.json`.
+
+   | Section | Field | Value |
+   | --- | --- | --- |
+   | Build | Builder | Railpack (`RAILPACK` in the file) |
+   | Build | Build command | `pnpm --filter @deployhealth/worker... build` |
+   | Build | Watch paths | the 7 patterns below, one per line |
+   | Deploy | Pre-deploy command | leave empty (web runs the migrations) |
+   | Deploy | Start command | `pnpm --filter @deployhealth/worker start` |
+   | Deploy | Healthcheck path | leave empty (the worker has no HTTP server) |
+   | Deploy | Restart policy | Always (`ALWAYS`) |
+
+   Watch paths:
+
+   ```
+   /apps/worker/**
+   /packages/**
+   /package.json
+   /pnpm-lock.yaml
+   /pnpm-workspace.yaml
+   /tsconfig.base.json
+   /.nvmrc
+   ```
 5. **Variables:**
 
    | Name | Value | Where it comes from |
@@ -132,7 +170,8 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 | Symptom | Cause and fix |
 | --- | --- |
 | Build fails resolving `@deployhealth/core` or `workspace:*` | A Root Directory is set. Clear it (step 2.3 / 3.3). |
-| Build settings aren't the ones above | The config file path is wrong or missing. It must start with `/apps/`. |
+| The build or start runs the wrong command (e.g. the root `pnpm build`) | A field from step 2.4 / 3.4 is empty or mistyped, so Railpack used its default. Compare it with the table. |
+| Every push redeploys both services | The watch paths are empty. Add the patterns from step 2.4 / 3.4. |
 | Every page 500s; the log mentions `AUTH_GITHUB_*` | Step 5 isn't done, or a value is empty. |
 | Every page 500s; the log mentions `AUTH_SECRET` | It is shorter than 32 characters. Regenerate it with `openssl rand -base64 32`. |
 | GitHub says the redirect URI is not associated | The callback URL doesn't exactly match `https://<your-domain>/api/auth/callback/github`. |

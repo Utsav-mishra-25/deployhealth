@@ -26,14 +26,14 @@ apps/
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, print/share buttons, report toolbar
     e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link)
-    railway.json      Railway service config (build, pre-deploy migration, healthcheck)
+    railway.json      documentation only: the Railway build/deploy fields set by hand in the dashboard
   worker/             plain Node process running pg-boss
     src/index.ts      queues + schedules: check-endpoints, prune-checks, reseed-demo
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed)
     src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies; guardedRequest on node:http(s)
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
     src/env.ts        the ONLY place the worker reads process.env
-    railway.json
+    railway.json      documentation only, like web's
 packages/
   core/               scanner + shared contract, no framework deps
     src/scan.ts       scanProject(): walks the repo, env scopes, findings rows

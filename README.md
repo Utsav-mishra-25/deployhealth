@@ -128,10 +128,12 @@ smoke tests). See [CLAUDE.md](CLAUDE.md) for details.
 ## Deploy to Railway
 
 deployhealth runs as three Railway services: **Postgres**, **web** and **worker**. Build, deploy
-and health-check settings are in `apps/web/railway.json` and `apps/worker/railway.json`. Both
-services build from the repo root (it's a pnpm workspace), and web applies database migrations in
-its pre-deploy step. With `DEMO_PUBLIC=1`, the worker creates the demo data itself. The dashboard
-steps, every variable and troubleshooting are in [docs/deploy-railway.md](docs/deploy-railway.md).
+and health-check settings are entered by hand in the Railway dashboard; `apps/web/railway.json`
+and `apps/worker/railway.json` record the values as documentation only (Railway has deprecated
+config-as-code). Both services build from the repo root (it's a pnpm workspace), and web applies
+database migrations in its pre-deploy step. With `DEMO_PUBLIC=1`, the worker creates the demo data
+itself. The dashboard steps, every field and variable, and troubleshooting are in
+[docs/deploy-railway.md](docs/deploy-railway.md).
 
 ## How it works
 
