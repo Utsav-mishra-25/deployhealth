@@ -5,6 +5,7 @@ export { languageForFile, scanSource, SCANNED_EXTENSIONS, type Language } from '
 export { analyzeScope, compareFindings, newMissingVars, summarize } from './findings';
 export { ENV_FILE_NAMES, scanProject, type ScanOptions, type ScanResult } from './scan';
 export * from './ingest';
+export * from './limits';
 export * from './ssrf';
 export * from './alerts';
 export * from './format';
