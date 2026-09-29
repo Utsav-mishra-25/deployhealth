@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./seed": "./src/seed.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "node --env-file-if-exists=.env --import tsx src/migrate.ts",
-    "seed": "node --env-file-if-exists=.env --import tsx src/seed.ts",
+    "seed": "node --env-file-if-exists=.env --import tsx src/seed-cli.ts",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
 import { generateToken, hashToken, tokenHint, type FindingRow } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { createClient } from './clients';
-import { createDb, type Db } from './client';
-import { DEMO_GITHUB_ID, DEMO_LOGIN } from './demo';
+import type { Db } from './client';
+import { DEMO_GITHUB_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
 import { recordCheck, type CheckOutcome } from './monitoring';
 import { createProject, recordScan, upsertGithubUser } from './queries';
 import { checks, endpoints, users } from './schema';
@@ -17,8 +16,21 @@ export const HISTORY_DAYS = 7;
 export const SCENARIO = {
   deployMinutesAgo: 26,
   failureAfterDeployMinutes: 4,
-  endpointUrl: 'https://api.acme.example/health',
+  endpointName: 'Acme API',
 } as const;
+
+/** Served by the web app when DEMO_PUBLIC=1: always 503, so the demo alert is real and stays open. */
+export const DEMO_BROKEN_PATH = '/api/demo/broken';
+
+/** Where the local seed points the failing endpoint when no base URL is given. */
+export const DEFAULT_DEMO_BASE_URL = 'http://localhost:3000';
+
+/** The failing demo endpoint for a deployment at `baseUrl` (its public URL, e.g. the Railway domain). */
+export function demoBrokenUrl(baseUrl: string): string {
+  const base = new URL(baseUrl);
+  if (base.protocol !== 'http:' && base.protocol !== 'https:') throw new Error(`DEMO_BASE_URL must be http(s): ${baseUrl}`);
+  return new URL(DEMO_BROKEN_PATH, base).href;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Findings
@@ -188,6 +200,11 @@ async function finishEndpoint(db: Db, endpointId: string, outcomes: CheckOutcome
 // Seed
 // ---------------------------------------------------------------------------------------------
 
+export interface SeedOptions {
+  /** Public URL of the web app; the failing endpoint is `<baseUrl>/api/demo/broken`. */
+  baseUrl?: string;
+}
+
 export interface SeedResult {
   userId: string;
   /** acme-storefront, the project with the scripted incident. */
@@ -199,12 +216,20 @@ export interface SeedResult {
 /**
  * Replace the demo user and everything it owns (clients, projects, endpoints, checks, alerts)
  * with two clients, three projects (one unassigned), endpoints with 7 days of checks, one past
- * incident and one open alert linked to the deploy that caused it. Safe to run repeatedly.
+ * incident and one open alert linked to the deploy that caused it. Safe to run repeatedly, and
+ * atomic: it runs in one transaction, so a visitor to /demo never sees a half-built demo.
  *
- * Healthy endpoints point at example.com/.org/.net, which really answer 200, so a running worker
- * keeps them up; the failing one uses api.acme.example, which never resolves, so it stays down.
+ * Healthy endpoints point at example.com/.org, which really answer 200, so a running worker keeps
+ * them up. "Acme API" points at the web app's /api/demo/broken, which always answers 503, so the
+ * scripted alert stays open. (Locally the worker's SSRF guard blocks localhost; the failures are
+ * replayed here either way, so the alert exists without a worker.)
  */
-export async function seed(db: Db, now = new Date()): Promise<SeedResult> {
+export async function seed(db: Db, now = new Date(), options: SeedOptions = {}): Promise<SeedResult> {
+  const brokenUrl = demoBrokenUrl(options.baseUrl ?? DEFAULT_DEMO_BASE_URL);
+  return db.transaction((tx) => seedDemo(tx, now, brokenUrl));
+}
+
+async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResult> {
   await db.delete(users).where(eq(users.githubId, DEMO_GITHUB_ID));
   const user = await upsertGithubUser(db, { githubId: DEMO_GITHUB_ID, login: DEMO_LOGIN, name: 'Demo User', email: 'demo@example.com' });
 
@@ -219,14 +244,22 @@ export async function seed(db: Db, now = new Date()): Promise<SeedResult> {
     notes: 'Marketing site and order API. Traffic peaks on weekend mornings.',
   });
 
-  const newProject = async (name: string, repoFullName: string, clientId: string | null) => {
+  const newProject = async (id: string, name: string, repoFullName: string, clientId: string | null) => {
     const token = generateToken();
-    const project = await createProject(db, { ownerId: user.id, name, repoFullName, clientId, apiTokenHash: hashToken(token), apiTokenHint: tokenHint(token) });
+    const project = await createProject(db, {
+      id,
+      ownerId: user.id,
+      name,
+      repoFullName,
+      clientId,
+      apiTokenHash: hashToken(token),
+      apiTokenHint: tokenHint(token),
+    });
     return { project, token };
   };
-  const { project: storefront, token } = await newProject(DEMO_PROJECT.name, DEMO_PROJECT.repoFullName, acme.id);
-  const { project: northwindSite } = await newProject('northwind-site', 'northwind/site', northwind.id);
-  const { project: portfolio } = await newProject('portfolio', 'demo/portfolio', null);
+  const { project: storefront, token } = await newProject(DEMO_PROJECT_IDS.storefront, DEMO_PROJECT.name, DEMO_PROJECT.repoFullName, acme.id);
+  const { project: northwindSite } = await newProject(DEMO_PROJECT_IDS.northwind, 'northwind-site', 'northwind/site', northwind.id);
+  const { project: portfolio } = await newProject(DEMO_PROJECT_IDS.portfolio, 'portfolio', 'demo/portfolio', null);
 
   for (const d of demoDeploys(now)) await recordScan(db, { projectId: storefront.id, ...d });
   for (const d of northwindDeploys(now)) await recordScan(db, { projectId: northwindSite.id, ...d });
@@ -235,9 +268,10 @@ export async function seed(db: Db, now = new Date()): Promise<SeedResult> {
   const [api, homepage, bakery, folio] = await db
     .insert(endpoints)
     .values([
-      { projectId: storefront.id, url: SCENARIO.endpointUrl, method: 'GET', intervalSeconds: 60 },
-      { projectId: storefront.id, url: 'https://example.com/', method: 'HEAD', intervalSeconds: 300 },
-      { projectId: northwindSite.id, url: 'https://example.org/', method: 'GET', intervalSeconds: 300 },
+      { projectId: storefront.id, name: SCENARIO.endpointName, url: brokenUrl, method: 'GET', intervalSeconds: 60 },
+      { projectId: storefront.id, name: 'Acme storefront', url: 'https://example.com/', method: 'HEAD', intervalSeconds: 300 },
+      { projectId: northwindSite.id, name: 'Northwind site', url: 'https://example.org/', method: 'GET', intervalSeconds: 300 },
+      // Unnamed on purpose: shows the fallback to the host ("example.net").
       { projectId: portfolio.id, url: 'https://example.net/', method: 'GET', intervalSeconds: 900 },
     ])
     .returning();
@@ -276,21 +310,4 @@ export async function seed(db: Db, now = new Date()): Promise<SeedResult> {
   await finishEndpoint(db, folio!.id, folioChecks, 900);
 
   return { userId: user.id, projectId: storefront.id, token };
-}
-
-// `pnpm db:seed`
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    console.error('DATABASE_URL is not set');
-    process.exit(1);
-  }
-  const handle = createDb(url, { max: 1 });
-  try {
-    const result = await seed(handle.db);
-    console.log(`Seeded user "${DEMO_LOGIN}": 2 clients, 3 projects, 4 endpoints with ${HISTORY_DAYS} days of checks, 1 open alert.`);
-    console.log(`Ingest token for ${DEMO_PROJECT.name} (shown once): ${result.token}`);
-  } finally {
-    await handle.close();
-  }
 }
