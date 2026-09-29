@@ -47,7 +47,7 @@ export function EndpointStatusBadge({ status }: { status: EndpointStatus }) {
  * "Down for 21m" (or "Failing for 1m" before an alert opens), shown next to a badge while the
  * latest check is failing. `since` is the first failed check of the current run.
  */
-export function FailingFor({ state, since }: { state: 'down' | 'failing'; since: Date }) {
+export function FailingFor({ state, since, subject }: { state: 'down' | 'failing'; since: Date; subject?: string }) {
   return (
     <time
       dateTime={since.toISOString()}
@@ -55,7 +55,7 @@ export function FailingFor({ state, since }: { state: 'down' | 'failing'; since:
       data-testid="failing-for"
       className={`text-xs font-medium ${state === 'down' ? 'text-red-700' : 'text-amber-800'}`}
     >
-      {failingFor(state, since, new Date())}
+      {failingFor(state, since, new Date(), subject)}
     </time>
   );
 }

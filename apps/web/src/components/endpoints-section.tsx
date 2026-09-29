@@ -33,7 +33,10 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <EndpointStatusBadge status={m.status} />
               {m.failingSince && <FailingFor state={m.status === 'down' ? 'down' : 'failing'} since={m.failingSince} />}
-              <span className="truncate font-mono text-sm">{m.endpoint.url}</span>
+              {m.endpoint.name && <span className="font-medium">{m.endpoint.name}</span>}
+              <span className={m.endpoint.name ? 'truncate font-mono text-xs text-gray-500' : 'truncate font-mono text-sm'}>
+                {m.endpoint.url}
+              </span>
               <span className="text-xs text-gray-500">
                 {m.endpoint.method} · {EVERY[m.endpoint.intervalSeconds]} · expects {m.endpoint.expectedStatus}
               </span>
@@ -69,6 +72,7 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
               <EndpointForm
                 action={saveEndpointAction.bind(null, projectId, m.endpoint.id)}
                 initial={{
+                  name: m.endpoint.name ?? '',
                   url: m.endpoint.url,
                   method: m.endpoint.method,
                   intervalSeconds: String(m.endpoint.intervalSeconds),
@@ -91,7 +95,7 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
         <h3 className="mb-3 text-sm font-semibold">Add endpoint</h3>
         <EndpointForm
           action={saveEndpointAction.bind(null, projectId, null)}
-          initial={{ url: '', method: 'GET', intervalSeconds: '300', expectedStatus: '200', enabled: true }}
+          initial={{ name: '', url: '', method: 'GET', intervalSeconds: '300', expectedStatus: '200', enabled: true }}
           submitLabel="Add endpoint"
           resetOnSave
         />

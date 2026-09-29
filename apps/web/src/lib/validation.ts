@@ -26,6 +26,12 @@ export const clientFormSchema = z.object({
 });
 
 export const endpointFormSchema = z.object({
+  /** Optional display name; blank means "use the host". */
+  name: z
+    .string()
+    .trim()
+    .max(60, 'Use at most 60 characters')
+    .transform((v) => v || null),
   url: z.string().trim().min(1, 'Enter a URL').max(2000, 'That URL is too long'),
   method: z.enum(ENDPOINT_METHODS),
   intervalSeconds: z.coerce
@@ -38,6 +44,7 @@ export const endpointFormSchema = z.object({
 
 export function endpointFormValues(form: FormData) {
   return {
+    name: text(form, 'name'),
     url: text(form, 'url'),
     method: text(form, 'method'),
     intervalSeconds: text(form, 'intervalSeconds'),

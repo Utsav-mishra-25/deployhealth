@@ -31,7 +31,12 @@ export function EndpointForm({
 
   return (
     <form ref={formRef} action={formAction} className="grid gap-3 sm:grid-cols-6">
-      <label className="block sm:col-span-6">
+      <label className="block sm:col-span-2">
+        <span className="text-sm font-medium">Name</span> <span className="text-sm text-gray-400">(optional)</span>
+        <input name="name" maxLength={60} defaultValue={values.name} placeholder="Acme API" className={input} />
+        {fields.name && <span className="mt-1 block text-sm text-red-600">{fields.name}</span>}
+      </label>
+      <label className="block sm:col-span-4">
         <span className="text-sm font-medium">URL</span>
         <input name="url" type="url" required defaultValue={values.url} placeholder="https://api.example.com/health" className={input} />
         {fields.url && <span className="mt-1 block text-sm text-red-600">{fields.url}</span>}

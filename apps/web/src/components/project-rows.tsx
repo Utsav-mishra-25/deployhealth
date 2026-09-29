@@ -30,13 +30,21 @@ export function ProjectRows({ projects, indent = false }: { projects: ProjectLis
           <td className="py-3 pr-4 pl-3">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <UptimeBadge status={p.uptime} />
-              {p.failingSince && <FailingFor state={p.uptime === 'down' ? 'down' : 'failing'} since={p.failingSince} />}
+              {p.failingSince && (
+                <FailingFor state={p.uptime === 'down' ? 'down' : 'failing'} since={p.failingSince} subject={failingSubject(p.failingEndpoints)} />
+              )}
             </div>
           </td>
         </tr>
       ))}
     </>
   );
+}
+
+/** "Acme API", or "Acme API +1 more" when several endpoints are behind the badge. */
+function failingSubject(labels: string[]): string | undefined {
+  if (labels.length === 0) return undefined;
+  return labels.length === 1 ? labels[0] : `${labels[0]} +${labels.length - 1} more`;
 }
 
 export function ProjectTableHead() {
