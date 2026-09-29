@@ -1,8 +1,13 @@
-import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import * as schema from './schema';
 
-export type Db = NodePgDatabase<typeof schema>;
+/**
+ * A database handle: the pool-backed client from createDb(), or a transaction inside one. Every
+ * query function takes this type, so it can run in a caller's transaction (the demo reseed does).
+ */
+export type Db = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 
 export interface DbHandle {
   db: Db;
