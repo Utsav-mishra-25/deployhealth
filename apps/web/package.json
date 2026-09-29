@@ -2,6 +2,7 @@
   "name": "@deployhealth/web",
   "version": "0.0.0",
   "private": true,
+  "license": "FSL-1.1-MIT",
   "type": "module",
   "scripts": {
     "predev": "pnpm --filter @deployhealth/core build && node scripts/copy-cli.mjs",

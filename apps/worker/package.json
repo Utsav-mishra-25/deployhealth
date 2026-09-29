@@ -2,6 +2,7 @@
   "name": "@deployhealth/worker",
   "version": "0.0.0",
   "private": true,
+  "license": "FSL-1.1-MIT",
   "type": "module",
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch --import tsx src/index.ts",
