@@ -71,3 +71,66 @@ export const guardedPost: Poster = (url, body, signal) =>
     },
     (res) => res.statusCode ?? 0,
   );
+
+// ---------------------------------------------------------------------------------------------
+// GitHub's REST API (the pull request checks), for Octokit's `request.fetch`
+// ---------------------------------------------------------------------------------------------
+
+/** The only origin githubFetch talks to. */
+export const GITHUB_API_ORIGIN = 'https://api.github.com';
+/** The largest GitHub response read (a big repo's recursive tree is a few MB). */
+export const MAX_GITHUB_RESPONSE_BYTES = 32 * 1024 * 1024;
+const GITHUB_TIMEOUT_MS = 30_000;
+const MAX_GITHUB_REDIRECTS = 3;
+
+// One keep-alive agent: a check can make hundreds of blob requests to the same host.
+const githubAgent = new https.Agent({ keepAlive: true, maxSockets: 8, lookup: guardedLookup });
+
+/**
+ * `fetch` for Octokit, restricted to api.github.com: the guarded lookup, a keep-alive agent,
+ * a 30 s default timeout, response bodies read up to MAX_GITHUB_RESPONSE_BYTES, and redirects
+ * followed only within api.github.com (at most 3).
+ */
+export async function githubFetch(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
+  let url = new URL(input instanceof Request ? input.url : String(input));
+  const method = (init.method ?? 'GET').toUpperCase();
+  const headers = Object.fromEntries(new Headers(init.headers).entries());
+  const body = init.body == null ? undefined : typeof init.body === 'string' || init.body instanceof Uint8Array ? init.body : null;
+  if (body === null) throw new TypeError('githubFetch sends string or byte bodies only');
+  const signal = init.signal ?? AbortSignal.timeout(GITHUB_TIMEOUT_MS);
+
+  for (let hop = 0; ; hop++) {
+    if (url.origin !== GITHUB_API_ORIGIN) throw new BlockedUrlError(`githubFetch only talks to ${GITHUB_API_ORIGIN}, not ${url.origin}`);
+    const res = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+      const req = https.request(url, { method, signal, lookup: guardedLookup, agent: githubAgent, headers }, (response) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        response.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > MAX_GITHUB_RESPONSE_BYTES) {
+            response.destroy();
+            reject(new Error(`GitHub response larger than ${MAX_GITHUB_RESPONSE_BYTES / 1024 / 1024} MB`));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks) }));
+        response.on('error', reject);
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+
+    const location = res.headers.location;
+    if ([301, 302, 307, 308].includes(res.status) && location && init.redirect !== 'manual' && hop < MAX_GITHUB_REDIRECTS) {
+      url = new URL(location, url);
+      continue;
+    }
+    const responseHeaders = new Headers();
+    for (const [name, value] of Object.entries(res.headers)) {
+      if (value !== undefined) responseHeaders.set(name, Array.isArray(value) ? value.join(', ') : value);
+    }
+    const noBody = res.status === 204 || res.status === 205 || res.status === 304 || method === 'HEAD';
+    return new Response(noBody ? null : new Uint8Array(res.body), { status: res.status, headers: responseHeaders });
+  }
+}
