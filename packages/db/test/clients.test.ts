@@ -8,6 +8,7 @@ import {
   listClientsOverview,
   slugify,
   updateClient,
+  updateProjectSettings,
 } from '../src/clients';
 import { recordCheck } from '../src/monitoring';
 import { createProject } from '../src/queries';
@@ -100,5 +101,21 @@ describe('clients', () => {
     expect((await listClientsOverview(db, user.id)).clients[0]?.projects[0]?.uptime).toBe('up');
     expect(await assignProjectToClient(db, user.id, project.id, null)).toBe(true);
     expect((await listClientsOverview(db, user.id)).unassigned.map((p) => p.name)).toEqual(['shop']);
+  });
+});
+
+describe('deploy notes', () => {
+  it('are saved with the project settings, kept when omitted and cleared with null', async () => {
+    const user = await makeUser(db);
+    const project = await makeProject(db, user.id);
+    const notesOf = async () => (await db.select({ n: projects.deployNotes }).from(projects).where(eq(projects.id, project.id)))[0]?.n;
+    await updateProjectSettings(db, user.id, project.id, { clientId: null, alertWebhookUrl: null, deployNotes: '## Deploy\n\nPush to main.' });
+    expect(await notesOf()).toBe('## Deploy\n\nPush to main.');
+    await updateProjectSettings(db, user.id, project.id, { clientId: null, alertWebhookUrl: null });
+    expect(await notesOf()).toBe('## Deploy\n\nPush to main.');
+    await updateProjectSettings(db, user.id, project.id, { clientId: null, alertWebhookUrl: null, deployNotes: null });
+    expect(await notesOf()).toBeNull();
+    // Another user can't set them.
+    expect(await updateProjectSettings(db, (await makeUser(db)).id, project.id, { clientId: null, alertWebhookUrl: null, deployNotes: 'x' })).toBe(false);
   });
 });
