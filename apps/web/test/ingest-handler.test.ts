@@ -45,8 +45,24 @@ describe('handleIngest', () => {
         deployedAt: new Date('2026-09-28T12:00:00Z'),
         source: 'ingest',
         findings: [FINDING],
+        variables: undefined,
       },
     ]);
+  });
+
+  it('passes referenced variables through when the CLI sends them', async () => {
+    const { deps, recorded } = setup();
+    const variables = [{ var_name: 'DATABASE_URL', scope: 'apps/api', defined_in: ['.env.example'] }];
+    const response = await handleIngest(post({ ...PAYLOAD, variables }), deps);
+    expect(response.status).toBe(201);
+    expect(recorded[0]?.variables).toEqual(variables);
+  });
+
+  it('rejects a variable that carries a value', async () => {
+    const { deps, recorded } = setup();
+    const variables = [{ var_name: 'STRIPE_KEY=sk_live_123', scope: '', defined_in: [] }];
+    expect((await handleIngest(post({ ...PAYLOAD, variables }), deps)).status).toBe(400);
+    expect(recorded).toEqual([]);
   });
 
   it.each([

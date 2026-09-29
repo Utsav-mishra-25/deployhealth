@@ -6,6 +6,7 @@ import {
   findProjectByTokenHash,
   getLatestScan,
   getProjectForOwner,
+  getScanVariables,
   listDeploys,
   listProjectsForOwner,
   recordScan,
@@ -110,6 +111,35 @@ describe('recordScan', () => {
     expect(detail?.scan).toMatchObject({ missingCount: 1, unusedCount: 1, mismatchCount: 1 });
     // Sorted by kind (enum order), then name, then file.
     expect(detail?.findings).toEqual([FINDINGS[1], FINDINGS[0], FINDINGS[3], FINDINGS[2]]);
+  });
+
+  it('stores referenced variables, merging repeats, and records that the CLI reported them', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const base = { projectId: project.id, branch: 'main', deployedAt: at('2026-09-01T10:00:00Z'), findings: FINDINGS };
+    const withVariables = await recordScan(db, {
+      ...base,
+      sha: 'abc1234',
+      variables: [
+        { var_name: 'REDIS_URL', scope: 'apps/api', defined_in: [] },
+        { var_name: 'DATABASE_URL', scope: 'apps/api', defined_in: ['.env'] },
+        { var_name: 'DATABASE_URL', scope: '', defined_in: ['.env.example'] },
+        { var_name: 'DATABASE_URL', scope: 'apps/api', defined_in: ['.env.example'] },
+      ],
+    });
+    expect(await getScanVariables(db, withVariables.scanId)).toEqual([
+      { scope: '', var_name: 'DATABASE_URL', defined_in: ['.env.example'] },
+      { scope: 'apps/api', var_name: 'DATABASE_URL', defined_in: ['.env.example', '.env'] },
+      { scope: 'apps/api', var_name: 'REDIS_URL', defined_in: [] },
+    ]);
+    expect((await getLatestScan(db, project.id, withVariables.deployId))?.scan.variablesReported).toBe(true);
+
+    // An older CLI sends no variables: nothing stored, and the scan says so.
+    const older = await recordScan(db, { ...base, sha: 'def5678' });
+    expect(await getScanVariables(db, older.scanId)).toEqual([]);
+    expect((await getLatestScan(db, project.id, older.deployId))?.scan.variablesReported).toBe(false);
+    // A newer CLI on a project with no references at all: empty, but reported.
+    const none = await recordScan(db, { ...base, sha: 'fed9876', variables: [] });
+    expect((await getLatestScan(db, project.id, none.deployId))?.scan.variablesReported).toBe(true);
   });
 
   it('adds a scan to the existing deploy when the same sha is reported again', async () => {
