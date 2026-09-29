@@ -1,0 +1,132 @@
+import {
+  CHECK_RETENTION_DAYS,
+  CHECK_TIMEOUT_MS,
+  HOST_CHECK_SPACING_MS,
+  MAX_ENDPOINTS_PER_PROJECT,
+  MAX_ENDPOINTS_PER_USER,
+  MAX_REDIRECTS,
+} from '@deployhealth/core';
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { securityContact } from '@/lib/security';
+import { SHARE_LINK_DAYS } from '@/lib/share-link';
+
+export const metadata: Metadata = { title: 'Security · deployhealth' };
+// Reads SECURITY_CONTACT_EMAIL at request time.
+export const dynamic = 'force-dynamic';
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="space-y-3 text-sm leading-relaxed text-gray-700">{children}</div>
+    </section>
+  );
+}
+
+const li = 'ml-5 list-disc';
+
+/** Public: what deployhealth stores and does, and how to report a vulnerability. */
+export default function SecurityPage() {
+  const contact = securityContact();
+  return (
+    <article className="mx-auto max-w-3xl space-y-10 rounded-lg border border-gray-200 bg-white p-8" data-testid="security">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold">Security</h1>
+        <p className="text-gray-700">
+          deployhealth looks at your code&apos;s configuration and at your clients&apos; servers, so here is exactly what it
+          stores, what it does, and how to reach us. The code is{' '}
+          <a className="text-emerald-700 underline" href="https://github.com/Utsav-mishra-25/deployhealth">
+            public
+          </a>
+          , so you can check every claim below.
+        </p>
+      </header>
+
+      <Section title="What we store">
+        <ul className="space-y-2">
+          <li className={li}>
+            <strong>Variable names and file:line, never values.</strong> For each deploy: the commit sha, branch and time,
+            and for each finding the variable name, the file and line that reads it, and the env file involved, plus the
+            names each env file defines. The scanner runs in your CI and reads env files only for their names; the
+            ingest API accepts only names, paths and line numbers.
+          </li>
+          <li className={li}>
+            <strong>Findings</strong> per deploy (missing, unused, out of sync), so you can see what changed.
+          </li>
+          <li className={li}>
+            <strong>Endpoint URLs</strong> you add, with their names and settings, and for each check its time, status
+            code, latency and a short error reason. Raw checks are deleted after {CHECK_RETENTION_DAYS} days; daily totals
+            are kept for monthly reports.
+          </li>
+          <li className={li}>
+            <strong>Alerts</strong> (when they opened and resolved, and the message) and your alert webhook URL. Webhook
+            URLs contain secrets, so logs show only their host.
+          </li>
+          <li className={li}>
+            <strong>Ingest tokens</strong> only as a SHA-256 hash. The token itself is shown once, when it&apos;s created.
+          </li>
+          <li className={li}>
+            <strong>Your account:</strong> your GitHub id, login, name, public email and avatar URL, from GitHub sign-in.
+            Sign-in asks GitHub for your profile only, not for access to your repositories. Clients, deploy notes and
+            contact emails are what you type in.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="How checks run">
+        <ul className="space-y-2">
+          <li className={li}>
+            One request per check (GET or HEAD) with a {CHECK_TIMEOUT_MS / 1000}-second budget, following at most{' '}
+            {MAX_REDIRECTS} redirects.
+          </li>
+          <li className={li}>
+            <strong>SSRF-guarded.</strong> A URL must be public http(s): no credentials, no private, loopback, link-local
+            or otherwise reserved addresses. That&apos;s checked when you save it, and again at connect time for every
+            redirect hop, which also defeats DNS rebinding. Alert webhooks go through the same guard.
+          </li>
+          <li className={li}>
+            <strong>Response bodies are never read or stored:</strong> only the status code and timing.
+          </li>
+          <li className={li}>
+            A hostname is checked at most once every {HOST_CHECK_SPACING_MS / 1000} seconds, however many accounts
+            monitor it, and an account can monitor at most {MAX_ENDPOINTS_PER_USER} endpoints ({MAX_ENDPOINTS_PER_PROJECT}{' '}
+            per project). deployhealth can&apos;t be used to flood a server.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="How share links work">
+        <p>
+          A monthly report&apos;s share link isn&apos;t stored anywhere: the link itself carries the client, the month and
+          an expiry date {SHARE_LINK_DAYS} days out, signed with HMAC-SHA256 using a key only the server has. Anyone with
+          the link can read that one report until it expires, and nothing else; changing any part of it breaks the
+          signature. Links can&apos;t be revoked one by one: rotating the key revokes all of them at once. Shared pages are
+          rate-limited per IP address and ask search engines not to index them.
+        </p>
+      </Section>
+
+      <Section title="Report a vulnerability">
+        <p>
+          Please report security issues to{' '}
+          <a className="font-medium text-emerald-700 underline" href={contact.href} data-testid="security-contact">
+            {contact.label}
+          </a>
+          , not in a public issue. Include what you found and how to reproduce it. Testing against your own account and
+          your own endpoints is welcome; please don&apos;t access other people&apos;s data or degrade the service.
+        </p>
+        <p>
+          Machine-readable: <Link className="text-emerald-700 underline" href="/.well-known/security.txt">/.well-known/security.txt</Link>.
+        </p>
+      </Section>
+
+      <Section title="Our commitment">
+        <p>
+          If a security incident affects your data, we will email every affected user within <strong>72 hours</strong> of
+          confirming it, at the email address on their GitHub account, saying what happened, which data was involved, and
+          what we are doing about it.
+        </p>
+      </Section>
+    </article>
+  );
+}

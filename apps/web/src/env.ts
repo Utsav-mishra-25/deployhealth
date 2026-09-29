@@ -18,6 +18,8 @@ const schema = z
     DEMO_PUBLIC: z.enum(['0', '1']).default('0'),
     /** Signs report share links. Optional: derived from AUTH_SECRET when unset (lib/share-link.ts). */
     REPORT_SHARE_SECRET: z.string().min(32, 'REPORT_SHARE_SECRET must be at least 32 characters (openssl rand -base64 32)').optional(),
+    /** Where to report vulnerabilities, shown on /security and in security.txt. Optional. */
+    SECURITY_CONTACT_EMAIL: z.email('SECURITY_CONTACT_EMAIL must be an email address').optional(),
   })
   .refine((env) => env.NODE_ENV !== 'production' || (env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET), {
     message: 'AUTH_GITHUB_ID and AUTH_GITHUB_SECRET are required in production',
@@ -43,6 +45,7 @@ export function serverEnv(): ServerEnv {
     AUTH_DEMO_LOGIN: process.env.AUTH_DEMO_LOGIN || undefined,
     DEMO_PUBLIC: process.env.DEMO_PUBLIC || undefined,
     REPORT_SHARE_SECRET: process.env.REPORT_SHARE_SECRET || undefined,
+    SECURITY_CONTACT_EMAIL: process.env.SECURITY_CONTACT_EMAIL || undefined,
   });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.') || 'env'}: ${i.message}`).join('\n');

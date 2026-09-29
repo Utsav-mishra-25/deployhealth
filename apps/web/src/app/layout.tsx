@@ -36,6 +36,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+        <footer className="border-t border-gray-200 print:hidden">
+          <nav aria-label="Footer" className="mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6 text-sm text-gray-500">
+            <Link href="/security" className="hover:text-gray-900">
+              Security
+            </Link>
+            <a href="https://github.com/Utsav-mishra-25/deployhealth" className="hover:text-gray-900">
+              Source on GitHub
+            </a>
+          </nav>
+        </footer>
       </body>
     </html>
   );

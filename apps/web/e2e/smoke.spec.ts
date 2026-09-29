@@ -159,3 +159,21 @@ test('the old CLI download is still served, marked deprecated', async ({ request
   expect(response.headers()['link']).toMatch(/#deprecated-downloading-the-cli-from-your-instance>; rel="deprecation"$/);
   expect(await response.text()).toMatch(/^#!\/usr\/bin\/env node\n/);
 });
+
+test('security: public page linked from the footer, and security.txt', async ({ page, request }) => {
+  await page.goto('/login');
+  await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Security' }).click();
+  await expect(page).toHaveURL(/\/security$/);
+  await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible();
+  await expect(page.getByTestId('security')).toContainText('never values');
+  await expect(page.getByTestId('security')).toContainText('72 hours');
+  await expect(page.getByTestId('security-contact')).toHaveAttribute('href', 'mailto:security@deployhealth.example');
+  await expect(page.getByTestId('current-user')).toHaveCount(0);
+
+  const txt = await request.get('/.well-known/security.txt');
+  expect(txt.status()).toBe(200);
+  expect(txt.headers()['content-type']).toBe('text/plain; charset=utf-8');
+  const body = await txt.text();
+  expect(body).toMatch(/^Contact: mailto:security@deployhealth\.example\nExpires: \d{4}-\d\d-\d\dT00:00:00\.000Z\n/);
+  expect(body).toMatch(/\nPolicy: http:\/\/localhost:\d+\/security\n$/);
+});

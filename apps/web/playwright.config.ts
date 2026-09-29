@@ -27,7 +27,7 @@ export default defineConfig({
     command: `pnpm exec next dev --port ${PORT}`,
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: true,
-    env: { AUTH_DEMO_LOGIN: '1', DEMO_PUBLIC: '1' },
+    env: { AUTH_DEMO_LOGIN: '1', DEMO_PUBLIC: '1', SECURITY_CONTACT_EMAIL: 'security@deployhealth.example' },
     timeout: 120_000,
   },
 });
