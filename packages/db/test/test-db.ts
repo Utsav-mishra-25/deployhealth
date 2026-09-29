@@ -12,7 +12,7 @@ export function openTestDb(): DbHandle {
 /** Empty every table between tests. */
 export async function truncateAll(db: Db): Promise<void> {
   await db.execute(
-    sql`truncate table users, clients, projects, deploys, scans, findings, scan_variables, endpoints, checks, endpoint_daily_stats, alerts restart identity cascade`,
+    sql`truncate table users, clients, projects, deploys, scans, findings, scan_variables, endpoints, checks, check_hosts, endpoint_daily_stats, alerts restart identity cascade`,
   );
 }
 
@@ -51,7 +51,8 @@ export async function makeClient(db: Db, userId: string, name = `client${++count
 export async function makeEndpoint(db: Db, projectId: string, overrides: Partial<typeof endpoints.$inferInsert> = {}) {
   const [endpoint] = await db
     .insert(endpoints)
-    .values({ projectId, url: `https://example.com/health-${++counter}`, ...overrides })
+    // A host of its own by default, so host spacing only applies where a test shares one on purpose.
+    .values({ projectId, url: `https://h${++counter}.example.com/health`, ...overrides })
     .returning();
   return endpoint!;
 }

@@ -29,6 +29,7 @@ describe('schema', () => {
     );
     expect(result.rows.map((r) => r.table_name)).toEqual([
       'alerts',
+      'check_hosts',
       'checks',
       'clients',
       'deploys',

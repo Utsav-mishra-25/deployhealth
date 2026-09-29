@@ -3,13 +3,31 @@ import {
   alertResolvedMessage,
   decideAlert,
   DEPLOY_LINK_WINDOW_MINUTES,
+  HOST_CHECK_SPACING_MS,
+  LimitExceededError,
+  MAX_ENDPOINTS_PER_PROJECT,
+  MAX_ENDPOINTS_PER_USER,
   newMissingVars,
   type EndpointInterval,
   type EndpointMethod,
 } from '@deployhealth/core';
 import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './client';
-import { alerts, checks, deploys, endpointDailyStats, endpoints, findings, projects, scans, type Alert, type Check, type Endpoint } from './schema';
+import {
+  alerts,
+  checkHosts,
+  checks,
+  deploys,
+  endpointDailyStats,
+  endpoints,
+  findings,
+  projects,
+  scans,
+  users,
+  type Alert,
+  type Check,
+  type Endpoint,
+} from './schema';
 
 // ---------------------------------------------------------------------------------------------
 // Endpoint CRUD (owner-scoped)
@@ -38,15 +56,38 @@ export async function listEndpointsForOwner(db: Db, ownerId: string, projectId: 
     .orderBy(asc(endpoints.createdAt));
 }
 
-/** Null when the project isn't the owner's. The URL must already have passed the SSRF guard. */
+/**
+ * Null when the project isn't the owner's. The URL must already have passed the SSRF guard.
+ * Throws LimitExceededError at 100 endpoints in the project or 500 across the owner's projects.
+ */
 export async function createEndpoint(db: Db, ownerId: string, projectId: string, input: EndpointInput): Promise<Endpoint | null> {
-  const [owned] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)));
-  if (!owned) return null;
-  const [endpoint] = await db.insert(endpoints).values({ projectId, ...input }).returning();
-  return endpoint!;
+  return db.transaction(async (tx) => {
+    const [owned] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)));
+    if (!owned) return null;
+
+    // Lock the owner's row: concurrent creates for one user queue here, so the counts can't race.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, ownerId)).for('update');
+    const [counts] = await tx
+      .select({
+        inProject: sql<number>`count(*) filter (where ${endpoints.projectId} = ${projectId})::int`,
+        forUser: sql<number>`count(*)::int`,
+      })
+      .from(endpoints)
+      .innerJoin(projects, eq(projects.id, endpoints.projectId))
+      .where(eq(projects.ownerId, ownerId));
+    if (counts!.inProject >= MAX_ENDPOINTS_PER_PROJECT) {
+      throw new LimitExceededError('endpointsPerProject', `A project can have at most ${MAX_ENDPOINTS_PER_PROJECT} endpoints.`);
+    }
+    if (counts!.forUser >= MAX_ENDPOINTS_PER_USER) {
+      throw new LimitExceededError('endpointsPerUser', `An account can have at most ${MAX_ENDPOINTS_PER_USER} endpoints across all projects.`);
+    }
+
+    const [endpoint] = await tx.insert(endpoints).values({ projectId, ...input }).returning();
+    return endpoint!;
+  });
 }
 
 /** Edits take effect on the next worker run: the endpoint becomes due immediately. */
@@ -76,48 +117,126 @@ export interface DueEndpoint {
   id: string;
   projectId: string;
   url: string;
+  hostname: string;
   method: EndpointMethod;
   intervalSeconds: number;
   expectedStatus: number;
+  /** When the worker may start this check: checks of one hostname start HOST_CHECK_SPACING_MS apart. */
+  runAt: Date;
+}
+
+/** One claim hands out check start times up to this far after `now` (the job runs every minute). */
+export const CLAIM_WINDOW_MS = 50_000;
+
+/** pg_advisory_xact_lock key: one claimer at a time, so host slots are read and saved as a unit. */
+const CLAIM_LOCK_KEY = 4_815_162_342;
+
+/** The URL's hostname, lowercased, in SQL (stored URLs are normalized and never carry credentials). */
+const hostnameOf = (url: SQL) => sql`coalesce(lower(substring(${url} from '^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/?#@]*@)?(\\[[^]]*\\]|[^/?#:]*)')), '')`;
+
+/**
+ * Start times for due checks, given in priority order, so no hostname is checked more than once
+ * per `spacingMs`, across all users. A host's first slot is the later of `now` and the slot its
+ * previous claim reserved, rounded up to the job's wave grid (`now + k·spacingMs`); each further
+ * check of that host takes the next slot. Slots at or past `windowMs` aren't handed out: those
+ * endpoints stay due and go first next time. Pure; `claimDueEndpoints` applies it.
+ */
+export function assignHostSlots<T extends { hostname: string }>(
+  due: readonly T[],
+  reserved: ReadonlyMap<string, Date>,
+  now: Date,
+  { spacingMs = HOST_CHECK_SPACING_MS, windowMs = CLAIM_WINDOW_MS }: { spacingMs?: number; windowMs?: number } = {},
+): { assigned: Array<T & { runAt: Date }>; nextFree: Map<string, Date> } {
+  const nextOffset = new Map<string, number>();
+  const assigned: Array<T & { runAt: Date }> = [];
+  const nextFree = new Map<string, Date>();
+  for (const endpoint of due) {
+    let offset = nextOffset.get(endpoint.hostname);
+    if (offset === undefined) {
+      const free = (reserved.get(endpoint.hostname)?.getTime() ?? 0) - now.getTime();
+      offset = Math.max(0, Math.ceil(free / spacingMs) * spacingMs);
+    }
+    if (offset < windowMs) {
+      assigned.push({ ...endpoint, runAt: new Date(now.getTime() + offset) });
+      offset += spacingMs;
+      nextFree.set(endpoint.hostname, new Date(now.getTime() + offset));
+    }
+    nextOffset.set(endpoint.hostname, offset);
+  }
+  return { assigned, nextFree };
 }
 
 /**
- * Claim up to `limit` enabled endpoints whose next_check_at has passed, and move their
- * next_check_at forward by their interval in the same statement. FOR UPDATE SKIP LOCKED means
- * concurrent workers never claim the same endpoint; if a worker dies mid-check, the endpoint is
- * simply checked again one interval later.
+ * Claim due endpoints (enabled, next_check_at passed), oldest first, give each a start time with
+ * `assignHostSlots`, and move each claimed endpoint's next_check_at one interval past its start.
+ * At most CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS endpoints per hostname are considered per claim,
+ * so one busy host can't crowd out the others. Claims run one at a time (advisory lock), so two
+ * workers never claim the same endpoint or share a host slot. If a worker dies mid-check, the
+ * endpoint is simply checked again one interval later.
  */
 export async function claimDueEndpoints(
   db: Db,
-  { now = new Date(), limit = 100 }: { now?: Date; limit?: number } = {},
+  { now = new Date(), limit = 500 }: { now?: Date; limit?: number } = {},
 ): Promise<DueEndpoint[]> {
-  const result = await db.execute<{
-    id: string;
-    project_id: string;
-    url: string;
-    method: EndpointMethod;
-    interval_seconds: number;
-    expected_status: number;
-  }>(sql`
-    update ${endpoints} e
-    set next_check_at = ${now.toISOString()}::timestamptz + make_interval(secs => e.interval_seconds)
-    where e.id in (
-      select id from ${endpoints}
-      where enabled and next_check_at <= ${now.toISOString()}::timestamptz
-      order by next_check_at
+  const perHost = Math.ceil(CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${CLAIM_LOCK_KEY})`);
+    const due = await tx.execute<{
+      id: string;
+      project_id: string;
+      url: string;
+      hostname: string;
+      method: EndpointMethod;
+      interval_seconds: number;
+      expected_status: number;
+    }>(sql`
+      select id, project_id, url, hostname, method, interval_seconds, expected_status
+      from (
+        select e.id, e.project_id, e.url, e.method, e.interval_seconds, e.expected_status, e.next_check_at,
+               ${hostnameOf(sql`e.url`)} as hostname,
+               row_number() over (partition by ${hostnameOf(sql`e.url`)} order by e.next_check_at, e.id) as n
+        from ${endpoints} e
+        where e.enabled and e.next_check_at <= ${now.toISOString()}::timestamptz
+      ) d
+      where n <= ${perHost}
+      order by next_check_at, id
       limit ${limit}
-      for update skip locked
-    )
-    returning e.id, e.project_id, e.url, e.method, e.interval_seconds, e.expected_status
-  `);
-  return result.rows.map((r) => ({
-    id: r.id,
-    projectId: r.project_id,
-    url: r.url,
-    method: r.method,
-    intervalSeconds: r.interval_seconds,
-    expectedStatus: r.expected_status,
-  }));
+    `);
+    if (due.rows.length === 0) return [];
+
+    const hostnames = [...new Set(due.rows.map((r) => r.hostname))];
+    const reserved = await tx.select().from(checkHosts).where(inArray(checkHosts.hostname, hostnames));
+    const { assigned, nextFree } = assignHostSlots(
+      due.rows.map((r) => ({
+        id: r.id,
+        projectId: r.project_id,
+        url: r.url,
+        hostname: r.hostname,
+        method: r.method,
+        intervalSeconds: r.interval_seconds,
+        expectedStatus: r.expected_status,
+      })),
+      new Map(reserved.map((h) => [h.hostname, h.nextSlotAt])),
+      now,
+    );
+    if (assigned.length === 0) return [];
+
+    const starts = sql.join(
+      assigned.map((a) => sql`(${a.id}::uuid, ${a.runAt.toISOString()}::timestamptz)`),
+      sql`, `,
+    );
+    await tx.execute(sql`
+      update ${endpoints} e
+      set next_check_at = v.run_at + make_interval(secs => e.interval_seconds)
+      from (values ${starts}) as v(id, run_at)
+      where e.id = v.id
+    `);
+    await tx
+      .insert(checkHosts)
+      .values([...nextFree].map(([hostname, nextSlotAt]) => ({ hostname, nextSlotAt })))
+      .onConflictDoUpdate({ target: checkHosts.hostname, set: { nextSlotAt: sql`excluded.next_slot_at` } });
+    return assigned;
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -327,6 +446,8 @@ export async function rollupChecks(db: Db, before: Date): Promise<number> {
 
 export async function pruneChecks(db: Db, olderThan: Date): Promise<number> {
   const deleted = await db.delete(checks).where(lt(checks.checkedAt, olderThan)).returning({ id: checks.id });
+  // Host slots that passed long ago mean "free now", same as no row.
+  await db.delete(checkHosts).where(lt(checkHosts.nextSlotAt, olderThan));
   return deleted.length;
 }
 

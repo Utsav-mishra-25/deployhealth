@@ -212,6 +212,16 @@ export const checks = pgTable(
 );
 
 /**
+ * One row per target hostname: the earliest time its next check may start. The claim query hands
+ * out start times HOST_CHECK_SPACING_MS apart per hostname, across all users, and saves the next
+ * free one here. A row whose time has passed means "free now".
+ */
+export const checkHosts = pgTable('check_hosts', {
+  hostname: text('hostname').primaryKey(),
+  nextSlotAt: ts('next_slot_at').notNull(),
+});
+
+/**
  * Per-endpoint daily check totals (UTC days), written by the nightly prune job before raw checks
  * older than 30 days are deleted. Monthly reports read these, so they outlive the raw checks.
  */
@@ -271,3 +281,4 @@ export type Check = typeof checks.$inferSelect;
 export type Alert = typeof alerts.$inferSelect;
 export type ScanVariable = typeof scanVariables.$inferSelect;
 export type EndpointDailyStat = typeof endpointDailyStats.$inferSelect;
+export type CheckHost = typeof checkHosts.$inferSelect;

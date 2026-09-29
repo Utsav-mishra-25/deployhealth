@@ -29,6 +29,13 @@
       "when": 1790688516820,
       "tag": "0003_scan_variables_reported",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790706770835,
+      "tag": "0004_host_check_slots",
+      "breakpoints": true
     }
   ]
 }
