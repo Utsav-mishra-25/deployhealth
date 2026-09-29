@@ -7,7 +7,7 @@ import {
   type EndpointInterval,
   type EndpointMethod,
 } from '@deployhealth/core';
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './client';
 import { alerts, checks, deploys, endpoints, findings, projects, scans, type Alert, type Check, type Endpoint } from './schema';
 
@@ -221,17 +221,25 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
   });
 }
 
-/** The first failed check after the endpoint's last ok check. */
-async function firstFailureOfStreak(tx: Tx, endpointId: string): Promise<Date> {
-  const result = await tx.execute<{ first: string }>(sql`
-    select min(checked_at) as first from ${checks}
-    where endpoint_id = ${endpointId} and not ok
-      and checked_at > coalesce(
-        (select max(checked_at) from ${checks} where endpoint_id = ${endpointId} and ok),
+/**
+ * SQL subquery: when the endpoint's current run of failed checks began, i.e. its first failed
+ * check after its last ok one. Null when the latest check was ok or there are no checks. Pass an
+ * id, or a column reference such as sql`e.id` for use inside a larger query.
+ */
+export function failingSinceSql(endpointId: string | SQL): SQL {
+  return sql`(
+    select min(f.checked_at) from ${checks} f
+    where f.endpoint_id = ${endpointId} and not f.ok
+      and f.checked_at > coalesce(
+        (select max(o.checked_at) from ${checks} o where o.endpoint_id = ${endpointId} and o.ok),
         '-infinity'::timestamptz
       )
-  `);
-  return new Date(result.rows[0]!.first);
+  )`;
+}
+
+async function firstFailureOfStreak(tx: Tx, endpointId: string): Promise<Date> {
+  const result = await tx.execute<{ since: string }>(sql`select ${failingSinceSql(endpointId)} as since`);
+  return new Date(result.rows[0]!.since);
 }
 
 interface DeployLink {
@@ -314,6 +322,8 @@ export interface EndpointMonitoring {
   /** Newest first. */
   recent: Check[];
   openAlert: Alert | null;
+  /** First failed check of the current run while the status is down or failing; null otherwise. */
+  failingSince: Date | null;
 }
 
 export async function getProjectMonitoring(
@@ -330,7 +340,7 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
   const day = new Date(now.getTime() - 24 * 3_600_000).toISOString();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
 
-  const [uptime, latency, recent, openAlerts] = await Promise.all([
+  const [uptime, latency, recent, openAlerts, failing] = await Promise.all([
     db.execute<{ total24: number; ok24: number; total7: number; ok7: number }>(sql`
       select count(*) filter (where checked_at >= ${day}::timestamptz)::int as total24,
              count(*) filter (where checked_at >= ${day}::timestamptz and ok)::int as ok24,
@@ -351,6 +361,7 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
       .select()
       .from(alerts)
       .where(and(eq(alerts.endpointId, endpoint.id), isNull(alerts.resolvedAt))),
+    db.execute<{ since: string | null }>(sql`select ${failingSinceSql(endpoint.id)} as since`),
   ]);
 
   const u = uptime.rows[0]!;
@@ -365,6 +376,7 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
         : latest.ok
           ? 'up'
           : 'failing';
+  const since = failing.rows[0]?.since;
 
   return {
     endpoint,
@@ -374,6 +386,7 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
     latency: latency.rows.map((r) => ({ hour: new Date(r.hour), p50: Math.round(Number(r.p50)), p95: Math.round(Number(r.p95)) })),
     recent,
     openAlert,
+    failingSince: (status === 'down' || status === 'failing') && since ? new Date(since) : null,
   };
 }
 

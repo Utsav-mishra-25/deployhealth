@@ -1,7 +1,8 @@
 import { summarize, uptimeStatus, type FindingCounts, type FindingRow, type UptimeStatus } from '@deployhealth/core';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { alerts, checks, clients, deploys, endpoints, findings, projects, scans, users, type Deploy, type Project, type Scan, type User } from './schema';
+import { failingSinceSql } from './monitoring';
+import { alerts, clients, deploys, endpoints, findings, projects, scans, users, type Deploy, type Project, type Scan, type User } from './schema';
 
 // ---------------------------------------------------------------------------------------------
 // Users
@@ -126,6 +127,11 @@ export interface ProjectListItem {
   lastDeploy: { sha: string; branch: string; deployedAt: Date } | null;
   counts: FindingCounts | null;
   uptime: UptimeStatus;
+  /**
+   * When the failure behind a down or degraded badge began: the earliest first failed check of
+   * the current runs of the endpoints with an open alert (down) or failing now (degraded).
+   */
+  failingSince: Date | null;
 }
 
 /** The owner's projects, newest first, each with its latest deploy and that deploy's latest scan. */
@@ -145,11 +151,13 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     enabled_endpoints: number;
     open_alerts: number;
     failing_endpoints: number;
+    down_since: string | null;
+    failing_since: string | null;
   }>(sql`
     select p.id, p.name, p.repo_full_name, p.client_id, p.created_at,
            d.sha, d.branch, d.deployed_at,
            s.missing_count, s.unused_count, s.mismatch_count,
-           u.enabled_endpoints, u.open_alerts, u.failing_endpoints
+           u.enabled_endpoints, u.open_alerts, u.failing_endpoints, u.down_since, u.failing_since
     from ${projects} p
     left join lateral (
       select id, sha, branch, deployed_at from ${deploys}
@@ -161,13 +169,17 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     ) s on true
     left join lateral (
       select count(*)::int as enabled_endpoints,
-             count(*) filter (where exists (
-               select 1 from ${alerts} a where a.endpoint_id = e.id and a.resolved_at is null
-             ))::int as open_alerts,
-             count(*) filter (where (
-               select c.ok from ${checks} c where c.endpoint_id = e.id order by c.checked_at desc limit 1
-             ) = false)::int as failing_endpoints
-      from ${endpoints} e where e.project_id = p.id and e.enabled
+             count(*) filter (where ep.open_alert)::int as open_alerts,
+             count(ep.failing_since)::int as failing_endpoints,
+             min(ep.failing_since) filter (where ep.open_alert) as down_since,
+             min(ep.failing_since) as failing_since
+      from (
+        select exists (
+                 select 1 from ${alerts} a where a.endpoint_id = e.id and a.resolved_at is null
+               ) as open_alert,
+               ${failingSinceSql(sql`e.id`)} as failing_since
+        from ${endpoints} e where e.project_id = p.id and e.enabled
+      ) ep
     ) u on true
     where p.owner_id = ${ownerId}
     order by p.created_at desc
@@ -187,12 +199,24 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
       row.missing_count === null
         ? null
         : { missing: row.missing_count, unused: row.unused_count ?? 0, mismatch: row.mismatch_count ?? 0 },
-    uptime: uptimeStatus({
-      enabledEndpoints: row.enabled_endpoints,
-      openAlerts: row.open_alerts,
-      failingEndpoints: row.failing_endpoints,
-    }),
+    ...uptimeAndSince(row),
   }));
+}
+
+function uptimeAndSince(row: {
+  enabled_endpoints: number;
+  open_alerts: number;
+  failing_endpoints: number;
+  down_since: string | null;
+  failing_since: string | null;
+}): { uptime: UptimeStatus; failingSince: Date | null } {
+  const uptime = uptimeStatus({
+    enabledEndpoints: row.enabled_endpoints,
+    openAlerts: row.open_alerts,
+    failingEndpoints: row.failing_endpoints,
+  });
+  const since = uptime === 'down' ? row.down_since : uptime === 'degraded' ? row.failing_since : null;
+  return { uptime, failingSince: since ? new Date(since) : null };
 }
 
 // ---------------------------------------------------------------------------------------------
