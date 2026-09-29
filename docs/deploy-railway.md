@@ -56,8 +56,14 @@ root, and each one points at its own config file instead.
    | `NODE_ENV` | `production` | Literal |
    | `AUTH_GITHUB_ID` | Client ID | The GitHub OAuth app from step 5 (add it then) |
    | `AUTH_GITHUB_SECRET` | Client secret | The GitHub OAuth app from step 5 (add it then) |
+   | `REPORT_SHARE_SECRET` | output of `openssl rand -base64 32` | Optional. Signs report share links; see below |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
+
+   **Report share links and `AUTH_SECRET`.** Share links are signed with `REPORT_SHARE_SECRET`. If
+   it's unset, a key is derived from `AUTH_SECRET` (HKDF), so rotating `AUTH_SECRET` signs everyone
+   out *and* invalidates every share link you've sent. Set `REPORT_SHARE_SECRET` to rotate them
+   separately; rotating it invalidates all share links at once (that's the only way to revoke one).
 
 6. **Settings → Networking → Generate Domain.** If Railway asks for a port, use the one in the
    deploy log's `Local: http://localhost:<port>` line (Railway sets `PORT`, and `next start`
