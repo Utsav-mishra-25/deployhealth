@@ -1,0 +1,33 @@
+# Publishes packages/core/npm (deployhealth-scan) to npm with a provenance attestation.
+# Manual only: Actions → Publish CLI → Run workflow, after bumping the version in
+# packages/core/npm/package.json and packages/core/src/version.ts. Needs npm trusted publishing
+# configured for this repository and workflow file on npmjs.com (no token is stored here).
+name: Publish CLI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC for npm trusted publishing, which also signs the provenance
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@^11.5.1 # trusted publishing needs npm 11.5.1 or later
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @deployhealth/core test
+      - run: pnpm --filter @deployhealth/core build:npm
+      - run: npm publish --provenance
+        working-directory: packages/core/npm
