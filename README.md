@@ -3,7 +3,7 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-**[Try the live demo →](#try-the-demo)** · no sign-up, read-only sample data · **[Free during beta](#pricing)**
+**[Try the live demo →](#try-the-demo)** · no sign-up, read-only sample data · **[Free during the beta](#pricing)**
 
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
@@ -80,8 +80,8 @@ To run it yourself, follow [Local setup](#local-setup) and open http://localhost
 
 ## Pricing
 
-**Free during beta.** Every feature, with no limits on clients, projects or endpoints. Pricing for
-the hosted version will be announced before the beta ends.
+Free during the beta. Paid plans will start at $15/month for freelancers and $29/month for studios;
+anyone active during the beta gets a discounted rate for their first year.
 
 ## Phases
 
