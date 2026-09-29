@@ -1,0 +1,37 @@
+# deployhealth scans itself: the published CLI reports this repo's env var findings to the hosted
+# instance on every push to main, like any other project's Action.
+name: deployhealth
+
+# Push events only. The token is a secret, so never run this on pull_request events from forks.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  env-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Scan env vars and report to deployhealth
+        env:
+          DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
+        # Same flags as `pnpm scan:self`: skip the scanner's deliberately broken test fixture, and
+        # NODE_ENV, which the runtime sets.
+        run: |
+          npx --yes deployhealth-scan@0.1.0 \
+            --url https://deployhealth-production.up.railway.app \
+            --token "$DEPLOYHEALTH_TOKEN" \
+            --sha "$GITHUB_SHA" \
+            --branch "$GITHUB_REF_NAME" \
+            --exclude packages/core/test/ \
+            --ignore NODE_ENV

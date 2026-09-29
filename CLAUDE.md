@@ -66,6 +66,8 @@ packages/
 docker-compose.yml    Postgres 16 (creates deployhealth and deployhealth_test)
 LICENSE               FSL-1.1-MIT (everything except packages/core, which has its own MIT LICENSE)
 .github/workflows/ci.yml   typecheck, lint, unit tests, build
+.github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main
+.github/workflows/publish-cli.yml    manual: publish deployhealth-scan to npm with provenance
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 ```
 
