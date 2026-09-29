@@ -138,6 +138,11 @@ describe('failingFor', () => {
     expect(failingFor('down', ago(3 * 86_400_000 + 7_200_000), now)).toBe('Down for 3d 2h');
   });
 
+  it('puts the endpoint first when given one', () => {
+    expect(failingFor('down', ago(22 * 60_000), now, 'Acme API')).toBe('Acme API down for 22m');
+    expect(failingFor('failing', ago(60_000), now, 'cdn.acme.com +1 more')).toBe('cdn.acme.com +1 more failing for 1m');
+  });
+
   it('says Failing before an alert opens, and never goes negative', () => {
     expect(failingFor('failing', ago(90_000), now)).toBe('Failing for 1m');
     expect(failingFor('failing', ago(10_000), now)).toBe('Failing for under a minute');

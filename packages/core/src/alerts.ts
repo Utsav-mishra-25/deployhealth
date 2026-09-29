@@ -64,10 +64,13 @@ export function formatDuration(ms: number): string {
 
 /**
  * The note next to a status badge while the latest check is failing: "Down for 21m" (open alert)
- * or "Failing for 1m" (not alerting yet). `since` is the first failed check of the current run.
+ * or "Failing for 1m" (not alerting yet), or "Acme API down for 21m" with a subject. `since` is
+ * the first failed check of the current run.
  */
-export function failingFor(state: 'down' | 'failing', since: Date, now: Date): string {
-  return `${state === 'down' ? 'Down' : 'Failing'} for ${formatDuration(now.getTime() - since.getTime())}`;
+export function failingFor(state: 'down' | 'failing', since: Date, now: Date, subject?: string): string {
+  const duration = formatDuration(now.getTime() - since.getTime());
+  const verb = state === 'down' ? 'down' : 'failing';
+  return subject ? `${subject} ${verb} for ${duration}` : `${verb[0]!.toUpperCase()}${verb.slice(1)} for ${duration}`;
 }
 
 export interface AlertOpenedInput {
