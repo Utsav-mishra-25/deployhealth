@@ -5,11 +5,12 @@ import { CountPills } from './counts';
 import { TimeAgo } from './time-ago';
 
 export function DeployList({
-  projectId,
+  projectPath,
   deploys,
   selectedId,
 }: {
-  projectId: string;
+  /** The project page the deploy links point at (/projects/:id or /demo/projects/:id). */
+  projectPath: string;
   deploys: DeployListItem[];
   selectedId: string | undefined;
 }) {
@@ -30,7 +31,7 @@ export function DeployList({
           return (
             <tr key={deploy.id} className={selected ? 'bg-emerald-50' : 'hover:bg-gray-50'} aria-current={selected || undefined}>
               <td className="px-3 py-2">
-                <Link href={`/projects/${projectId}?deploy=${deploy.id}`} className="font-mono text-emerald-700 hover:underline">
+                <Link href={`${projectPath}?deploy=${deploy.id}`} className="font-mono text-emerald-700 hover:underline">
                   {shortSha(deploy.sha)}
                 </Link>
               </td>

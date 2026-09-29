@@ -14,7 +14,16 @@ function percent(value: number | null): string {
   return `${(Math.floor(value * 1000) / 10).toFixed(1)}%`;
 }
 
-export function EndpointsSection({ projectId, endpoints }: { projectId: string; endpoints: EndpointMonitoring[] }) {
+export function EndpointsSection({
+  projectId,
+  endpoints,
+  readOnly = false,
+}: {
+  projectId: string;
+  endpoints: EndpointMonitoring[];
+  /** Hides the add, edit and delete forms (the public demo). */
+  readOnly?: boolean;
+}) {
   return (
     <section aria-labelledby="endpoints" className="space-y-4">
       <h2 id="endpoints" className="text-lg font-semibold">
@@ -23,7 +32,7 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
 
       {endpoints.length === 0 && (
         <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500">
-          No endpoints yet. Add a health-check URL below and the worker will check it on its interval.
+          {readOnly ? 'No endpoints.' : 'No endpoints yet. Add a health-check URL below and the worker will check it on its interval.'}
         </p>
       )}
 
@@ -66,6 +75,7 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
             </div>
           )}
 
+          {!readOnly && (
           <details className="border-t border-gray-100 px-4 py-2">
             <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-900">Edit or delete</summary>
             <div className="space-y-3 py-3">
@@ -88,9 +98,11 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
               </form>
             </div>
           </details>
+          )}
         </article>
       ))}
 
+      {!readOnly && (
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold">Add endpoint</h3>
         <EndpointForm
@@ -100,6 +112,7 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
           resetOnSave
         />
       </div>
+      )}
     </section>
   );
 }

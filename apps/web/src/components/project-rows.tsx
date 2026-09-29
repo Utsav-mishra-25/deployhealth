@@ -1,18 +1,27 @@
 import type { ProjectListItem } from '@deployhealth/db';
 import Link from 'next/link';
 import { shortSha } from '@/lib/format';
+import { APP_PATHS, type ViewPaths } from '@/lib/paths';
 import { CountPills } from './counts';
 import { FailingFor, UptimeBadge } from './status-badge';
 import { TimeAgo } from './time-ago';
 
 /** Table rows for projects: env findings, last deploy and uptime. Used on /clients and client pages. */
-export function ProjectRows({ projects, indent = false }: { projects: ProjectListItem[]; indent?: boolean }) {
+export function ProjectRows({
+  projects,
+  indent = false,
+  paths = APP_PATHS,
+}: {
+  projects: ProjectListItem[];
+  indent?: boolean;
+  paths?: ViewPaths;
+}) {
   return (
     <>
       {projects.map((p) => (
         <tr key={p.id} className="hover:bg-gray-50" data-testid="project-row">
           <td className={`py-3 pr-3 ${indent ? 'pl-8' : 'pl-4'}`}>
-            <Link href={`/projects/${p.id}`} className="font-medium text-gray-900 hover:text-emerald-700">
+            <Link href={paths.project(p.id)} className="font-medium text-gray-900 hover:text-emerald-700">
               {p.name}
             </Link>
             <div className="text-xs text-gray-500">{p.repoFullName}</div>

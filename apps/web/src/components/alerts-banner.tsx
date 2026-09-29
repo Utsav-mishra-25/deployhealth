@@ -4,7 +4,7 @@ import { shortSha } from '@/lib/format';
 import { TimeAgo } from './time-ago';
 
 /** Open alerts, shown at the top of the project page. */
-export function AlertsBanner({ projectId, alerts }: { projectId: string; alerts: OpenAlertView[] }) {
+export function AlertsBanner({ projectPath, alerts }: { projectPath: string; alerts: OpenAlertView[] }) {
   if (alerts.length === 0) return null;
   return (
     <section aria-label="Open alerts" className="space-y-2">
@@ -17,7 +17,7 @@ export function AlertsBanner({ projectId, alerts }: { projectId: string; alerts:
             </span>
           </div>
           {deploy && (
-            <Link href={`/projects/${projectId}?deploy=${deploy.id}`} className="mt-1 inline-block text-sm text-red-700 underline">
+            <Link href={`${projectPath}?deploy=${deploy.id}`} className="mt-1 inline-block text-sm text-red-700 underline">
               View deploy {shortSha(deploy.sha)} and its findings
             </Link>
           )}
