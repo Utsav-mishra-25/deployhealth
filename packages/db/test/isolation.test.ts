@@ -28,6 +28,7 @@ import {
   recordScan,
   rotateProjectToken,
 } from '../src/queries';
+import { getHandoffData } from '../src/handoff';
 import { alerts, clients, endpoints, projects } from '../src/schema';
 import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
@@ -84,6 +85,12 @@ describe("user A cannot read user B's data", () => {
     expect(await listEndpointsForOwner(db, a.id, bProject.id)).toEqual([]);
     expect(await getProjectMonitoring(db, a.id, bProject.id)).toEqual([]);
     expect(await listOpenAlerts(db, a.id, bProject.id)).toEqual([]);
+  });
+
+  it('handoff exports', async () => {
+    const { a, b, bProject } = await twoUsers();
+    expect(await getHandoffData(db, a.id, bProject.id)).toBeNull();
+    expect((await getHandoffData(db, b.id, bProject.id))?.project.name).toBe(bProject.name);
   });
 });
 
