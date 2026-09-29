@@ -35,3 +35,6 @@ export const MAX_REDIRECTS = 5;
 
 /** Checks older than this are deleted nightly. */
 export const CHECK_RETENTION_DAYS = 30;
+
+/** pg-boss queue for GitHub App pull request checks: web enqueues from the webhook, the worker runs it. */
+export const PR_CHECK_QUEUE = 'pr-check';

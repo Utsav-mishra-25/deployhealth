@@ -1,5 +1,6 @@
 import { hashToken, ingestPayloadSchema, MAX_INGEST_BODY_BYTES, parseBearer, type IngestResponse } from '@deployhealth/core';
 import type { RecordScanInput, RecordScanResult } from '@deployhealth/db';
+import { readBodyUpTo } from './read-body';
 
 /** The hard cap from core (5 MB): generous for real repos (10k findings is ~1.5 MB). */
 export const MAX_BODY_BYTES = MAX_INGEST_BODY_BYTES;
@@ -20,9 +21,9 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
   const project = await deps.findProjectByTokenHash(hashToken(token));
   if (!project) return error(401, 'Unknown or revoked token');
 
-  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) return tooLarge();
-  const text = await readBodyUpTo(request, MAX_BODY_BYTES);
-  if (text === null) return tooLarge();
+  const body = await readBodyUpTo(request, MAX_BODY_BYTES);
+  if (body === null) return tooLarge();
+  const text = body.toString('utf8');
 
   let json: unknown;
   try {
@@ -48,28 +49,6 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     variables,
   });
   return Response.json(result satisfies IngestResponse, { status: 201 });
-}
-
-/**
- * The body as text, or null once it passes `max` bytes. Counts while streaming, so a chunked
- * upload without Content-Length can't make the server buffer more than the cap.
- */
-async function readBodyUpTo(request: Request, max: number): Promise<string | null> {
-  if (!request.body) return '';
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString('utf8');
 }
 
 function error(status: number, message: string): Response {
