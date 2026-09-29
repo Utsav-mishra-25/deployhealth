@@ -1,4 +1,4 @@
-import type { FindingRow } from '@deployhealth/core';
+import { failingFor, type FindingRow } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -9,7 +9,7 @@ import {
   recordCheck,
   type CheckOutcome,
 } from '../src/monitoring';
-import { recordScan } from '../src/queries';
+import { listProjectsForOwner, recordScan } from '../src/queries';
 import { alerts, checks, endpoints, projects } from '../src/schema';
 import { makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
@@ -210,5 +210,59 @@ describe('getProjectMonitoring', () => {
 
     expect(result.find((r) => r.endpoint.id === disabled.id)?.status).toBe('paused');
     expect(result.find((r) => r.endpoint.id === fresh.id)).toMatchObject({ status: 'pending', uptime24h: null, recent: [] });
+  });
+});
+
+describe('failingSince (the "Down for 21m" duration)', () => {
+  const record = async (endpointId: string, outcomes: CheckOutcome[]) => {
+    for (const outcome of outcomes) await recordCheck(db, endpointId, outcome);
+  };
+  const monitoringOf = async (userId: string, projectId: string, endpointId: string) =>
+    (await getProjectMonitoring(db, userId, projectId, T0)).find((m) => m.endpoint.id === endpointId)!;
+
+  it('starts at the first failed check of the current run, not an earlier one', async () => {
+    const { user, project, endpoint } = await setup();
+    await record(endpoint.id, [fail(minutes(-60)), ok(minutes(-50)), ok(minutes(-40)), fail(minutes(-21)), fail(minutes(-20)), fail(minutes(-10))]);
+
+    const down = await monitoringOf(user.id, project.id, endpoint.id);
+    expect(down).toMatchObject({ status: 'down', failingSince: minutes(-21) });
+    expect(failingFor('down', down.failingSince!, T0)).toBe('Down for 21m');
+
+    await record(endpoint.id, [ok(minutes(-1))]);
+    expect(await monitoringOf(user.id, project.id, endpoint.id)).toMatchObject({ status: 'up', failingSince: null });
+  });
+
+  it('covers failures that have not alerted, endpoints that never worked, and paused endpoints', async () => {
+    const { user, project, endpoint } = await setup();
+    await record(endpoint.id, [ok(minutes(-10)), fail(minutes(-3))]);
+    expect(await monitoringOf(user.id, project.id, endpoint.id)).toMatchObject({ status: 'failing', failingSince: minutes(-3) });
+
+    const broken = await makeEndpoint(db, project.id);
+    await record(broken.id, [fail(minutes(-30)), fail(minutes(-20))]);
+    expect(await monitoringOf(user.id, project.id, broken.id)).toMatchObject({ status: 'failing', failingSince: minutes(-30) });
+
+    const paused = await makeEndpoint(db, project.id);
+    await record(paused.id, [fail(minutes(-5))]);
+    await db.update(endpoints).set({ enabled: false }).where(eq(endpoints.id, paused.id));
+    expect(await monitoringOf(user.id, project.id, paused.id)).toMatchObject({ status: 'paused', failingSince: null });
+  });
+
+  it('gives each project row the failure behind its badge', async () => {
+    const { user, project: shop, endpoint: api } = await setup();
+    // shop: api is down (alert open) since -21; a second endpoint has never worked, since -300.
+    await record(api.id, [ok(minutes(-40)), fail(minutes(-21)), fail(minutes(-20))]);
+    const legacy = await makeEndpoint(db, shop.id);
+    await record(legacy.id, [fail(minutes(-300)), fail(minutes(-200))]);
+    // blog: one failing endpoint, no alert yet.
+    const blog = await makeProject(db, user.id, 'blog');
+    await record((await makeEndpoint(db, blog.id)).id, [ok(minutes(-10)), fail(minutes(-4))]);
+    // docs: healthy.
+    const docs = await makeProject(db, user.id, 'docs');
+    await record((await makeEndpoint(db, docs.id)).id, [fail(minutes(-9)), ok(minutes(-8))]);
+
+    const rows = Object.fromEntries((await listProjectsForOwner(db, user.id)).map((p) => [p.name, p]));
+    expect(rows.shop).toMatchObject({ uptime: 'down', failingSince: minutes(-21) });
+    expect(rows.blog).toMatchObject({ uptime: 'degraded', failingSince: minutes(-4) });
+    expect(rows.docs).toMatchObject({ uptime: 'up', failingSince: null });
   });
 });

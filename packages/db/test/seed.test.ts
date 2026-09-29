@@ -6,12 +6,13 @@ import { DEMO_GITHUB_ID } from '../src/demo';
 import { getProjectMonitoring, listOpenAlerts } from '../src/monitoring';
 import { findProjectByTokenHash, getLatestScan, listDeploys } from '../src/queries';
 import { alerts, checks, clients, endpoints, projects, users } from '../src/schema';
-import { DEMO_DEPLOY_COUNT, DEMO_PROJECT, demoDeploys, seed } from '../src/seed';
+import { DEMO_DEPLOY_COUNT, DEMO_PROJECT, demoDeploys, SCENARIO, seed } from '../src/seed';
 import { makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
 const { db } = handle;
 const NOW = new Date('2026-09-28T12:00:00Z');
+const FIRST_FAILURE = new Date(NOW.getTime() - (SCENARIO.deployMinutesAgo - SCENARIO.failureAfterDeployMinutes) * 60_000);
 
 beforeEach(async () => {
   await truncateAll(db);
@@ -80,6 +81,7 @@ describe('seed', () => {
     const homepage = monitoring.find((m) => m.endpoint.url === 'https://example.com/')!;
 
     expect(api.status).toBe('down');
+    expect(api.failingSince).toEqual(FIRST_FAILURE);
     expect(api.endpoint.consecutiveFailures).toBeGreaterThanOrEqual(20);
     expect(api.recent[0]).toMatchObject({ ok: false, statusCode: 503 });
     expect(api.uptime7d).toBeGreaterThan(0.99);
@@ -87,6 +89,7 @@ describe('seed', () => {
     expect(api.latency.every((b) => b.p50 >= 40 && b.p50 <= 200 && b.p95 >= b.p50)).toBe(true);
 
     expect(homepage.status).toBe('up');
+    expect(homepage.failingSince).toBeNull();
     expect(homepage.uptime24h).toBeGreaterThan(0.95);
 
     const [oldest] = await db.select({ at: checks.checkedAt }).from(checks).orderBy(checks.checkedAt).limit(1);
@@ -103,6 +106,7 @@ describe('seed', () => {
       'northwind-site': 'up',
       portfolio: 'up',
     });
+    expect(all.find((p) => p.name === 'acme-storefront')?.failingSince).toEqual(FIRST_FAILURE);
   });
 
   it('prints a token that authenticates the storefront project', async () => {
