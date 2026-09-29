@@ -4,6 +4,8 @@ import {
   HOST_CHECK_SPACING_MS,
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
+  MAX_PR_CHECK_BYTES,
+  MAX_PR_CHECK_FILES,
   MAX_REDIRECTS,
 } from '@deployhealth/core';
 import type { Metadata } from 'next';
@@ -68,8 +70,8 @@ export default function SecurityPage() {
           </li>
           <li className={li}>
             <strong>Your account:</strong> your GitHub id, login, name, public email and avatar URL, from GitHub sign-in.
-            Sign-in asks GitHub for your profile only, not for access to your repositories. Clients, deploy notes and
-            contact emails are what you type in.
+            Sign-in asks GitHub for your profile only, not for access to your repositories (the optional GitHub App below
+            is separate). Clients, deploy notes and contact emails are what you type in.
           </li>
         </ul>
       </Section>
@@ -94,6 +96,23 @@ export default function SecurityPage() {
             per project). deployhealth can&apos;t be used to flood a server.
           </li>
         </ul>
+      </Section>
+
+      <Section title="The GitHub App (pull request checks)">
+        <p>
+          If you install it, the App asks GitHub for read access to the contents of the repositories you choose, and write
+          access to their pull requests and checks (to comment and add the <code>deployhealth / env</code> check). For each
+          pull request it reads, at the pull request&apos;s head and at its merge base, only the files the scanner reads
+          (source files in the scanned languages, env files and <code>.gitignore</code>), plus the pull request&apos;s diff
+          and commit messages. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
+          pull request, fetched only from api.github.com.
+        </p>
+        <p>
+          It stores what it reports: variable names with file:line, the names of committed env files, how many secret-shaped
+          strings it saw (never the strings), the pull request number, its author and whether a coding agent wrote it. File
+          contents are discarded as soon as the check finishes. Webhook deliveries are verified with a shared secret before
+          anything is read, and uninstalling the App deletes its pull request checks.
+        </p>
       </Section>
 
       <Section title="How share links work">
