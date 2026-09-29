@@ -57,6 +57,7 @@ root, and each one points at its own config file instead.
    | `AUTH_GITHUB_ID` | Client ID | The GitHub OAuth app from step 5 (add it then) |
    | `AUTH_GITHUB_SECRET` | Client secret | The GitHub OAuth app from step 5 (add it then) |
    | `REPORT_SHARE_SECRET` | output of `openssl rand -base64 32` | Optional. Signs report share links; see below |
+   | `DEMO_PUBLIC` | `1` | Optional. Serves the read-only public demo at `/demo` (and `/api/demo/broken`). `0` or unset turns both off (404) |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
 
@@ -83,6 +84,10 @@ root, and each one points at its own config file instead.
    | --- | --- | --- |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Reference to the Postgres service |
    | `NODE_ENV` | `production` | Literal |
+   | `DEMO_PUBLIC` | `1` | Same value as on web. Runs the `reseed-demo` job nightly and once on start, so the demo data exists without a manual seed step |
+   | `DEMO_BASE_URL` | `https://<your-domain>` | web's public URL from step 2.6. Required when `DEMO_PUBLIC=1`: the demo's failing "Acme API" endpoint is `<DEMO_BASE_URL>/api/demo/broken` |
+
+   `DEMO_BASE_URL` is only read by the worker, so web doesn't need it.
 
 6. No domain and no health check: the worker has no HTTP server.
 
@@ -118,6 +123,9 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
   `[check] {...}` line per minute once you have endpoints.
 - `https://<your-domain>/deployhealth-scan.mjs` downloads the CLI (about 11 KB). The GitHub Action
   snippet on each project's settings page uses it.
+- With the demo on: `https://<your-domain>/demo` shows Acme Corp and Northwind Bakery without
+  signing in, the worker log shows `[reseed-demo] demo data restored in …ms` after each start, and
+  within a couple of minutes "Acme API" is failing for real (its checks show `Expected 200, got 503`).
 
 ## Troubleshooting
 
@@ -129,3 +137,5 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 | Every page 500s; the log mentions `AUTH_SECRET` | It is shorter than 32 characters. Regenerate it with `openssl rand -base64 32`. |
 | GitHub says the redirect URI is not associated | The callback URL doesn't exactly match `https://<your-domain>/api/auth/callback/github`. |
 | Worker logs `relation "endpoints" does not exist` repeatedly | web hasn't deployed successfully yet, so migrations haven't run. Fix web first. |
+| Worker exits with `DEMO_PUBLIC=1 needs DEMO_BASE_URL` | Set `DEMO_BASE_URL` on the worker to web's public URL, or set `DEMO_PUBLIC=0`. |
+| `/demo` is a 404 | `DEMO_PUBLIC` isn't `1` on web, or the worker hasn't reseeded yet (check its log). |
