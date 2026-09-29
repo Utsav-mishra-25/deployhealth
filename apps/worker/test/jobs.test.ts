@@ -94,18 +94,37 @@ describe('checkEndpoints job', () => {
 });
 
 describe('pruneOldChecks job', () => {
-  it('deletes checks older than 30 days', async () => {
-    let cutoff: Date | undefined;
+  it('rolls up complete days first, then deletes whole days more than 30 days back', async () => {
+    const calls: string[] = [];
     const deleted = await pruneOldChecks({
+      rollup: async (before) => {
+        calls.push(`rollup before ${before.toISOString()}`);
+        return 7;
+      },
       prune: async (olderThan) => {
-        cutoff = olderThan;
+        calls.push(`prune before ${olderThan.toISOString()}`);
         return 42;
       },
       now: () => new Date('2026-09-30T03:17:00Z'),
       log: () => {},
     });
     expect(deleted).toBe(42);
-    expect(cutoff).toEqual(new Date('2026-08-31T03:17:00Z'));
+    expect(calls).toEqual(['rollup before 2026-09-30T00:00:00.000Z', 'prune before 2026-08-31T00:00:00.000Z']);
+  });
+
+  it('deletes nothing when the rollup fails', async () => {
+    let pruned = false;
+    await expect(
+      pruneOldChecks({
+        rollup: async () => Promise.reject(new Error('db down')),
+        prune: async () => {
+          pruned = true;
+          return 0;
+        },
+        log: () => {},
+      }),
+    ).rejects.toThrow('db down');
+    expect(pruned).toBe(false);
   });
 });
 

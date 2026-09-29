@@ -8,11 +8,12 @@ import {
   listOpenAlerts,
   pruneChecks,
   recordCheck,
+  rollupChecks,
   updateEndpoint,
   type CheckOutcome,
 } from '../src/monitoring';
 import { listProjectsForOwner, recordScan } from '../src/queries';
-import { alerts, checks, endpoints, projects } from '../src/schema';
+import { alerts, checks, endpointDailyStats, endpoints, projects } from '../src/schema';
 import { makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
@@ -171,6 +172,40 @@ describe('recordCheck and the alert lifecycle', () => {
     const { event } = await recordCheck(db, endpoint.id, fail(minutes(1)));
     expect(event?.message).toContain('no deploy in the 30 minutes before the first failure');
     expect((await db.select().from(alerts))[0]?.relatedDeployId).toBeNull();
+  });
+});
+
+describe('rollupChecks', () => {
+  it('writes one row per endpoint per complete UTC day, skips today, and is idempotent', async () => {
+    const { endpoint, project } = await setup();
+    const other = await makeEndpoint(db, project.id);
+    const at = (iso: string) => new Date(iso);
+    const rows = [
+      { endpointId: endpoint.id, ...ok(at('2026-09-26T00:00:00Z')) },
+      { endpointId: endpoint.id, ...fail(at('2026-09-26T23:59:59Z')) },
+      { endpointId: endpoint.id, ...ok(at('2026-09-27T12:00:00Z')) },
+      { endpointId: other.id, ...fail(at('2026-09-27T01:00:00Z')) },
+      { endpointId: endpoint.id, ...ok(at('2026-09-28T00:00:01Z')) }, // today: not complete yet
+    ];
+    await db.insert(checks).values(rows);
+
+    const today = at('2026-09-28T12:00:00Z');
+    expect(await rollupChecks(db, today)).toBe(3);
+    const stats = async () =>
+      (await db.select().from(endpointDailyStats))
+        .map((s) => [s.endpointId === endpoint.id ? 'main' : 'other', s.day, s.checks, s.ok] as const)
+        .sort((a, b) => `${a[1]}${a[0]}`.localeCompare(`${b[1]}${b[0]}`));
+    expect(await stats()).toEqual([
+      ['main', '2026-09-26', 2, 1],
+      ['main', '2026-09-27', 1, 1],
+      ['other', '2026-09-27', 1, 0],
+    ]);
+
+    // Running again changes nothing; a check recorded late for a past day is picked up.
+    expect(await rollupChecks(db, today)).toBe(3);
+    await db.insert(checks).values({ endpointId: endpoint.id, ...fail(at('2026-09-27T23:59:00Z')) });
+    await rollupChecks(db, today);
+    expect((await stats()).find((s) => s[0] === 'main' && s[1] === '2026-09-27')).toEqual(['main', '2026-09-27', 2, 1]);
   });
 });
 
