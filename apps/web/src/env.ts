@@ -14,6 +14,8 @@ const schema = z
     AUTH_GITHUB_SECRET: z.string().min(1).optional(),
     /** "1" enables the demo login, but only outside production (see lib/auth-providers.ts). */
     AUTH_DEMO_LOGIN: z.enum(['0', '1']).default('0'),
+    /** Signs report share links. Optional: derived from AUTH_SECRET when unset (lib/share-link.ts). */
+    REPORT_SHARE_SECRET: z.string().min(32, 'REPORT_SHARE_SECRET must be at least 32 characters (openssl rand -base64 32)').optional(),
   })
   .refine((env) => env.NODE_ENV !== 'production' || (env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET), {
     message: 'AUTH_GITHUB_ID and AUTH_GITHUB_SECRET are required in production',
@@ -32,6 +34,7 @@ export function serverEnv(): ServerEnv {
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID || undefined,
     AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET || undefined,
     AUTH_DEMO_LOGIN: process.env.AUTH_DEMO_LOGIN || undefined,
+    REPORT_SHARE_SECRET: process.env.REPORT_SHARE_SECRET || undefined,
   });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.') || 'env'}: ${i.message}`).join('\n');
