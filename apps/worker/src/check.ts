@@ -1,5 +1,5 @@
 import { BlockedUrlError, type EndpointMethod } from '@deployhealth/core';
-import { guardedRequest, type HttpRequester, type ResponseHead } from './guarded-http';
+import { guardedRequest, type HttpRequester } from './guarded-http';
 
 export { USER_AGENT, type HttpRequester, type ResponseHead } from './guarded-http';
 
