@@ -32,6 +32,14 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.locator('main form')).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Settings/ })).toHaveCount(0);
 
+  // Pull requests the GitHub App checked, with the agent that wrote each.
+  const prs = page.getByRole('region', { name: 'Pull requests' });
+  await expect(prs.getByTestId('pr-check-row')).toHaveCount(3);
+  const claudePr = prs.getByTestId('pr-check-row').filter({ hasText: '#87' });
+  await expect(claudePr.getByTestId('agent-badge')).toHaveText('Claude');
+  await expect(claudePr.getByTestId('pr-undeclared')).toHaveText('1');
+  await expect(claudePr.getByRole('link', { name: '#87' })).toHaveAttribute('href', 'https://github.com/acme/storefront/pull/87');
+
   // Export the handoff: the printable page, then the Markdown download.
   await page.getByRole('link', { name: 'Export handoff' }).click();
   await expect(page.getByRole('heading', { name: 'Handoff: acme-storefront' })).toBeVisible();
@@ -43,8 +51,9 @@ test('public demo without a session: clients, project, handoff and report', asyn
   expect(markdown).toContain('| `REDIS_URL` | — | **missing** |');
   expect(markdown).toContain('## How to deploy');
 
-  // The client's monthly report.
+  // The client's monthly report, and the month's agent pull requests.
   await page.goto('/demo/clients/acme-corp');
+  await expect(page.getByTestId('agent-pr-stat')).toContainText(/Agent PRs that added undeclared env vars this month: \d+ of \d+/);
   await page.getByRole('link', { name: 'Monthly report' }).click();
   await expect(page.getByTestId('report-summary')).toHaveText(/^1 project, .+ uptime, .+, \d+ deploys?, .+ fixed$/);
   await expect(page.getByTestId('report')).toContainText('All times UTC');
@@ -119,10 +128,17 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   // Deploy notes are untrusted Markdown: no raw HTML, no images in the handoff.
   await page.getByRole('link', { name: /Settings/ }).click();
   await expect(page.locator('pre').filter({ hasText: 'npx --yes deployhealth-scan@' })).toHaveCount(2); // Action + local run
+
+  // The GitHub App: install link, status, and the mode.
+  await expect(page.getByTestId('install-github-app')).toHaveAttribute('href', 'https://github.com/apps/deployhealth/installations/new');
+  await expect(page.getByTestId('github-app-status')).toHaveText(`Not installed on acme/smoke yet.`);
+  await page.getByLabel(/Strict/).check();
+  await page.getByRole('button', { name: 'Save mode' }).click();
+  await expect(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save mode' }) }).getByText('Saved')).toBeVisible();
   await expect(page.locator('pre').filter({ hasText: 'deployhealth-scan.mjs' })).toHaveCount(0);
   await page.getByLabel(/How to deploy/).fill('## Railway\n\n1. Push to `main`.\n\n<script>window.pwned = true</script>\n\n![pixel](https://tracker.example/p.gif)');
   await page.getByRole('button', { name: 'Save settings' }).click();
-  await expect(page.getByText('Saved')).toBeVisible();
+  await expect(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save settings' }) }).getByText('Saved')).toBeVisible();
 
   await page.goto(`${projectUrl}/handoff`);
   const handoff = page.getByTestId('handoff');
