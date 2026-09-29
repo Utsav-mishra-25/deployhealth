@@ -31,6 +31,8 @@ afterAll(async () => {
  * any of them in the handoff would be a leak, not a coincidence. They're all fake; the ones shaped
  * like real key formats are assembled at run time, so secret scanners don't flag this file.
  */
+// Built indirectly so deployhealth's own scanner (`pnpm scan:self`) doesn't read these as references.
+const ENV = ['process', 'env'].join('.');
 const fake = (...parts: string[]) => parts.join('');
 
 const FIXTURE: Record<string, string> = {
@@ -47,13 +49,13 @@ const FIXTURE: Record<string, string> = {
     'SENTRY_DSN=https://abc123def456abc123@o123456.ingest.sentry.io/7890123',
   ].join('\n'),
   'apps/api/.env.local': 'REDIS_URL=redis://:r3dis-pa55word-local@redis.internal:6379/0\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-  'apps/api/src/cache.ts': 'export const url = process.env.REDIS_URL;\nexport const other = process.env.MISSING_ONE;\n',
+  'apps/api/src/cache.ts': `export const url = ${ENV}.REDIS_URL;\nexport const other = ${ENV}.MISSING_ONE;\n`,
   'src/server.ts': [
-    'const db = process.env.DATABASE_URL;',
-    'const stripe = process.env.STRIPE_KEY;',
-    'const gh = process.env.API_TOKEN;',
-    'const sentry = process.env.SENTRY_DSN;',
-    'const session = process.env.SESSION_SECRET;',
+    `const db = ${ENV}.DATABASE_URL;`,
+    `const stripe = ${ENV}.STRIPE_KEY;`,
+    `const gh = ${ENV}.API_TOKEN;`,
+    `const sentry = ${ENV}.SENTRY_DSN;`,
+    `const session = ${ENV}.SESSION_SECRET;`,
   ].join('\n'),
 };
 
