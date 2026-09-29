@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { CLI_BUNDLE_PATH, TOKEN_PREFIX, TOKEN_SECRET_NAME } from './constants';
-import { FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
+import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
 
 /** Upper bound on findings per scan; protects the ingest endpoint from runaway payloads. */
 export const MAX_FINDINGS = 10_000;
+/** Upper bound on referenced variables per scan. */
+export const MAX_VARIABLES = 10_000;
 
 export const findingRowSchema = z.object({
   kind: z.enum(FINDING_KINDS),
@@ -14,12 +16,24 @@ export const findingRowSchema = z.object({
   env_file: z.string().min(1).max(1000).nullable(),
 });
 
+/**
+ * A referenced variable. The shape only admits names: `var_name` must look like an env var name
+ * and `defined_in` can only list the three env file names, so no value can ride along.
+ */
+export const requiredVariableSchema = z.object({
+  var_name: z.string().max(200).regex(ENV_NAME_PATTERN, 'var_name must be an env var name'),
+  scope: z.string().max(1000),
+  defined_in: z.array(z.enum(ENV_FILE_BASENAMES)).max(ENV_FILE_BASENAMES.length),
+});
+
 /** Body of `POST /api/ingest/scan`. Shared by the CLI (sender) and the web app (receiver). */
 export const ingestPayloadSchema = z.object({
   sha: z.string().regex(SHA_PATTERN, 'sha must be a hex commit id'),
   branch: z.string().min(1).max(255),
   timestamp: z.iso.datetime({ offset: true }),
   findings: z.array(findingRowSchema).max(MAX_FINDINGS),
+  /** Every referenced variable (handoff exports list them). Optional: older CLIs don't send it. */
+  variables: z.array(requiredVariableSchema).max(MAX_VARIABLES).optional(),
 });
 
 export type IngestPayload = z.infer<typeof ingestPayloadSchema>;

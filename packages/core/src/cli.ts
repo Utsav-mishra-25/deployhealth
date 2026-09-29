@@ -87,7 +87,13 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     io.stderr(`deployhealth-scan: --sha must be a hex commit id, got "${sha}"\n`);
     return EXIT.usage;
   }
-  const payload: IngestPayload = { sha, branch, timestamp: io.now().toISOString(), findings: result.findings };
+  const payload: IngestPayload = {
+    sha,
+    branch,
+    timestamp: io.now().toISOString(),
+    findings: result.findings,
+    variables: result.variables,
+  };
 
   const endpoint = `${values.url.replace(/\/+$/, '')}/api/ingest/scan`;
   let response: Response;
@@ -118,7 +124,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
 }
 
 function toJson(result: ScanResult) {
-  return { counts: result.counts, scopes: result.scopes, findings: result.findings, warnings: result.warnings };
+  return { counts: result.counts, scopes: result.scopes, findings: result.findings, variables: result.variables, warnings: result.warnings };
 }
 
 const TITLES: Record<FindingKind, string> = { missing: 'MISSING', unused: 'UNUSED', mismatch: 'MISMATCH' };
