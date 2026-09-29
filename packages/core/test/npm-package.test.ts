@@ -31,7 +31,7 @@ describe('the deployhealth-scan npm package', () => {
   it("README's workflow is exactly the snippet the settings page generates", () => {
     const readme = readFileSync(`${NPM}README.md`, 'utf8');
     const yaml = /```yaml\n([\s\S]*?)```/.exec(readme)?.[1];
-    const snippet = githubActionSnippet({ appUrl: 'https://deployhealth-production.up.railway.app', version: CLI_VERSION });
+    const snippet = githubActionSnippet({ appUrl: 'https://deployhealth.dev', version: CLI_VERSION });
     expect(yaml).toBe(snippet.slice(snippet.indexOf('\n') + 1)); // minus the "# .github/workflows/…" line
   });
 

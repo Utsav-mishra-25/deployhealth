@@ -51,7 +51,7 @@ jobs:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
         run: |
           npx --yes deployhealth-scan@0.1.0 \
-            --url https://deployhealth-production.up.railway.app \
+            --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
             --branch "$GITHUB_REF_NAME"

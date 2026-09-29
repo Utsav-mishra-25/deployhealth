@@ -93,6 +93,12 @@ the build command builds the workspace packages it depends on first).
 
    Note the URL, e.g. `https://web-production-1234.up.railway.app`.
 
+   **Custom domain** (the hosted instance uses `https://deployhealth.dev`): **Settings →
+   Networking → Custom Domain**, add the DNS record Railway shows, and wait for the certificate.
+   Then use the custom domain everywhere a URL is configured: the GitHub OAuth callback (step 5),
+   `DEMO_BASE_URL` (step 3.5) and the GitHub App's webhook URL. The Railway domain keeps working
+   as an alias, but GitHub sign-in only works on the domain registered as the OAuth callback.
+
 ## 3. Add the `worker` service
 
 1. **+ Create** → **GitHub Repo** → pick `deployhealth` again.

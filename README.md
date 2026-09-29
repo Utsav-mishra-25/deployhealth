@@ -3,7 +3,7 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-**[Try the live demo →](https://deployhealth-production.up.railway.app/demo)** · no sign-up, read-only sample data · **[Free during the beta](#pricing)**
+**[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data · **[Free during the beta](#pricing)**
 
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
@@ -71,7 +71,7 @@ creates a signed link your client can open without an account, valid for 90 days
 ## Try the demo
 
 The demo is a real deployhealth instance showing sample clients (Acme Corp, Northwind Bakery), read
-only, no sign-up: **https://deployhealth-production.up.railway.app/demo**
+only, no sign-up: **https://deployhealth.dev/demo**
 
 Its alert is real: "Acme API" points at an endpoint that always answers 503, and the worker checks
 it every minute. The data resets to its starting state every night.
@@ -97,12 +97,12 @@ deployhealth is free to self-host (see [Licensing](#licensing)). It needs Postgr
 
 ## Security
 
-[**/security**](https://deployhealth-production.up.railway.app/security) explains what deployhealth
+[**/security**](https://deployhealth.dev/security) explains what deployhealth
 stores (variable names and `file:line`, never values; endpoint URLs; findings), how checks run
 (SSRF-guarded, 10 s budget, response bodies never read or stored), how share links work, and how
 to report a vulnerability, with our commitment to email affected users within 72 hours of
 confirming an incident. The same contact is in
-[`/.well-known/security.txt`](https://deployhealth-production.up.railway.app/.well-known/security.txt).
+[`/.well-known/security.txt`](https://deployhealth.dev/.well-known/security.txt).
 
 ## Licensing
 
