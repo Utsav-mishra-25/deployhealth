@@ -1,6 +1,6 @@
 'use server';
 
-import { assertPublicUrl, BlockedUrlError } from '@deployhealth/core';
+import { assertPublicUrl, BlockedUrlError, LimitExceededError } from '@deployhealth/core';
 import { createEndpoint, deleteEndpoint, updateEndpoint } from '@deployhealth/db';
 import { revalidatePath } from 'next/cache';
 import { requireWritableUser } from '@/lib/guard';
@@ -45,9 +45,13 @@ export async function saveEndpointAction(
 
   const db = getDb();
   const input = { ...parsed.data, url: url.href };
-  const saved = endpointId
-    ? await updateEndpoint(db, user.id, endpointId, input)
-    : await createEndpoint(db, user.id, projectId, input);
+  let saved;
+  try {
+    saved = endpointId ? await updateEndpoint(db, user.id, endpointId, input) : await createEndpoint(db, user.id, projectId, input);
+  } catch (error) {
+    if (error instanceof LimitExceededError) return invalid(error.message);
+    throw error;
+  }
   if (!saved) return invalid('Endpoint not found.');
 
   revalidatePath(`/projects/${projectId}`);
