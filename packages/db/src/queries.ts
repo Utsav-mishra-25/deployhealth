@@ -1,4 +1,4 @@
-import { summarize, uptimeStatus, type FindingCounts, type FindingRow, type UptimeStatus } from '@deployhealth/core';
+import { endpointLabel, summarize, uptimeStatus, type EndpointRef, type FindingCounts, type FindingRow, type UptimeStatus } from '@deployhealth/core';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { failingSinceSql } from './monitoring';
@@ -132,6 +132,8 @@ export interface ProjectListItem {
    * the current runs of the endpoints with an open alert (down) or failing now (degraded).
    */
   failingSince: Date | null;
+  /** Labels (name, else host) of the endpoints behind a down or degraded badge, longest-failing first. */
+  failingEndpoints: string[];
 }
 
 /** The owner's projects, newest first, each with its latest deploy and that deploy's latest scan. */
@@ -153,11 +155,14 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     failing_endpoints: number;
     down_since: string | null;
     failing_since: string | null;
+    down_endpoints: EndpointRef[];
+    failing_endpoint_refs: EndpointRef[];
   }>(sql`
     select p.id, p.name, p.repo_full_name, p.client_id, p.created_at,
            d.sha, d.branch, d.deployed_at,
            s.missing_count, s.unused_count, s.mismatch_count,
-           u.enabled_endpoints, u.open_alerts, u.failing_endpoints, u.down_since, u.failing_since
+           u.enabled_endpoints, u.open_alerts, u.failing_endpoints, u.down_since, u.failing_since,
+           u.down_endpoints, u.failing_endpoint_refs
     from ${projects} p
     left join lateral (
       select id, sha, branch, deployed_at from ${deploys}
@@ -172,9 +177,14 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
              count(*) filter (where ep.open_alert)::int as open_alerts,
              count(ep.failing_since)::int as failing_endpoints,
              min(ep.failing_since) filter (where ep.open_alert) as down_since,
-             min(ep.failing_since) as failing_since
+             min(ep.failing_since) as failing_since,
+             coalesce(json_agg(json_build_object('url', ep.url, 'name', ep.name) order by ep.failing_since)
+               filter (where ep.open_alert and ep.failing_since is not null), '[]') as down_endpoints,
+             coalesce(json_agg(json_build_object('url', ep.url, 'name', ep.name) order by ep.failing_since)
+               filter (where ep.failing_since is not null), '[]') as failing_endpoint_refs
       from (
-        select exists (
+        select e.url, e.name,
+               exists (
                  select 1 from ${alerts} a where a.endpoint_id = e.id and a.resolved_at is null
                ) as open_alert,
                ${failingSinceSql(sql`e.id`)} as failing_since
@@ -209,14 +219,17 @@ function uptimeAndSince(row: {
   failing_endpoints: number;
   down_since: string | null;
   failing_since: string | null;
-}): { uptime: UptimeStatus; failingSince: Date | null } {
+  down_endpoints: EndpointRef[];
+  failing_endpoint_refs: EndpointRef[];
+}): { uptime: UptimeStatus; failingSince: Date | null; failingEndpoints: string[] } {
   const uptime = uptimeStatus({
     enabledEndpoints: row.enabled_endpoints,
     openAlerts: row.open_alerts,
     failingEndpoints: row.failing_endpoints,
   });
   const since = uptime === 'down' ? row.down_since : uptime === 'degraded' ? row.failing_since : null;
-  return { uptime, failingSince: since ? new Date(since) : null };
+  const refs = uptime === 'down' ? row.down_endpoints : uptime === 'degraded' ? row.failing_endpoint_refs : [];
+  return { uptime, failingSince: since ? new Date(since) : null, failingEndpoints: refs.map(endpointLabel) };
 }
 
 // ---------------------------------------------------------------------------------------------

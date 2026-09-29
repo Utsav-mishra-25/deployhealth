@@ -17,6 +17,8 @@ import { alerts, checks, deploys, endpoints, findings, projects, scans, type Ale
 
 export interface EndpointInput {
   url: string;
+  /** Display name; null clears it. Omitted on update keeps the current one. */
+  name?: string | null;
   method: EndpointMethod;
   intervalSeconds: EndpointInterval;
   expectedStatus: number;
@@ -162,7 +164,12 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
       .update(endpoints)
       .set({ consecutiveFailures: outcome.ok ? 0 : sql`${endpoints.consecutiveFailures} + 1` })
       .where(eq(endpoints.id, endpointId))
-      .returning({ projectId: endpoints.projectId, url: endpoints.url, consecutiveFailures: endpoints.consecutiveFailures });
+      .returning({
+        projectId: endpoints.projectId,
+        url: endpoints.url,
+        name: endpoints.name,
+        consecutiveFailures: endpoints.consecutiveFailures,
+      });
     if (!endpoint) throw new Error(`endpoint ${endpointId} not found`);
 
     const [open] = await tx
@@ -192,14 +199,14 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
 
     if (action === 'resolve') {
       await tx.update(alerts).set({ resolvedAt: outcome.checkedAt }).where(eq(alerts.id, open!.id));
-      const message = alertResolvedMessage({ endpointUrl: endpoint.url, openedAt: open!.createdAt, resolvedAt: outcome.checkedAt });
+      const message = alertResolvedMessage({ endpoint, openedAt: open!.createdAt, resolvedAt: outcome.checkedAt });
       return { consecutiveFailures: 0, event: { type: 'resolved', alertId: open!.id, ...base, message } };
     }
 
     const firstFailureAt = await firstFailureOfStreak(tx, endpointId);
     const link = await linkDeploy(tx, endpoint.projectId, firstFailureAt);
     const message = alertOpenedMessage({
-      endpointUrl: endpoint.url,
+      endpoint,
       firstFailureAt,
       deploy: link?.deploy ?? null,
       newMissing: link?.newMissing ?? [],
@@ -393,13 +400,14 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
 export interface OpenAlertView {
   alert: Alert;
   endpointUrl: string | null;
+  endpointName: string | null;
   deploy: { id: string; sha: string } | null;
 }
 
 /** Open alerts of one of the owner's projects, newest first (for the banner). */
 export async function listOpenAlerts(db: Db, ownerId: string, projectId: string): Promise<OpenAlertView[]> {
   const rows = await db
-    .select({ alert: alerts, endpointUrl: endpoints.url, deployId: deploys.id, deploySha: deploys.sha })
+    .select({ alert: alerts, endpointUrl: endpoints.url, endpointName: endpoints.name, deployId: deploys.id, deploySha: deploys.sha })
     .from(alerts)
     .innerJoin(projects, eq(projects.id, alerts.projectId))
     .leftJoin(endpoints, eq(endpoints.id, alerts.endpointId))
@@ -409,6 +417,7 @@ export async function listOpenAlerts(db: Db, ownerId: string, projectId: string)
   return rows.map((r) => ({
     alert: r.alert,
     endpointUrl: r.endpointUrl,
+    endpointName: r.endpointName,
     deploy: r.deployId && r.deploySha ? { id: r.deployId, sha: r.deploySha } : null,
   }));
 }
