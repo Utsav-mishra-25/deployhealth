@@ -1,0 +1,20 @@
+{
+  "name": "deployhealth",
+  "url": "https://deployhealth.dev",
+  "description": "Env var check on every pull request: lists the env vars a PR adds, removes or renames, flags new ones missing from .env.example, and catches committed .env files and secret-shaped strings. Names only, never values.",
+  "public": true,
+  "hook_attributes": {
+    "url": "https://deployhealth.dev/api/github/webhook",
+    "active": true
+  },
+  "setup_url": "https://deployhealth.dev/github/installed",
+  "setup_on_update": true,
+  "request_oauth_on_install": false,
+  "default_permissions": {
+    "checks": "write",
+    "contents": "read",
+    "metadata": "read",
+    "pull_requests": "write"
+  },
+  "default_events": ["pull_request"]
+}
