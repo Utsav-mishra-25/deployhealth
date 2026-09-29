@@ -22,7 +22,7 @@ apps/
     src/app/          /login, /clients (home), /clients/new, /clients/[slug](/edit, /report),
                       /projects/new, /projects/[id] (+ endpoint actions, /settings, /handoff,
                       /handoff.md), /demo/... (read-only mirror), /share/reports/[token],
-                      /api/demo/broken
+                      /api/demo/broken, /security and /.well-known/security.txt (public)
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, print/share buttons, report toolbar
     e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link)
@@ -214,6 +214,11 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   info `deployhealth-report-share`. Verify the signature (constant time) before parsing fields.
   Stateless, 90 days; rotating the key revokes every link. `/share/*` is rate-limited per IP in
   `middleware.ts` (Node runtime, 30/min, keyed on the last `X-Forwarded-For` hop).
+- **/security** (public, linked from the footer) states what's stored and how checks and share
+  links work, using the shared constants (`CHECK_TIMEOUT_MS`, caps, `SHARE_LINK_DAYS`) so it can't
+  drift. Keep it true when behaviour changes (anything new that reads repositories goes there). The
+  contact is `SECURITY_CONTACT_EMAIL`, else a private GitHub security advisory; the same contact
+  goes into `/.well-known/security.txt` (RFC 9116, `Expires` 180 days out, rounded to the day).
 - **Untrusted Markdown** (deploy notes) renders only through `SafeMarkdown`: react-markdown with
   `skipHtml`, images removed, external links `rel="noopener noreferrer"`. Never add rehype-raw.
 - **Printable pages** (handoff, report) use print CSS (`print:hidden`, `.doc-section`) and no

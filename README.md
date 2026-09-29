@@ -95,6 +95,15 @@ deployhealth is free to self-host (see [Licensing](#licensing)). It needs Postgr
 - **Anywhere else** that runs Node and Postgres: the same guide lists each service's build,
   pre-deploy (migrations) and start commands, and all variables.
 
+## Security
+
+[**/security**](https://deployhealth-production.up.railway.app/security) explains what deployhealth
+stores (variable names and `file:line`, never values; endpoint URLs; findings), how checks run
+(SSRF-guarded, 10 s budget, response bodies never read or stored), how share links work, and how
+to report a vulnerability, with our commitment to email affected users within 72 hours of
+confirming an incident. The same contact is in
+[`/.well-known/security.txt`](https://deployhealth-production.up.railway.app/.well-known/security.txt).
+
 ## Licensing
 
 The CLI and scanner (packages/core) are MIT. The web app and worker are FSL-1.1-MIT: free to use and

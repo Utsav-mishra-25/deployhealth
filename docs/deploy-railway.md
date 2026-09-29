@@ -76,6 +76,7 @@ the build command builds the workspace packages it depends on first).
    | `REPORT_SHARE_SECRET` | output of `openssl rand -base64 32` | Optional. Signs report share links; see below |
    | `DEMO_PUBLIC` | `1` | Optional. Serves the read-only public demo at `/demo` (and `/api/demo/broken`). `0` or unset turns both off (404) |
    | `PORT` | `3000` | Optional. See step 2.6 |
+   | `SECURITY_CONTACT_EMAIL` | e.g. `security@yourdomain.com` | Optional but recommended. Shown on `/security` and in `/.well-known/security.txt` as where to report vulnerabilities. Unset, both point at a private security advisory on the GitHub repo |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
 
