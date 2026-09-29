@@ -1,7 +1,7 @@
 import type { AlertEvent, DueEndpoint } from '@deployhealth/db';
 import { describe, expect, it } from 'vitest';
 import type { CheckResult } from '../src/check';
-import { checkEndpoints, pruneOldChecks } from '../src/jobs';
+import { checkEndpoints, pruneOldChecks, reseedDemo } from '../src/jobs';
 
 const due = (id: string, url = `https://${id}.example/`): DueEndpoint => ({
   id,
@@ -106,5 +106,29 @@ describe('pruneOldChecks job', () => {
     });
     expect(deleted).toBe(42);
     expect(cutoff).toEqual(new Date('2026-08-31T03:17:00Z'));
+  });
+});
+
+describe('reseedDemo job', () => {
+  it('reseeds with the current time and logs how long it took, never the ingest token', async () => {
+    const seen: Date[] = [];
+    const logs: string[] = [];
+    const now = new Date('2026-09-28T04:41:00Z');
+    await reseedDemo({
+      seed: async (at) => {
+        seen.push(at);
+        return { userId: 'u', projectId: 'p', token: 'dh_secret-token-value' };
+      },
+      now: () => now,
+      log: (m) => logs.push(m),
+    });
+    expect(seen).toEqual([now]);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatch(/^\[reseed-demo\] demo data restored in \d+ms$/);
+    expect(logs.join('\n')).not.toContain('dh_');
+  });
+
+  it('propagates a failed seed so pg-boss retries it', async () => {
+    await expect(reseedDemo({ seed: async () => Promise.reject(new Error('db down')), log: () => {} })).rejects.toThrow('db down');
   });
 });
