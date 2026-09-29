@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { generateToken, hashToken, tokenHint, type FindingRow } from '@deployhealth/core';
+import { generateToken, hashToken, tokenHint, type EnvFileBasename, type FindingRow, type RequiredVariable } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { createClient } from './clients';
 import type { Db } from './client';
 import { DEMO_GITHUB_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
 import { recordCheck, type CheckOutcome } from './monitoring';
 import { createProject, recordScan, upsertGithubUser } from './queries';
-import { checks, endpoints, users } from './schema';
+import { checks, endpoints, projects, users } from './schema';
 
 export const DEMO_PROJECT = { name: 'acme-storefront', repoFullName: 'acme/storefront' } as const;
 export const DEMO_DEPLOY_COUNT = 10;
@@ -82,14 +82,84 @@ export interface SeedDeploy {
   deployedAt: Date;
   source: 'ingest' | 'manual';
   findings: FindingRow[];
+  variables: RequiredVariable[];
 }
+
+/** A variable the code references in `scope` from deploy `from` on (1-based). */
+interface DemoVariable {
+  scope: string;
+  name: string;
+  definedIn: EnvFileBasename[];
+  from?: number;
+}
+
+/** What acme-storefront's code references, per env scope. */
+const STOREFRONT_VARIABLES: DemoVariable[] = [
+  { scope: 'apps/api', name: 'DATABASE_URL', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/api', name: 'JWT_SECRET', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/api', name: 'PORT', definedIn: ['.env.example'] },
+  { scope: 'apps/api', name: 'LOG_LEVEL', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/api', name: 'SENTRY_DSN', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/api', name: 'STRIPE_WEBHOOK_SECRET', definedIn: ['.env.example', '.env'], from: 4 },
+  { scope: 'apps/api', name: 'REDIS_URL', definedIn: ['.env.example'], from: 10 },
+  { scope: 'apps/api', name: 'STRIPE_KEY', definedIn: ['.env.example'], from: 10 },
+  { scope: 'apps/web', name: 'NEXT_PUBLIC_API_URL', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/web', name: 'NEXT_PUBLIC_SUPPORT_EMAIL', definedIn: ['.env.example', '.env'], from: 2 },
+  { scope: 'apps/web', name: 'NEXT_PUBLIC_CHECKOUT_V2', definedIn: ['.env'], from: 6 },
+  { scope: 'apps/web', name: 'SENTRY_DSN', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/web', name: 'ANALYTICS_WRITE_KEY', definedIn: ['.env.example'], from: 9 },
+  { scope: 'apps/worker', name: 'DATABASE_URL', definedIn: ['.env.example', '.env'] },
+  { scope: 'apps/worker', name: 'REDIS_TLS_URL', definedIn: ['.env.example'], from: 3 },
+  { scope: 'apps/worker', name: 'S3_BUCKET', definedIn: ['.env.example'] },
+];
+
+/** The env scope a file belongs to in the demo repos: `apps/<name>` or the root. */
+const scopeOf = (file: string | null) => /^apps\/[^/]+/.exec(file ?? '')?.[0] ?? '';
+
+/**
+ * Deploy `n`'s variable list: everything referenced by then, undefined wherever that deploy has
+ * a MISSING finding for it. So the variables and the findings of every seeded scan agree.
+ */
+function variablesAt(n: number, list: DemoVariable[], findings: FindingRow[]): RequiredVariable[] {
+  const missing = new Set(findings.filter((f) => f.kind === 'missing').map((f) => `${scopeOf(f.file)}:${f.var_name}`));
+  return list
+    .filter((v) => n >= (v.from ?? 1))
+    .map((v) => ({ var_name: v.name, scope: v.scope, defined_in: missing.has(`${v.scope}:${v.name}`) ? [] : v.definedIn }));
+}
+
+const STOREFRONT_DEPLOY_NOTES = `## Where it runs
+
+- **Web and API:** Railway project \`acme-prod\`, services \`web\` and \`api\`.
+- **Worker:** Railway service \`worker\` (queues on Redis).
+- **DNS:** Cloudflare; \`acme.example\` points at Railway.
+
+## Deploying
+
+1. Merge to \`main\`. Railway builds and deploys \`web\`, \`api\` and \`worker\`.
+2. Database migrations run in the API's pre-deploy step (\`pnpm db:migrate\`).
+3. Urgent billing fixes: branch \`hotfix/<name>\` from \`main\`, open a PR, merge.
+
+## Secrets
+
+Set per service in Railway, under **Variables**. The names are listed in *Required environment
+variables* above; the values are in the client's 1Password vault **Acme / Production**.
+
+## Rolling back
+
+Railway → service → **Deployments** → redeploy the previous build. See the
+[Railway deployment docs](https://docs.railway.com/guides/deployments).`;
+
+const NORTHWIND_DEPLOY_NOTES = `Static marketing site plus a small order API, both on Railway (\`northwind\` project).
+
+1. Push to \`main\`; Railway deploys it.
+2. Shopify webhooks point at \`/webhooks/orders\`. After rotating \`SHOPIFY_WEBHOOK_SECRET\`, update it in Shopify **and** Railway.`;
 
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const hoursAgo = (now: Date, hours: number) => new Date(now.getTime() - hours * 3_600_000);
 
 /** acme-storefront's ten deploys: roughly one a day, the last one 26 minutes before `now`. */
 export function demoDeploys(now: Date): SeedDeploy[] {
-  return Array.from({ length: DEMO_DEPLOY_COUNT }, (_, index) => {
+  return Array.from({ length: DEMO_DEPLOY_COUNT }, (_, index): SeedDeploy => {
     const n = index + 1;
     const deployedAt =
       n === DEMO_DEPLOY_COUNT
@@ -101,24 +171,38 @@ export function demoDeploys(now: Date): SeedDeploy[] {
       deployedAt,
       source: n === 7 ? 'manual' : 'ingest',
       findings: STOREFRONT_ISSUES.filter((i) => n >= i.from && n <= i.to).map((i) => i.finding),
+      variables: [],
     };
-  });
+  }).map((d, index) => ({ ...d, variables: variablesAt(index + 1, STOREFRONT_VARIABLES, d.findings) }));
 }
 
 function northwindDeploys(now: Date): SeedDeploy[] {
   const webhook = missing('SHOPIFY_WEBHOOK_SECRET', 'src/webhooks/orders.ts', 9);
   const sendgrid = unused('SENDGRID_API_KEY', '.env.example', 4);
-  return [
-    { sha: sha('northwind-1'), branch: 'main', deployedAt: hoursAgo(now, 150), source: 'ingest', findings: [webhook, sendgrid] },
-    { sha: sha('northwind-2'), branch: 'main', deployedAt: hoursAgo(now, 90), source: 'ingest', findings: [sendgrid] },
-    { sha: sha('northwind-3'), branch: 'main', deployedAt: hoursAgo(now, 26), source: 'ingest', findings: [sendgrid] },
+  const list: DemoVariable[] = [
+    { scope: '', name: 'DATABASE_URL', definedIn: ['.env.example', '.env'] },
+    { scope: '', name: 'SHOPIFY_STORE_DOMAIN', definedIn: ['.env.example', '.env'] },
+    { scope: '', name: 'SHOPIFY_WEBHOOK_SECRET', definedIn: ['.env.example'] },
   ];
+  const deploy = (n: number, deployedAt: Date, findings: FindingRow[]): SeedDeploy => ({
+    sha: sha(`northwind-${n}`),
+    branch: 'main',
+    deployedAt,
+    source: 'ingest',
+    findings,
+    variables: variablesAt(n, list, findings),
+  });
+  return [deploy(1, hoursAgo(now, 150), [webhook, sendgrid]), deploy(2, hoursAgo(now, 90), [sendgrid]), deploy(3, hoursAgo(now, 26), [sendgrid])];
 }
 
 function portfolioDeploys(now: Date): SeedDeploy[] {
+  const variables: RequiredVariable[] = [
+    { var_name: 'CONTACT_FORM_ENDPOINT', scope: '', defined_in: ['.env.example'] },
+    { var_name: 'NEXT_PUBLIC_SITE_URL', scope: '', defined_in: ['.env.example'] },
+  ];
   return [
-    { sha: sha('portfolio-1'), branch: 'main', deployedAt: hoursAgo(now, 130), source: 'ingest', findings: [] },
-    { sha: sha('portfolio-2'), branch: 'main', deployedAt: hoursAgo(now, 50), source: 'ingest', findings: [] },
+    { sha: sha('portfolio-1'), branch: 'main', deployedAt: hoursAgo(now, 130), source: 'ingest', findings: [], variables },
+    { sha: sha('portfolio-2'), branch: 'main', deployedAt: hoursAgo(now, 50), source: 'ingest', findings: [], variables },
   ];
 }
 
@@ -260,6 +344,9 @@ async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResul
   const { project: storefront, token } = await newProject(DEMO_PROJECT_IDS.storefront, DEMO_PROJECT.name, DEMO_PROJECT.repoFullName, acme.id);
   const { project: northwindSite } = await newProject(DEMO_PROJECT_IDS.northwind, 'northwind-site', 'northwind/site', northwind.id);
   const { project: portfolio } = await newProject(DEMO_PROJECT_IDS.portfolio, 'portfolio', 'demo/portfolio', null);
+
+  await db.update(projects).set({ deployNotes: STOREFRONT_DEPLOY_NOTES }).where(eq(projects.id, storefront.id));
+  await db.update(projects).set({ deployNotes: NORTHWIND_DEPLOY_NOTES }).where(eq(projects.id, northwindSite.id));
 
   for (const d of demoDeploys(now)) await recordScan(db, { projectId: storefront.id, ...d });
   for (const d of northwindDeploys(now)) await recordScan(db, { projectId: northwindSite.id, ...d });
