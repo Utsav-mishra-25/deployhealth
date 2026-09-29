@@ -82,6 +82,27 @@ To run it yourself, follow [Local setup](#local-setup) and open http://localhost
 Free during the beta. Paid plans will start at $15/month for freelancers and $29/month for studios;
 anyone active during the beta gets a discounted rate for their first year.
 
+## Self-hosting
+
+deployhealth is free to self-host (see [Licensing](#licensing)). It needs Postgres 16 and two Node
+22 processes, web and worker:
+
+- **On your machine:** [`docker-compose.yml`](docker-compose.yml) runs Postgres, and
+  [Local setup](#local-setup) starts web and the worker.
+- **On Railway:** [docs/deploy-railway.md](docs/deploy-railway.md) walks through the three services,
+  every build and deploy setting, every variable, and how to check the result.
+- **Anywhere else** that runs Node and Postgres: the same guide lists each service's build,
+  pre-deploy (migrations) and start commands, and all variables.
+
+## Licensing
+
+The CLI and scanner (packages/core) are MIT. The web app and worker are FSL-1.1-MIT: free to use and
+self-host, not to offer as a competing hosted service; converts to MIT two years after each release.
+
+- [`packages/core/LICENSE`](packages/core/LICENSE): MIT, for `packages/core`.
+- [`LICENSE`](LICENSE): FSL-1.1-MIT (Functional Source License, MIT future license), for
+  `apps/web`, `apps/worker`, `packages/db` and everything else in this repository.
+
 ## Phases
 
 | Phase | Status | What it adds |

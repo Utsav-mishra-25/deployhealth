@@ -60,6 +60,7 @@ packages/
     src/seed.ts       the demo: 2 clients, 3 projects, named endpoints, 7 days of checks, scripted alert
     src/seed-cli.ts   `pnpm db:seed` (kept apart so importing the seed runs nothing)
 docker-compose.yml    Postgres 16 (creates deployhealth and deployhealth_test)
+LICENSE               FSL-1.1-MIT (everything except packages/core, which has its own MIT LICENSE)
 .github/workflows/ci.yml   typecheck, lint, unit tests, build
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 ```
@@ -161,6 +162,10 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 
 ## Code conventions
 
+- **Licensing:** `packages/core` is MIT (its own `LICENSE`, `"license": "MIT"`); everything else is
+  FSL-1.1-MIT (root `LICENSE`, `"license": "FSL-1.1-MIT"` in the root, apps and `packages/db`).
+  Moving code into `packages/core` relicenses it as MIT, so only move what the CLI or scanner needs.
+  A new package sets its `license` field.
 - **Env vars:** each app reads `process.env` only in its `env.ts`, and by name
   (`DATABASE_URL: process.env.DATABASE_URL`), never by spreading `process.env`. That keeps
   `pnpm scan:self` meaningful. Every variable must appear in that app's `.env.example`.
