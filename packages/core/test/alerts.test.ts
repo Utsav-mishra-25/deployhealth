@@ -70,7 +70,7 @@ describe('alert messages', () => {
   it('names the deploy and the new MISSING vars', () => {
     expect(
       alertOpenedMessage({
-        endpointUrl: 'https://api.acme.com/health',
+        endpoint: { url: 'https://api.acme.com/health' },
         firstFailureAt: at(4),
         deploy,
         newMissing: ['REDIS_URL', 'STRIPE_KEY'],
@@ -79,25 +79,25 @@ describe('alert messages', () => {
   });
 
   it('uses the singular for one variable', () => {
-    expect(alertOpenedMessage({ endpointUrl: 'https://x.dev', firstFailureAt: at(12.5), deploy, newMissing: ['A'] })).toBe(
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(12.5), deploy, newMissing: ['A'] })).toBe(
       'x.dev started failing 12m after deploy b52952e, which introduced 1 missing env var: A',
     );
   });
 
   it('says so when the linked deploy had no new findings', () => {
-    expect(alertOpenedMessage({ endpointUrl: 'https://x.dev', firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
       'x.dev started failing under a minute after deploy b52952e, which had no new config findings',
     );
   });
 
   it('says so when there was no deploy in the window', () => {
-    expect(alertOpenedMessage({ endpointUrl: 'https://x.dev:8443/', firstFailureAt: at(0), deploy: null, newMissing: [] })).toBe(
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev:8443/' }, firstFailureAt: at(0), deploy: null, newMissing: [] })).toBe(
       'x.dev:8443 started failing; no deploy in the 30 minutes before the first failure',
     );
   });
 
   it('describes resolution and webhook payloads', () => {
-    expect(alertResolvedMessage({ endpointUrl: 'https://x.dev', openedAt: at(0), resolvedAt: at(75) })).toBe(
+    expect(alertResolvedMessage({ endpoint: { url: 'https://x.dev' }, openedAt: at(0), resolvedAt: at(75) })).toBe(
       'x.dev is back up (alert open for 1h 15m)',
     );
     expect(webhookPayload('opened', 'shop', 'x.dev started failing')).toEqual({ text: '[down] shop: x.dev started failing' });
@@ -108,8 +108,22 @@ describe('alert messages', () => {
     expect([0, 59_999, 60_000, 3_600_000, 3_660_000].map(formatDuration)).toEqual(['under a minute', 'under a minute', '1m', '1h', '1h 1m']);
     const hours = (h: number) => h * 3_600_000;
     expect([hours(23) + 3_540_000, hours(24), hours(24) + 3_540_000, hours(51)].map(formatDuration)).toEqual(['23h 59m', '1d', '1d', '2d 3h']);
-    expect(endpointLabel('https://api.acme.com/health?x=1')).toBe('api.acme.com');
-    expect(endpointLabel('not a url')).toBe('not a url');
+    expect(endpointLabel({ url: 'https://api.acme.com/health?x=1' })).toBe('api.acme.com');
+    expect(endpointLabel({ url: 'not a url' })).toBe('not a url');
+  });
+
+  it('names endpoints by their name when set, falling back to the host', () => {
+    expect(endpointLabel({ url: 'https://api.acme.com/health', name: 'Acme API' })).toBe('Acme API');
+    expect(endpointLabel({ url: 'https://api.acme.com/health', name: '  Acme API  ' })).toBe('Acme API');
+    expect(endpointLabel({ url: 'https://api.acme.com/health', name: '   ' })).toBe('api.acme.com');
+    expect(endpointLabel({ url: 'https://api.acme.com/health', name: null })).toBe('api.acme.com');
+
+    const endpoint = { url: 'https://api.acme.com/health', name: 'Acme API' };
+    const deploy = { sha: 'b52952e0000000000000000000000000000000000', deployedAt: at(0) };
+    const opened = alertOpenedMessage({ endpoint, firstFailureAt: at(4), deploy, newMissing: ['REDIS_URL', 'STRIPE_KEY'] });
+    expect(opened).toBe('Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY');
+    expect(alertResolvedMessage({ endpoint, openedAt: at(0), resolvedAt: at(21) })).toBe('Acme API is back up (alert open for 21m)');
+    expect(webhookPayload('opened', 'shop', opened).text).toBe(`[down] shop: ${opened}`);
   });
 });
 
