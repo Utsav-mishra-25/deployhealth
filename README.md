@@ -3,7 +3,7 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-**[Try the live demo →](#try-the-demo)** · no sign-up, read-only sample data · **[Free during the beta](#pricing)**
+**[Try the live demo →](https://deployhealth-production.up.railway.app/demo)** · no sign-up, read-only sample data · **[Free during the beta](#pricing)**
 
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
@@ -70,8 +70,7 @@ creates a signed link your client can open without an account, valid for 90 days
 ## Try the demo
 
 The demo is a real deployhealth instance showing sample clients (Acme Corp, Northwind Bakery), read
-only, no sign-up: `/demo` on the hosted instance.
-<!-- Replace this sentence with the hosted link once it's deployed: https://<your-domain>/demo -->
+only, no sign-up: **https://deployhealth-production.up.railway.app/demo**
 
 Its alert is real: "Acme API" points at an endpoint that always answers 503, and the worker checks
 it every minute. The data resets to its starting state every night.
