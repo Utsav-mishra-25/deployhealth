@@ -77,6 +77,8 @@ the build command builds the workspace packages it depends on first).
    | `DEMO_PUBLIC` | `1` | Optional. Serves the read-only public demo at `/demo` (and `/api/demo/broken`). `0` or unset turns both off (404) |
    | `PORT` | `3000` | Optional. See step 2.6 |
    | `SECURITY_CONTACT_EMAIL` | e.g. `security@yourdomain.com` | Optional but recommended. Shown on `/security` and in `/.well-known/security.txt` as where to report vulnerabilities. Unset, both point at a private security advisory on the GitHub repo |
+   | `GITHUB_APP_WEBHOOK_SECRET` | the webhook secret you set on the App | Optional: the GitHub App from step 8. Verifies every webhook delivery; unset, `/api/github/webhook` answers 404 |
+   | `GITHUB_APP_SLUG` | e.g. `deployhealth` | Optional: the App's URL name (`github.com/apps/<slug>`), for the install link on project settings |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
 
@@ -136,6 +138,8 @@ the build command builds the workspace packages it depends on first).
    | `NODE_ENV` | `production` | Literal |
    | `DEMO_PUBLIC` | `1` | Same value as on web. Runs the `reseed-demo` job nightly and once on start, so the demo data exists without a manual seed step |
    | `DEMO_BASE_URL` | `https://<your-domain>` | web's public URL from step 2.6. Required when `DEMO_PUBLIC=1`: the demo's failing "Acme API" endpoint is `<DEMO_BASE_URL>/api/demo/broken` |
+   | `GITHUB_APP_ID` | e.g. `1234567` | Optional: the GitHub App from step 8 (its numeric App ID). Set it with the key, or neither |
+   | `GITHUB_APP_PRIVATE_KEY` | the App's `.pem`, base64 on one line | Optional: see step 8 for the one-line encoding. The worker refuses to start if it can't parse it |
 
    `DEMO_BASE_URL` is only read by the worker, so web doesn't need it.
 
@@ -201,6 +205,38 @@ request went over IPv6), **not** `203.0.113.7`. If it shows the spoofed value, t
 header through without adding its own hop: anyone could dodge the limit by changing the header.
 Don't rely on the limiter in that case, and open an issue.
 
+## 8. GitHub App: env checks on pull requests (optional)
+
+The App comments on every pull request in the repos it's installed on (for projects whose repo
+matches), and adds a `deployhealth / env` check run. Its settings are recorded in
+[`docs/github-app-manifest.json`](github-app-manifest.json).
+
+1. GitHub → **Settings → Developer settings → GitHub Apps → New GitHub App**:
+
+   | Field | Value |
+   | --- | --- |
+   | GitHub App name | `deployhealth` (must be unique on GitHub; the slug follows from it) |
+   | Homepage URL | `https://<your-domain>` |
+   | Callback URL | leave empty; untick **Request user authorization (OAuth) during installation** |
+   | Setup URL | `https://<your-domain>/github/installed`, and tick **Redirect on update** |
+   | Webhook | **Active** ticked; URL `https://<your-domain>/api/github/webhook` |
+   | Webhook secret | output of `openssl rand -hex 32` (keep it for `GITHUB_APP_WEBHOOK_SECRET`) |
+   | Repository permissions | **Checks: Read and write**, **Contents: Read-only**, **Metadata: Read-only**, **Pull requests: Read and write**; everything else No access |
+   | Subscribe to events | **Pull request** (installation events reach every App without subscribing) |
+   | Where can this GitHub App be installed? | **Any account** |
+
+2. **Create GitHub App.** On the App's page note the **App ID** and the slug in its public link
+   (`https://github.com/apps/<slug>`).
+3. **Private keys → Generate a private key.** GitHub downloads a `.pem`. Encode it on one line:
+   - macOS / Linux: `base64 < deployhealth.*.private-key.pem | tr -d '\n'`
+   - Windows PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("deployhealth.private-key.pem"))`
+4. Set the variables, straight into Railway (never into a file in the repo or a chat):
+   - **web:** `GITHUB_APP_WEBHOOK_SECRET`, `GITHUB_APP_SLUG`
+   - **worker:** `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`
+5. Delete the downloaded `.pem` once the worker has started cleanly (GitHub can issue a new key any
+   time; revoke the old one there).
+6. Check: the App's **Advanced → Recent Deliveries** shows the `ping` answered with **202**.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -214,4 +250,6 @@ Don't rely on the limiter in that case, and open an issue.
 | GitHub says the redirect URI is not associated | The callback URL doesn't exactly match `https://<your-domain>/api/auth/callback/github`. |
 | Worker logs `relation "endpoints" does not exist` repeatedly | web hasn't deployed successfully yet, so migrations haven't run. Fix web first. |
 | Worker exits with `DEMO_PUBLIC=1 needs DEMO_BASE_URL` | Set `DEMO_BASE_URL` on the worker to web's public URL, or set `DEMO_PUBLIC=0`. |
+| GitHub App deliveries answer 401 | `GITHUB_APP_WEBHOOK_SECRET` on web doesn't match the App's webhook secret. |
+| GitHub App deliveries answer 404 | `GITHUB_APP_WEBHOOK_SECRET` isn't set on web. |
 | `/demo` is a 404 | `DEMO_PUBLIC` isn't `1` on web, or the worker hasn't reseeded yet (check its log). |
