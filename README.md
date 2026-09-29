@@ -206,10 +206,11 @@ contents: read` to the job and `package-manager-cache: false` to `actions/setup-
 
 ### Uptime: the worker
 
-- **`check-endpoints`** runs every minute on pg-boss (singleton, so runs never overlap). One
-  statement claims every enabled endpoint whose `next_check_at` has passed and moves it forward
-  by its interval (`FOR UPDATE SKIP LOCKED`, so two workers never double-check). Claimed
-  endpoints are then checked, up to 10 at a time.
+- **`check-endpoints`** runs every minute on pg-boss (singleton, so runs never overlap). It claims
+  the enabled endpoints whose `next_check_at` has passed and gives each a start time, so that **no
+  hostname is checked more than once every 10 seconds**, whoever's endpoints point at it. Claimed
+  endpoints are checked in waves by start time, up to 10 at a time; one that didn't get a slot this
+  minute goes first the next.
 - **A check** is one request (GET or HEAD) with a 10 s budget that follows up to 5 redirects. It's
   ok when the final status equals the expected status (default 200). Timeouts, DNS failures, TLS
   errors, refused connections and wrong statuses are recorded as failures with a short reason.
@@ -271,6 +272,12 @@ Endpoint and webhook URLs are user input, so they're checked twice:
   CGNAT, multicast or reserved addresses.
 - **At connect time:** a guarded DNS lookup repeats the check on the address the socket is about to
   use. That covers every redirect hop and DNS rebinding.
+
+## Limits
+
+Hard caps, the same on every plan: **100 endpoints per project and 500 per account**, **one check
+per target hostname every 10 seconds** across all accounts, **5 MB** per scan report, and pull
+request checks read at most **2,000 files and 20 MB** per pull request.
 
 ## Known limitations
 

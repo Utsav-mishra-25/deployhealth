@@ -168,6 +168,12 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 
 ## Code conventions
 
+- **Hard caps** live in `packages/core/src/limits.ts` and hold for every account whatever its plan:
+  100 endpoints per project and 500 per user (`createEndpoint`, which locks the owner's row so
+  concurrent creates can't race past them), one check per hostname per 10 s across all users (the
+  claim, above), 5 MB ingest bodies (counted while streaming), and 2,000 files / 20 MB fetched per
+  pull request check (`createFetchBudget()`: `take(size)` before each download, `verify()` after).
+  Exceeding one throws `LimitExceededError`, whose message is safe to show.
 - **Licensing:** `packages/core` is MIT (its own `LICENSE`, `"license": "MIT"`); everything else is
   FSL-1.1-MIT (root `LICENSE`, `"license": "FSL-1.1-MIT"` in the root, apps and `packages/db`).
   Moving code into `packages/core` relicenses it as MIT, so only move what the CLI or scanner needs.
@@ -261,9 +267,13 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 
 ## Worker jobs
 
-- **check-endpoints** (every minute): `claimDueEndpoints()` claims enabled endpoints with
-  `next_check_at <= now` and moves them forward by their interval in one statement
-  (`FOR UPDATE SKIP LOCKED`). It checks up to 10 at a time with `runCheck()`, stores each result
+- **check-endpoints** (every minute): `claimDueEndpoints()` (one claimer at a time, advisory
+  lock) takes enabled endpoints with `next_check_at <= now`, oldest first, at most 5 per hostname,
+  and gives each a start time with `assignHostSlots()`: checks of one hostname start at least
+  10 s apart **across all users**, on a 10 s grid within the next 50 s. `check_hosts` stores each
+  hostname's next free slot; an endpoint that gets no slot stays due and goes first next run. Each
+  claimed endpoint's `next_check_at` becomes its start + interval. The job runs the claim in waves
+  by start time (never early), up to 10 checks at a time with `runCheck()`, stores each result
   with `recordCheck()`, and sends webhooks for alert events after the transaction commits.
 - **prune-checks** (nightly, 03:17 UTC): first `rollupChecks()` writes one `endpoint_daily_stats`
   row per endpoint per complete UTC day (idempotent upsert), then `pruneChecks()` deletes raw checks
