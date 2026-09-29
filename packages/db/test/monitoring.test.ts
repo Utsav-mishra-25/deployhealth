@@ -3,10 +3,12 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   claimDueEndpoints,
+  createEndpoint,
   getProjectMonitoring,
   listOpenAlerts,
   pruneChecks,
   recordCheck,
+  updateEndpoint,
   type CheckOutcome,
 } from '../src/monitoring';
 import { listProjectsForOwner, recordScan } from '../src/queries';
@@ -264,5 +266,50 @@ describe('failingSince (the "Down for 21m" duration)', () => {
     expect(rows.shop).toMatchObject({ uptime: 'down', failingSince: minutes(-21) });
     expect(rows.blog).toMatchObject({ uptime: 'degraded', failingSince: minutes(-4) });
     expect(rows.docs).toMatchObject({ uptime: 'up', failingSince: null });
+  });
+});
+
+describe('endpoint names', () => {
+  const input = { url: 'https://api.acme.com/health', method: 'GET' as const, intervalSeconds: 60 as const, expectedStatus: 200, enabled: true };
+
+  it('are saved on create, kept when an update omits them and cleared with null', async () => {
+    const { user, project } = await setup();
+    const created = await createEndpoint(db, user.id, project.id, { ...input, name: 'Acme API' });
+    expect(created?.name).toBe('Acme API');
+    expect((await updateEndpoint(db, user.id, created!.id, { ...input, intervalSeconds: 300 }))?.name).toBe('Acme API');
+    expect((await updateEndpoint(db, user.id, created!.id, { ...input, name: null }))?.name).toBeNull();
+  });
+
+  it('replace the host in alert messages and open-alert views', async () => {
+    const { user, project, endpoint } = await setup();
+    await db.update(endpoints).set({ name: 'Acme API' }).where(eq(endpoints.id, endpoint.id));
+
+    await recordCheck(db, endpoint.id, ok(minutes(0)));
+    await recordCheck(db, endpoint.id, fail(minutes(1)));
+    const opened = await recordCheck(db, endpoint.id, fail(minutes(2)));
+    expect(opened.event?.message).toBe('Acme API started failing; no deploy in the 30 minutes before the first failure');
+    expect(await listOpenAlerts(db, user.id, project.id)).toMatchObject([
+      { endpointUrl: 'https://api.acme.com/health', endpointName: 'Acme API' },
+    ]);
+    expect((await recordCheck(db, endpoint.id, ok(minutes(23)))).event?.message).toBe('Acme API is back up (alert open for 21m)');
+  });
+
+  it('label the endpoints behind a project badge, longest-failing first, falling back to the host', async () => {
+    const { user, project, endpoint } = await setup();
+    await db.update(endpoints).set({ name: 'Acme API' }).where(eq(endpoints.id, endpoint.id));
+    const cdn = await makeEndpoint(db, project.id, { url: 'https://cdn.acme.com/' });
+    const healthy = await makeEndpoint(db, project.id, { name: 'Healthy' });
+    for (const id of [endpoint.id, cdn.id]) await recordCheck(db, id, ok(minutes(-60)));
+    await recordCheck(db, cdn.id, fail(minutes(-30)));
+    await recordCheck(db, cdn.id, fail(minutes(-29)));
+    await recordCheck(db, endpoint.id, fail(minutes(-10)));
+    await recordCheck(db, endpoint.id, fail(minutes(-9)));
+    await recordCheck(db, healthy.id, ok(minutes(-1)));
+
+    const [row] = await listProjectsForOwner(db, user.id);
+    expect(row).toMatchObject({ uptime: 'down', failingSince: minutes(-30), failingEndpoints: ['cdn.acme.com', 'Acme API'] });
+
+    await recordCheck(db, cdn.id, ok(minutes(-1)));
+    expect((await listProjectsForOwner(db, user.id))[0]?.failingEndpoints).toEqual(['Acme API']);
   });
 });
