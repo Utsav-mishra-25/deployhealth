@@ -40,7 +40,11 @@ packages/
     src/scanner.ts    per-language regexes (JS/TS, Python, Go, Ruby)
     src/findings.ts   analyzeScope() / summarize(): MISSING, UNUSED, MISMATCH
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 11 KB file, served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 12 KB file, served by web)
+    src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
+    npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
+                      `build:npm` adds dist/ and LICENSE (gitignored)
+    scripts/pack-npm.mjs  assembles npm/ from dist/ and checks the bundle's --version
     src/ssrf.ts       SSRF guard: assertPublicUrl() on save, guardedLookup at connect time
     src/alerts.ts     decideAlert() state machine, alert messages, endpointLabel(), failingFor()
     src/format.ts     formatUtc(), formatPercent() (rounds down), formatInterval(), plural()
@@ -230,6 +234,17 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   in sync with the expectations in `test/scan.test.ts`. Its `.env` files are committed through
   negations in the root `.gitignore`. Decoys (node_modules, dist, .git, …) are written into a temp
   copy at test time rather than committed.
+
+## Releasing the CLI (`deployhealth-scan` on npm)
+
+- The package is `packages/core/npm`, outside the pnpm workspace (MIT, no dependencies, one bin).
+  `pnpm --filter @deployhealth/core build:npm` bundles the CLI and fills `npm/dist` and
+  `npm/LICENSE`; `test/npm-package.test.ts` checks the manifest, the packed file list and the bin.
+- To release: bump the version in both `npm/package.json` and `src/version.ts`, commit, then either
+  publish from a machine (`npm publish` in `packages/core/npm`, no provenance) or run the manual
+  **Publish CLI** workflow (`.github/workflows/publish-cli.yml`), which publishes with provenance
+  once npm trusted publishing is configured for that workflow.
+- Published versions are immutable. Snippets and docs pin an exact version (`npx deployhealth-scan@x.y.z`).
 
 ## Worker jobs
 
