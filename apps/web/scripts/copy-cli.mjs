@@ -1,4 +1,5 @@
-// Serve the single-file CLI bundle at /deployhealth-scan.mjs for the GitHub Actions snippet.
+// Serve the single-file CLI bundle at /deployhealth-scan.mjs for workflows written before the npm
+// package (deprecated: next.config.ts adds a Deprecation header).
 // packages/core must be built first (pnpm builds workspace dependencies before this package).
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';

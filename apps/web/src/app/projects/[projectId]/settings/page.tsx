@@ -1,4 +1,4 @@
-import { githubActionSnippet, TOKEN_SECRET_NAME } from '@deployhealth/core';
+import { CLI_NPX, githubActionSnippet, TOKEN_SECRET_NAME } from '@deployhealth/core';
 import { getClientForOwner, getProjectForOwner, listClients } from '@deployhealth/db';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/auth';
@@ -26,8 +26,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
 
   const url = await appUrl();
   const snippet = githubActionSnippet({ appUrl: url });
-  const localRun = `curl -fsSL ${url}/deployhealth-scan.mjs -o deployhealth-scan.mjs
-node deployhealth-scan.mjs --dry-run`;
+  const localRun = `${CLI_NPX} --dry-run`;
 
   return (
     <div className="max-w-3xl space-y-10">

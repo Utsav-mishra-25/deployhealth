@@ -118,6 +118,8 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
 
   // Deploy notes are untrusted Markdown: no raw HTML, no images in the handoff.
   await page.getByRole('link', { name: /Settings/ }).click();
+  await expect(page.locator('pre').filter({ hasText: 'npx --yes deployhealth-scan@' })).toHaveCount(2); // Action + local run
+  await expect(page.locator('pre').filter({ hasText: 'deployhealth-scan.mjs' })).toHaveCount(0);
   await page.getByLabel(/How to deploy/).fill('## Railway\n\n1. Push to `main`.\n\n<script>window.pwned = true</script>\n\n![pixel](https://tracker.example/p.gif)');
   await page.getByRole('button', { name: 'Save settings' }).click();
   await expect(page.getByText('Saved')).toBeVisible();
@@ -148,4 +150,12 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   const tampered = await shared.goto(`${shareUrl.slice(0, -1)}${shareUrl.endsWith('A') ? 'B' : 'A'}`);
   expect(tampered?.status()).toBe(404);
   await stranger.close();
+});
+
+test('the old CLI download is still served, marked deprecated', async ({ request }) => {
+  const response = await request.get('/deployhealth-scan.mjs');
+  expect(response.status()).toBe(200);
+  expect(response.headers()['deprecation']).toBe('@1790640000');
+  expect(response.headers()['link']).toMatch(/#deprecated-downloading-the-cli-from-your-instance>; rel="deprecation"$/);
+  expect(await response.text()).toMatch(/^#!\/usr\/bin\/env node\n/);
 });
