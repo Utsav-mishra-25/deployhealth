@@ -52,12 +52,20 @@ describe('/demo', () => {
     await expect(demoOwner()).rejects.toThrow(NOT_FOUND);
   });
 
-  it('renders every demo page through demoOwner(), with no session lookup', async () => {
-    const { readFileSync } = await import('node:fs');
-    for (const page of ['page.tsx', 'clients/[slug]/page.tsx', 'projects/[projectId]/page.tsx', 'layout.tsx']) {
-      const source = readFileSync(new URL(`../src/app/demo/${page}`, import.meta.url), 'utf8');
-      expect(source, page).toContain('await demoOwner()');
-      expect(source, page).not.toMatch(/requireUser|@\/auth/);
+  it('serves every file under /demo through the demo owner, never a session', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const { join, relative } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = fileURLToPath(new URL('../src/app/demo', import.meta.url));
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+    const files = walk(root).map((f) => relative(root, f));
+    expect(files.length).toBeGreaterThanOrEqual(6);
+    for (const file of files) {
+      const source = readFileSync(join(root, file), 'utf8');
+      // Pages and the layout 404 through demoOwner(); route handlers through findDemoOwner().
+      expect(source, file).toMatch(file.endsWith('route.ts') ? /await findDemoOwner\(\)/ : /await demoOwner\(\)/);
+      expect(source, file).not.toMatch(/requireUser|@\/auth/);
     }
   });
 });
