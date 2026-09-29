@@ -1,7 +1,8 @@
-import { hashToken } from '@deployhealth/core';
+import { githubActionSnippet, hashToken, parseHandoffVariables, renderHandoffMarkdown } from '@deployhealth/core';
 import { eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { listClientsOverview } from '../src/clients';
+import { getHandoffData } from '../src/handoff';
 import { DEMO_GITHUB_ID, DEMO_PROJECT_IDS } from '../src/demo';
 import { getProjectMonitoring, listOpenAlerts } from '../src/monitoring';
 import { findProjectByTokenHash, getLatestScan, listDeploys } from '../src/queries';
@@ -157,6 +158,35 @@ describe('seed', () => {
     ).rejects.toThrow('abort after seeding');
     expect(await db.select().from(projects)).toHaveLength(before);
     expect(await db.select().from(alerts)).toHaveLength(2);
+  });
+
+  it('gives every demo deploy a variable list that agrees with its MISSING findings', () => {
+    // The demo repo's scopes are apps/<name>; a MISSING finding belongs to its file's scope.
+    const scopeOf = (file: string | null) => /^apps\/[^/]+/.exec(file ?? '')?.[0] ?? '';
+    for (const d of demoDeploys(NOW)) {
+      const undefinedVars = d.variables.filter((v) => v.defined_in.length === 0).map((v) => `${v.scope}:${v.var_name}`).sort();
+      const missing = [...new Set(d.findings.filter((f) => f.kind === 'missing').map((f) => `${scopeOf(f.file)}:${f.var_name}`))].sort();
+      expect(undefinedVars, d.sha).toEqual(missing);
+    }
+  });
+
+  it('makes a complete demo handoff: variables by scope, the two new missing ones, deploy notes', async () => {
+    const result = await seed(db, NOW);
+    const data = await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.storefront, NOW);
+    const markdown = renderHandoffMarkdown({ ...data!, actionSnippet: githubActionSnippet({ appUrl: 'https://demo.example' }) });
+    const variables = parseHandoffVariables(markdown);
+    expect(new Set(variables.map((v) => v.scope))).toEqual(new Set(['apps/api', 'apps/web', 'apps/worker']));
+    expect(variables.filter((v) => v.defined_in.length === 0).map((v) => `${v.scope}:${v.var_name}`)).toEqual([
+      'apps/api:REDIS_URL',
+      'apps/api:STRIPE_KEY',
+      'apps/web:ANALYTICS_WRITE_KEY',
+    ]);
+    expect(data?.scan?.variablesReported).toBe(true);
+    expect(data?.deployNotes).toContain('## Deploying');
+    expect(data?.alerts.map((a) => a.message)).toContain(
+      'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY',
+    );
+    expect((await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.portfolio, NOW))?.deployNotes).toBeNull();
   });
 
   it('builds deterministic, unique shas in chronological order', () => {
