@@ -3,5 +3,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  // Next's tsconfig keeps JSX as-is ("preserve"); tests that render components need it compiled.
+  oxc: { jsx: { runtime: 'automatic' } },
   test: { include: ['test/**/*.test.ts'] },
 });
