@@ -15,6 +15,13 @@
       "when": 1790630471366,
       "tag": "0001_clients_and_monitoring",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790687174771,
+      "tag": "0002_phase3",
+      "breakpoints": true
     }
   ]
 }
