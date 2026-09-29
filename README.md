@@ -30,7 +30,7 @@ it newly left undefined:
 **Phase 2: clients, uptime and alerts**
 
 > _Screenshot placeholder: /clients, every client with its projects, findings badges, last deploy
-> and uptime badge._
+> and uptime badge ("Down for 22m")._
 
 > _Screenshot placeholder: project page with the open-alert banner, endpoint uptime, p50/p95
 > latency chart and recent checks._
@@ -154,6 +154,9 @@ After every check, the worker applies one rule in the same transaction that reco
   check in its history**. A URL that has never worked doesn't alert. There's at most one open
   alert per endpoint (enforced by a unique index).
 - **Resolve** it on the endpoint's next ok check.
+
+While an endpoint is failing, its card and its project's row on /clients say for how long
+("Down for 21m"), counted from the first failed check of the current run.
 
 When an alert opens, deployhealth finds the project's **most recent deploy in the 30 minutes
 before the first failed check**. It then compares that deploy's latest scan with the previous

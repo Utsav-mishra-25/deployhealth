@@ -190,3 +190,8 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   first failure".
 - **Webhook:** if `projects.alert_webhook_url` is set, POST `{text}` on open and on resolve. Log
   and continue on failure; at most one retry.
+- **Down duration:** "Down for 21m" (or "Failing for 1m" before an alert opens) next to endpoint
+  and project badges is measured from the first failed check of the current run:
+  `failingSinceSql()` in `monitoring.ts` (also used for the alert's first failure), exposed as
+  `EndpointMonitoring.failingSince` and `ProjectListItem.failingSince`, and labelled by
+  `failingFor()` in core.
