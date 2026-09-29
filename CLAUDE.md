@@ -44,6 +44,7 @@ packages/
     src/seed.ts       demo user, 2 clients, 3 projects, endpoints, 7 days of checks, scripted alert
 docker-compose.yml    Postgres 16 (creates deployhealth and deployhealth_test)
 .github/workflows/ci.yml   typecheck, lint, unit tests, build
+docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 ```
 
 Workspace packages ship TypeScript source (`exports` → `src/*.ts`). Next transpiles them

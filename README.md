@@ -76,28 +76,11 @@ smoke test). See [CLAUDE.md](CLAUDE.md) for details.
 
 ## Deploy to Railway
 
-The repo defines two Railway services, **web** and **worker**, plus Railway's Postgres.
-
-1. Create a Railway project and add **PostgreSQL**.
-2. Add a service from this GitHub repo and name it `web`:
-   - *Config-as-code path*: `apps/web/railway.json`. Keep the root directory at the repo root,
-     because the build needs the whole workspace.
-   - *Variables*:
-     - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
-     - `AUTH_SECRET` = output of `openssl rand -base64 32`
-     - `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` from a GitHub OAuth app with callback URL
-       `https://<your-web-domain>/api/auth/callback/github`
-   - *Networking*: generate a public domain.
-3. Add a second service from the same repo and name it `worker`:
-   - *Config-as-code path*: `apps/worker/railway.json`
-   - *Variables*: `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
-4. Deploy. The web service applies migrations in its pre-deploy step
-   (`node packages/db/dist/migrate.js`) and is health-checked at `/api/health`. The worker starts
-   pg-boss (which creates its own `pgboss` schema) and begins checking endpoints within a minute.
-
-Railway picks Node 22 from `.nvmrc` / `engines`, and pnpm from `packageManager`. Never set
-`AUTH_DEMO_LOGIN` in production; even if you did, the demo provider isn't registered when
-`NODE_ENV=production`.
+deployhealth runs as three Railway services: **Postgres**, **web** and **worker**. Build, deploy
+and health-check settings are in `apps/web/railway.json` and `apps/worker/railway.json`. Both
+services build from the repo root (it's a pnpm workspace), and web applies database migrations in
+its pre-deploy step. The dashboard steps, every variable and troubleshooting are in
+[docs/deploy-railway.md](docs/deploy-railway.md).
 
 ## How it works
 
