@@ -4,8 +4,9 @@ deployhealth is one page for every client project a freelancer maintains: is the
 var drift between code and env files), is it up (uptime checks), and did the last deploy break it
 (alerts linked to the deploy that introduced new missing variables).
 
-Phase 1 (config health), Phase 2 (clients, uptime, alerts) and Phase 3 (public demo, handoff
-export, monthly client reports) are built.
+Phase 1 (config health), Phase 2 (clients, uptime, alerts), Phase 3 (public demo, handoff
+export, monthly client reports) and Phase 4 (licensing, the npm CLI, hard caps, /security, and the
+GitHub App's env check on every pull request) are built.
 
 ## Monorepo layout
 
@@ -16,13 +17,16 @@ apps/
     src/auth.ts       Auth.js v5: GitHub OAuth + dev-only dev login, JWT sessions, no adapter
     src/middleware.ts rate limit for /share/* (Node runtime, in memory)
     src/lib/          ingest handler, validation (zod), guard (read-only demo), demo owner, paths,
-                      handoff loader, share-link signing, rate limiter, auth providers, formatting
+                      handoff loader, share-link signing, rate limiter, auth providers, formatting,
+                      github-webhook.ts (signature, dedupe, per-installation limit, events), jobs.ts
+                      (send-only pg-boss client), read-body.ts (capped streaming body reader)
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
                       project, handoff, report (props: ownerId/data, paths, readOnly)
     src/app/          /login, /clients (home), /clients/new, /clients/[slug](/edit, /report),
                       /projects/new, /projects/[id] (+ endpoint actions, /settings, /handoff,
                       /handoff.md), /demo/... (read-only mirror), /share/reports/[token],
-                      /api/demo/broken, /security and /.well-known/security.txt (public)
+                      /api/demo/broken, /security and /.well-known/security.txt (public),
+                      /api/github/webhook (GitHub App), /github/installed (the App's setup URL)
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, print/share buttons, report toolbar
     e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link)
@@ -32,7 +36,12 @@ apps/
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed)
     src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
-    src/guarded-http.ts  the ONLY outbound HTTP: guardedRequest / guardedPost on node:http(s) + guardedLookup
+    src/guarded-http.ts  the ONLY outbound HTTP: guardedRequest / guardedPost on node:http(s) + guardedLookup,
+                      and githubFetch (Octokit's fetch: api.github.com only, keep-alive, response cap)
+    src/github/       app.ts (App JWT → installation token via @octokit/auth-app, one client per
+                      installation), api.ts (the few GitHub calls a check makes)
+    src/pr-check/     build.ts (trees → files → scan, within the caps), diff.ts, secrets.ts,
+                      agents.ts, report.ts (conclusion, the comment, the check run)
     src/env.ts        the ONLY place the worker reads process.env
     railway.json      documentation only, like web's
 packages/
@@ -54,13 +63,16 @@ packages/
     src/browser.ts    `@deployhealth/core/browser`: the pure subset for client components
   db/                 Drizzle schema, migrations (drizzle/), queries, seed
     src/schema.ts     users, clients, projects, deploys, scans, findings, scan_variables,
-                      endpoints, checks, endpoint_daily_stats, alerts
+                      endpoints, checks, check_hosts, endpoint_daily_stats, alerts, installations,
+                      installation_repos, pr_checks, webhook_deliveries
     src/queries.ts    users, projects, ingest (recordScan + variables), deploys/scans reads
     src/clients.ts    clients CRUD, /clients overview, project settings (client, webhook, deploy notes)
     src/monitoring.ts endpoints CRUD, claimDueEndpoints(), recordCheck() (+ alert lifecycle), stats,
                       uptimeBetween() (rollups + raw), rollupChecks(), prune
     src/handoff.ts    getHandoffData() (owner-scoped)
     src/reports.ts    getClientReport() (by client id; see Authorization)
+    src/github.ts     installations, installation repos, webhook deliveries, pr_checks (worker upserts;
+                      owner-scoped reads for the UI: status, PR list, agent stats)
     src/demo.ts       demo user (-1, read-only) and dev user (-2), fixed demo project ids
     src/seed.ts       the demo: 2 clients, 3 projects, named endpoints, 7 days of checks, scripted alert
     src/seed-cli.ts   `pnpm db:seed` (kept apart so importing the seed runs nothing)
@@ -290,6 +302,53 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   from whole days more than 30 days back. A failed rollup deletes nothing.
 - **reseed-demo** (only with `DEMO_PUBLIC=1`, which also needs `DEMO_BASE_URL`): nightly at 04:41
   UTC and once on start, runs the seed so production needs no manual seed step. Never logs the token.
+  The demo also gets a GitHub App installation (`DEMO_INSTALLATION_ID = -1`) and four checked PRs.
+- **pr-check** (queued by the web app's GitHub webhook; worked only with the App configured): see
+  "GitHub App: pull request checks" below. The nightly prune also deletes webhook delivery ids
+  older than 24 h.
+
+## GitHub App: pull request checks
+
+Registered from `docs/github-app-manifest.json` (checks: write, contents: read, metadata: read,
+pull_requests: write; events: pull_request; installation events arrive regardless). Web needs
+`GITHUB_APP_WEBHOOK_SECRET` and `GITHUB_APP_SLUG`; the worker `GITHUB_APP_ID` and
+`GITHUB_APP_PRIVATE_KEY` (base64 PEM). Unset, the webhook 404s and the worker doesn't work the queue.
+
+- **Webhook** (`lib/github-webhook.ts`, unit-tested with injected deps): read the body (5 MB cap,
+  counted while streaming) → verify `X-Hub-Signature-256` (HMAC-SHA256, `timingSafeEqual`) → parse →
+  rate-limit per installation id (120/min, in memory, 429 + Retry-After) → dedupe by
+  `X-GitHub-Delivery` (`webhook_deliveries`, pruned after 24 h; forgotten again if handling fails,
+  so a redelivery runs) → dispatch. Installation events are handled inline; `pull_request`
+  opened / synchronize / reopened / base-changed queue a `pr-check` job; closed / reopened set
+  `pr_checks.closed_at`. No GitHub API calls, 202 fast, and log lines never contain payload data.
+- **Linking and mapping.** `installations.installer_github_id` is the delivery's sender; `user_id`
+  is set to the user with that GitHub id when the installation arrives or at their next sign-in
+  (`linkInstallationsForUser` in the Auth.js `jwt` callback). Never link from the setup URL's query
+  string. `findPrCheckTarget` returns only the linked user's project for the repo (case-insensitive,
+  oldest if several, installation not suspended); no match → nothing stored, one log line.
+- **Queue.** `pr-check` is `stately` with singletonKey `installation:repo#pr`: one running, at most
+  one waiting. The job data is only `{ installationId, repoFullName, prNumber }`; the job reads the
+  pull request's current head and its **merge base** (compare API) when it runs.
+- **Auth.** `createGithubApp()` keeps one Octokit per installation (`@octokit/auth-app` signs the
+  App JWT and caches the installation token until shortly before expiry). Octokit's `request.fetch`
+  is `githubFetch`, so every GitHub call is SSRF-guarded and pinned to api.github.com.
+- **The check** (`jobs.ts#prCheck`, tested against a mocked Octokit in `test/pr-check-job.test.ts`):
+  mode `off` → nothing at all. Otherwise `buildReport()`: both trees (recursive; truncated → not
+  checked), `selectTreeFiles()` (the CLI's rules, `.gitignore` read top-down), every blob reserved
+  against `createFetchBudget()` (2,000 files / 20 MB, PR patches included) **before** downloading,
+  each distinct blob once; `scanFiles()` on both sides; `diffEnvVars()` (variable level; rename =
+  removed + added in the same file; declared = in the `.env.example` of every scope that reads it);
+  committed env files the PR adds or changes; `findSecrets()` on added lines (rule + file:line only).
+  A cap → neutral "too large to check". Conclusion: success when nothing is undeclared and no env
+  files or secrets; else neutral (comment) or failure (strict).
+- **Idempotent output.** One `pr_checks` row per project + PR + head (upsert keeps comment and check
+  run ids). One comment per PR: stored id → else the latest row's → else the App's comment with the
+  `<!-- deployhealth-env-check -->` marker; created only when there's something to say, recreated if
+  deleted (404). One `deployhealth / env` check run per head, updated on re-runs.
+- **Agents:** PR author login (without `[bot]`) in the known list, else a `Co-Authored-By` trailer
+  naming Claude, Codex, Copilot, Cursor or Devin. Dependabot and Renovate are never agents.
+- **Never values.** Comments, check runs, rows and logs carry names, paths, line numbers and rule
+  ids only. Test fixtures that look like secrets are assembled at run time (see the tests).
 
 ## Report data model
 
