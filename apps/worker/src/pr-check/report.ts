@@ -112,11 +112,11 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
 /** The check run: the same summary, plus where each possible secret is (rule, file:line). */
 export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): CheckRunOutput {
   const text: string[] = [];
-  if (r.undeclared.length) text.push('### Not in .env.example', '', ...r.undeclared.map((n) => `- \`${n}\``), '');
-  if (r.envFiles.length) text.push('### Committed env files', '', ...r.envFiles.map((f) => `- \`${f.path}\``), '');
+  if (r.undeclared.length) text.push('### Not in .env.example', '', ...r.undeclared.map((n) => `- ${code(n)}`), '');
+  if (r.envFiles.length) text.push('### Committed env files', '', ...r.envFiles.map((f) => `- ${code(f.path)}`), '');
   if (r.secrets.length) {
     text.push('### Possible secrets in added lines', '', 'Values are not shown. If one is real, rotate it: it is in the branch history now.', '');
-    text.push(...r.secrets.slice(0, 200).map((s) => `- \`${s.file}:${s.line}\` ${secretRuleLabel(s.rule)}`));
+    text.push(...r.secrets.slice(0, 200).map((s) => `- ${code(`${s.file}:${s.line}`)} ${secretRuleLabel(s.rule)}`));
     if (r.secrets.length > 200) text.push(`- …and ${r.secrets.length - 200} more`);
   }
   return {
