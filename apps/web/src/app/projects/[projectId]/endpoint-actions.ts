@@ -3,7 +3,7 @@
 import { assertPublicUrl, BlockedUrlError } from '@deployhealth/core';
 import { createEndpoint, deleteEndpoint, updateEndpoint } from '@deployhealth/db';
 import { revalidatePath } from 'next/cache';
-import { requireUser } from '@/auth';
+import { requireWritableUser } from '@/lib/guard';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { endpointFormSchema, endpointFormValues, fieldErrors } from '@/lib/validation';
@@ -22,7 +22,7 @@ export async function saveEndpointAction(
   _prev: EndpointFormState,
   form: FormData,
 ): Promise<EndpointFormState> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   const values = endpointFormValues(form);
   const invalid = (message: string, fields: Record<string, string> = {}): EndpointFormState => ({
     status: 'error',
@@ -56,7 +56,7 @@ export async function saveEndpointAction(
 }
 
 export async function deleteEndpointAction(projectId: string, endpointId: string): Promise<void> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   if (isUuid(endpointId)) await deleteEndpoint(getDb(), user.id, endpointId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/clients');

@@ -13,7 +13,7 @@ import {
 } from '@deployhealth/db';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { requireUser } from '@/auth';
+import { requireWritableUser } from '@/lib/guard';
 import { appUrl } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
@@ -38,7 +38,7 @@ const newProject = z.object({
 const NEW_CLIENT = '__new__';
 
 export async function createProjectAction(_prev: CreateProjectState, form: FormData): Promise<CreateProjectState> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   const parsed = newProject.safeParse({ name: form.get('name'), repoFullName: form.get('repoFullName') });
   if (!parsed.success) {
     const fields = Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message]));
@@ -92,7 +92,7 @@ export async function createProjectAction(_prev: CreateProjectState, form: FormD
 export type RegenerateState = { status: 'idle' } | { status: 'error'; message: string } | ({ status: 'created' } & TokenReveal);
 
 export async function regenerateTokenAction(projectId: string, _prev: RegenerateState): Promise<RegenerateState> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   if (!isUuid(projectId)) return { status: 'error', message: 'Project not found.' };
 
   const token = generateToken();
@@ -113,7 +113,7 @@ export type SettingsState =
 
 /** Client assignment and alert webhook. The webhook URL passes the same SSRF guard as endpoints. */
 export async function updateProjectSettingsAction(projectId: string, _prev: SettingsState, form: FormData): Promise<SettingsState> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   if (!isUuid(projectId)) return { status: 'error', message: 'Project not found.' };
 
   const clientId = String(form.get('clientId') ?? '') || null;

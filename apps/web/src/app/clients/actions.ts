@@ -3,7 +3,7 @@
 import { createClient, deleteClient, updateClient } from '@deployhealth/db';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { requireUser } from '@/auth';
+import { requireWritableUser } from '@/lib/guard';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { clientFormSchema, fieldErrors, text } from '@/lib/validation';
@@ -23,7 +23,7 @@ function readForm(form: FormData): ClientFormValues {
 }
 
 export async function createClientAction(_prev: ClientFormState, form: FormData): Promise<ClientFormState> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   const values = readForm(form);
   const parsed = clientFormSchema.safeParse(values);
   if (!parsed.success) return { status: 'error', message: 'Please fix the highlighted fields.', fields: fieldErrors(parsed.error), values };
@@ -34,7 +34,7 @@ export async function createClientAction(_prev: ClientFormState, form: FormData)
 }
 
 export async function updateClientAction(clientId: string, _prev: ClientFormState, form: FormData): Promise<ClientFormState> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   const values = readForm(form);
   const parsed = clientFormSchema.safeParse(values);
   if (!parsed.success) return { status: 'error', message: 'Please fix the highlighted fields.', fields: fieldErrors(parsed.error), values };
@@ -48,7 +48,7 @@ export async function updateClientAction(clientId: string, _prev: ClientFormStat
 
 /** Deletes the client only; its projects become unassigned. */
 export async function deleteClientAction(clientId: string): Promise<void> {
-  const user = await requireUser();
+  const user = await requireWritableUser();
   if (isUuid(clientId)) await deleteClient(getDb(), user.id, clientId);
   revalidatePath('/clients');
   redirect('/clients');
