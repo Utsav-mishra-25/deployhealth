@@ -27,12 +27,23 @@ export function decideAlert(input: AlertInputs): AlertAction {
   return input.consecutiveFailures >= ALERT_FAILURE_THRESHOLD ? 'open' : 'none';
 }
 
-/** How alerts and badges name an endpoint: its host, e.g. "api.acme.com". */
-export function endpointLabel(url: string): string {
+/** The parts of an endpoint that name it. */
+export interface EndpointRef {
+  url: string;
+  name?: string | null;
+}
+
+/**
+ * How alerts, badges and webhooks name an endpoint: its name when set ("Acme API"), otherwise its
+ * host ("api.acme.com").
+ */
+export function endpointLabel(endpoint: EndpointRef): string {
+  const name = endpoint.name?.trim();
+  if (name) return name;
   try {
-    return new URL(url).host;
+    return new URL(endpoint.url).host;
   } catch {
-    return url;
+    return endpoint.url;
   }
 }
 
@@ -60,7 +71,7 @@ export function failingFor(state: 'down' | 'failing', since: Date, now: Date): s
 }
 
 export interface AlertOpenedInput {
-  endpointUrl: string;
+  endpoint: EndpointRef;
   firstFailureAt: Date;
   /** The most recent deploy in the window before the first failure, if any. */
   deploy: { sha: string; deployedAt: Date } | null;
@@ -68,8 +79,8 @@ export interface AlertOpenedInput {
   newMissing: readonly string[];
 }
 
-export function alertOpenedMessage({ endpointUrl, firstFailureAt, deploy, newMissing }: AlertOpenedInput): string {
-  const label = endpointLabel(endpointUrl);
+export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissing }: AlertOpenedInput): string {
+  const label = endpointLabel(endpoint);
   if (!deploy) {
     return `${label} started failing; no deploy in the ${DEPLOY_LINK_WINDOW_MINUTES} minutes before the first failure`;
   }
@@ -81,15 +92,15 @@ export function alertOpenedMessage({ endpointUrl, firstFailureAt, deploy, newMis
 }
 
 export function alertResolvedMessage({
-  endpointUrl,
+  endpoint,
   openedAt,
   resolvedAt,
 }: {
-  endpointUrl: string;
+  endpoint: EndpointRef;
   openedAt: Date;
   resolvedAt: Date;
 }): string {
-  return `${endpointLabel(endpointUrl)} is back up (alert open for ${formatDuration(resolvedAt.getTime() - openedAt.getTime())})`;
+  return `${endpointLabel(endpoint)} is back up (alert open for ${formatDuration(resolvedAt.getTime() - openedAt.getTime())})`;
 }
 
 /** Body of the Slack/Discord-compatible webhook: plain `{ text }`. */
