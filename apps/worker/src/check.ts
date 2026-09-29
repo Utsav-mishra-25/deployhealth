@@ -1,22 +1,11 @@
-import http from 'node:http';
-import https from 'node:https';
-import { isIP } from 'node:net';
-import { BlockedUrlError, guardedLookup, isBlockedAddress, type EndpointMethod } from '@deployhealth/core';
+import { BlockedUrlError, type EndpointMethod } from '@deployhealth/core';
+import { guardedRequest, type HttpRequester, type ResponseHead } from './guarded-http';
+
+export { USER_AGENT, type HttpRequester, type ResponseHead } from './guarded-http';
 
 export const CHECK_TIMEOUT_MS = 10_000;
 export const MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-export const USER_AGENT = 'deployhealth-monitor/1.0 (+https://github.com/Utsav-mishra-25/deployhealth)';
-
-/** The status line and redirect target of one response. Bodies are never read. */
-export interface ResponseHead {
-  status: number;
-  location: string | null;
-}
-
-/** One HTTP request, resolved as soon as response headers arrive. Must honour `signal`. */
-export type HttpRequester = (url: URL, method: EndpointMethod, signal: AbortSignal) => Promise<ResponseHead>;
-
 export interface CheckTarget {
   url: string;
   method: EndpointMethod;
@@ -125,34 +114,3 @@ export function describeError(error: unknown, timedOut: boolean, timeoutMs = CHE
   if (code === 'ERR_INVALID_URL') return 'Invalid URL';
   return `Request failed: ${err?.message ?? String(error)}`.slice(0, 200);
 }
-
-/**
- * The real requester: node:http(s) with the SSRF-guarded DNS lookup, a fresh connection per
- * request (so latency includes connect + TLS), and the body discarded unread.
- */
-export const guardedRequest: HttpRequester = (url, method, signal) =>
-  new Promise<ResponseHead>((resolve, reject) => {
-    // Literal IPs never reach `lookup`, so check them here.
-    const host = url.hostname.replace(/^\[|\]$/g, '');
-    if (isIP(host) && isBlockedAddress(host)) {
-      reject(new BlockedUrlError(`${host} is a private or reserved address`));
-      return;
-    }
-    const client = url.protocol === 'https:' ? https : http;
-    const req = client.request(
-      url,
-      {
-        method,
-        signal,
-        lookup: guardedLookup,
-        agent: false,
-        headers: { 'user-agent': USER_AGENT, accept: '*/*' },
-      },
-      (res) => {
-        resolve({ status: res.statusCode ?? 0, location: res.headers.location ?? null });
-        res.destroy(); // never read or store the body
-      },
-    );
-    req.on('error', reject);
-    req.end();
-  });

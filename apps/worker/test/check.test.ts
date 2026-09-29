@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { describeError, guardedRequest, runCheck, type HttpRequester, type ResponseHead } from '../src/check';
+import { describeError, runCheck, type HttpRequester, type ResponseHead } from '../src/check';
+import { guardedRequest } from '../src/guarded-http';
 
 const NOW = new Date('2026-09-28T12:00:00Z');
 const target = { url: 'https://api.acme.com/health', method: 'GET' as const, expectedStatus: 200 };

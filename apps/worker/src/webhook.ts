@@ -1,13 +1,9 @@
-import http from 'node:http';
-import https from 'node:https';
-import { isIP } from 'node:net';
-import { BlockedUrlError, guardedLookup, isBlockedAddress, parsePublicHttpUrl } from '@deployhealth/core';
-import { USER_AGENT } from './check';
+import { BlockedUrlError, parsePublicHttpUrl } from '@deployhealth/core';
+import { guardedPost, type Poster } from './guarded-http';
+
+export type { Poster } from './guarded-http';
 
 export const WEBHOOK_TIMEOUT_MS = 5_000;
-
-/** POST a JSON body; resolves with the status code. Must honour `signal`. */
-export type Poster = (url: URL, body: string, signal: AbortSignal) => Promise<number>;
 
 export interface WebhookDeps {
   post?: Poster;
@@ -46,34 +42,3 @@ export async function sendWebhook(rawUrl: string, payload: { text: string }, dep
   }
   return false;
 }
-
-/** The real poster: node:http(s) with the SSRF-guarded lookup; no redirects; body unread. */
-export const guardedPost: Poster = (url, body, signal) =>
-  new Promise<number>((resolve, reject) => {
-    const host = url.hostname.replace(/^\[|\]$/g, '');
-    if (isIP(host) && isBlockedAddress(host)) {
-      reject(new BlockedUrlError(`${host} is a private or reserved address`));
-      return;
-    }
-    const client = url.protocol === 'https:' ? https : http;
-    const req = client.request(
-      url,
-      {
-        method: 'POST',
-        signal,
-        lookup: guardedLookup,
-        agent: false,
-        headers: {
-          'content-type': 'application/json',
-          'content-length': Buffer.byteLength(body),
-          'user-agent': USER_AGENT,
-        },
-      },
-      (res) => {
-        resolve(res.statusCode ?? 0);
-        res.destroy();
-      },
-    );
-    req.on('error', reject);
-    req.end(body);
-  });
