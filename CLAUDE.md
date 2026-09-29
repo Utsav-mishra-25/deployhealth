@@ -30,8 +30,9 @@ apps/
   worker/             plain Node process running pg-boss
     src/index.ts      queues + schedules: check-endpoints, prune-checks, reseed-demo
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed)
-    src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies; guardedRequest on node:http(s)
+    src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
+    src/guarded-http.ts  the ONLY outbound HTTP: guardedRequest / guardedPost on node:http(s) + guardedLookup
     src/env.ts        the ONLY place the worker reads process.env
     railway.json      documentation only, like web's
 packages/
@@ -218,9 +219,13 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **Printable pages** (handoff, report) use print CSS (`print:hidden`, `.doc-section`) and no
   external assets; the browser's Save as PDF is the PDF path. They state "All times UTC".
 - **SSRF:** any URL the server or worker will fetch (endpoints, webhooks) must pass
-  `assertPublicUrl()` when saved, and must be fetched through `guardedLookup` (via
-  `guardedRequest` / `guardedPost`), never plain `fetch`. The guard re-checks the resolved
-  address at connect time, which covers redirects and DNS rebinding.
+  `assertPublicUrl()` when saved, and must be fetched through `apps/worker/src/guarded-http.ts`
+  (`guardedRequest` / `guardedPost`, on `guardedLookup`), never plain `fetch`. The guard re-checks
+  the resolved address at connect time, which covers redirects and DNS rebinding.
+  `apps/worker/test/no-unguarded-http.test.ts` walks the repo and fails if any other non-test file
+  contains `fetch(`, `http(s).request(`/`.get(`, axios, undici, `got(`, node-fetch, or imports
+  `node:http(s)`/`http2`. Its allowlist names every exception with a reason (the guarded module,
+  the CLI, the scanner's Ruby `ENV.fetch` pattern) and fails if an entry goes stale.
 - **Tokens:** `dh_` + 32 random bytes. Only the SHA-256 is stored, plus a `dh_…abcd` hint. The
   plaintext is shown once, on creation or regeneration.
 - **Ingest:** authenticate first, then read the body (5 MB cap), validate with the zod schema from
