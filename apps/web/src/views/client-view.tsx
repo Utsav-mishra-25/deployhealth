@@ -28,11 +28,16 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
             </a>
           )}
         </div>
-        {!readOnly && (
-          <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Link href={paths.clientReport(client.slug)} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50">
+            Monthly report
+          </Link>
+          {!readOnly && (
             <Link href={`/clients/${client.slug}/edit`} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50">
               Edit
             </Link>
+          )}
+          {!readOnly && (
             <form action={deleteClientAction.bind(null, client.id)}>
               <ConfirmButton
                 message={`Delete ${client.name}? Its ${projects.length} project(s) stay, unassigned.`}
@@ -41,8 +46,8 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
                 Delete client
               </ConfirmButton>
             </form>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {client.notes && (

@@ -8,6 +8,8 @@ export interface ViewPaths {
   project: (id: string) => string;
   handoff: (id: string) => string;
   handoffMarkdown: (id: string) => string;
+  /** A client's monthly report; `month` is "YYYY-MM" (omitted: the current month). */
+  clientReport: (slug: string, month?: string) => string;
 }
 
 export const APP_PATHS: ViewPaths = {
@@ -16,6 +18,7 @@ export const APP_PATHS: ViewPaths = {
   project: (id) => `/projects/${id}`,
   handoff: (id) => `/projects/${id}/handoff`,
   handoffMarkdown: (id) => `/projects/${id}/handoff.md`,
+  clientReport: (slug, month) => `/clients/${slug}/report${month ? `?month=${month}` : ''}`,
 };
 
 export const DEMO_PATHS: ViewPaths = {
@@ -24,4 +27,5 @@ export const DEMO_PATHS: ViewPaths = {
   project: (id) => `/demo/projects/${id}`,
   handoff: (id) => `/demo/projects/${id}/handoff`,
   handoffMarkdown: (id) => `/demo/projects/${id}/handoff.md`,
+  clientReport: (slug, month) => `/demo/clients/${slug}/report${month ? `?month=${month}` : ''}`,
 };
