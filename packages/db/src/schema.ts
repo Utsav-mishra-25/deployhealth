@@ -112,6 +112,8 @@ export const scans = pgTable(
     missingCount: integer('missing_count').notNull(),
     unusedCount: integer('unused_count').notNull(),
     mismatchCount: integer('mismatch_count').notNull(),
+    /** Whether the CLI sent the full variable list (older CLIs don't), so scan_variables is complete. */
+    variablesReported: boolean('variables_reported').notNull().default(false),
   },
   (t) => [index('scans_deploy_time_idx').on(t.deployId, t.createdAt.desc())],
 );

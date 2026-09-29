@@ -1,8 +1,19 @@
-import { endpointLabel, summarize, uptimeStatus, type EndpointRef, type FindingCounts, type FindingRow, type UptimeStatus } from '@deployhealth/core';
+import {
+  endpointLabel,
+  ENV_FILE_BASENAMES,
+  summarize,
+  uptimeStatus,
+  type EndpointRef,
+  type EnvFileBasename,
+  type FindingCounts,
+  type FindingRow,
+  type RequiredVariable,
+  type UptimeStatus,
+} from '@deployhealth/core';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { failingSinceSql } from './monitoring';
-import { alerts, clients, deploys, endpoints, findings, projects, scans, users, type Deploy, type Project, type Scan, type User } from './schema';
+import { alerts, clients, deploys, endpoints, findings, projects, scans, scanVariables, users, type Deploy, type Project, type Scan, type User } from './schema';
 
 // ---------------------------------------------------------------------------------------------
 // Users
@@ -245,6 +256,8 @@ export interface RecordScanInput {
   deployedAt: Date;
   source?: 'ingest' | 'manual';
   findings: readonly FindingRow[];
+  /** Every referenced variable (names only). Omitted by older CLIs; the scan then says so. */
+  variables?: readonly RequiredVariable[];
 }
 
 export interface RecordScanResult {
@@ -284,6 +297,7 @@ export async function recordScan(db: Db, input: RecordScanInput): Promise<Record
         missingCount: counts.missing,
         unusedCount: counts.unused,
         mismatchCount: counts.mismatch,
+        variablesReported: input.variables !== undefined,
       })
       .returning({ id: scans.id });
 
@@ -300,8 +314,40 @@ export async function recordScan(db: Db, input: RecordScanInput): Promise<Record
       );
     }
 
+    const variables = mergeVariables(input.variables ?? []);
+    for (let i = 0; i < variables.length; i += FINDINGS_BATCH) {
+      await tx.insert(scanVariables).values(
+        variables.slice(i, i + FINDINGS_BATCH).map((v) => ({ scanId: scan!.id, scope: v.scope, varName: v.var_name, definedIn: v.defined_in })),
+      );
+    }
+
     return { deployId: deploy!.id, scanId: scan!.id, counts };
   });
+}
+
+/** One row per (scope, name); a repeated one merges its env files. */
+function mergeVariables(variables: readonly RequiredVariable[]): RequiredVariable[] {
+  const byKey = new Map<string, Set<EnvFileBasename>>();
+  for (const v of variables) {
+    const key = `${v.scope}\0${v.var_name}`;
+    const files = byKey.get(key) ?? new Set<EnvFileBasename>();
+    for (const f of v.defined_in) files.add(f);
+    byKey.set(key, files);
+  }
+  return [...byKey].map(([key, files]) => {
+    const [scope, var_name] = key.split('\0') as [string, string];
+    return { scope, var_name, defined_in: ENV_FILE_BASENAMES.filter((b) => files.has(b)) };
+  });
+}
+
+/** A scan's variables, by scope ('' first) then name. */
+export async function getScanVariables(db: Db, scanId: string): Promise<RequiredVariable[]> {
+  const rows = await db
+    .select({ scope: scanVariables.scope, var_name: scanVariables.varName, defined_in: scanVariables.definedIn })
+    .from(scanVariables)
+    .where(eq(scanVariables.scanId, scanId))
+    .orderBy(asc(scanVariables.scope), asc(scanVariables.varName));
+  return rows.map((r) => ({ scope: r.scope, var_name: r.var_name, defined_in: r.defined_in as EnvFileBasename[] }));
 }
 
 export interface DeployListItem {

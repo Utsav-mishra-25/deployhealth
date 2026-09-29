@@ -37,7 +37,7 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     return Response.json({ error: 'Invalid payload', issues }, { status: 400 });
   }
 
-  const { sha, branch, timestamp, findings } = parsed.data;
+  const { sha, branch, timestamp, findings, variables } = parsed.data;
   const result = await deps.recordScan({
     projectId: project.id,
     sha: sha.toLowerCase(),
@@ -45,6 +45,7 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     deployedAt: new Date(timestamp),
     source: 'ingest',
     findings,
+    variables,
   });
   return Response.json(result satisfies IngestResponse, { status: 201 });
 }

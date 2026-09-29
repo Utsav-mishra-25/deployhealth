@@ -1,0 +1,1 @@
+ALTER TABLE "scans" ADD COLUMN "variables_reported" boolean DEFAULT false NOT NULL;
