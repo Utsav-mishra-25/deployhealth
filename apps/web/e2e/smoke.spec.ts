@@ -14,6 +14,8 @@ test('login → clients → create client and project → add endpoint → view 
   await expect(page.getByRole('rowheader', { name: 'No client' })).toBeVisible();
   const storefrontRow = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' });
   await expect(storefrontRow.getByTestId('uptime-badge')).toHaveText('Down');
+  await expect(storefrontRow.getByTestId('failing-for')).toHaveText(/^Down for 2\dm$/);
+  await expect(page.getByTestId('project-row').filter({ hasText: 'northwind-site' }).getByTestId('failing-for')).toHaveCount(0);
 
   // The seeded project: breadcrumb, the linked alert, endpoints and config findings.
   await storefrontRow.getByRole('link', { name: 'acme-storefront' }).click();
@@ -24,7 +26,10 @@ test('login → clients → create client and project → add endpoint → view 
   await expect(page.getByRole('alert').filter({ hasText: 'api.acme.example started failing' })).toContainText(
     'api.acme.example started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY',
   );
-  await expect(page.getByTestId('endpoint-card').filter({ hasText: 'api.acme.example' }).getByTestId('endpoint-status')).toHaveText('Down');
+  const apiCard = page.getByTestId('endpoint-card').filter({ hasText: 'api.acme.example' });
+  await expect(apiCard.getByTestId('endpoint-status')).toHaveText('Down');
+  await expect(apiCard.getByTestId('failing-for')).toHaveText(/^Down for 2\dm$/);
+  await expect(apiCard.locator('header')).toContainText(/24h\s*[\d.]+%\s*7d\s*[\d.]+%/);
   await expect(page.getByRole('cell', { name: 'apps/web/src/lib/analytics.ts:4' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Deploys' }).getByRole('row')).toHaveCount(11);
 
@@ -75,6 +80,7 @@ test('login → clients → create client and project → add endpoint → view 
   const card = page.getByTestId('endpoint-card').filter({ hasText: 'https://example.com/health' });
   await expect(card).toBeVisible();
   await expect(card.getByTestId('endpoint-status')).toHaveText('No checks yet');
+  await expect(card.getByTestId('failing-for')).toHaveCount(0);
   await expect(card).toContainText('HEAD · every minute · expects 200');
   await expect(card.getByText('No checks yet', { exact: true }).last()).toBeVisible();
 
