@@ -3,7 +3,9 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-**[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data · **[Free during the beta](#pricing)**
+**[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
+
+The hosted version at deployhealth.dev is free while in beta.
 
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
@@ -77,11 +79,6 @@ Its alert is real: "Acme API" points at an endpoint that always answers 503, and
 it every minute. The data resets to its starting state every night.
 
 To run it yourself, follow [Local setup](#local-setup) and open http://localhost:3000/demo.
-
-## Pricing
-
-Free during the beta. Paid plans will start at $15/month for freelancers and $29/month for studios;
-anyone active during the beta gets a discounted rate for their first year.
 
 ## Self-hosting
 
