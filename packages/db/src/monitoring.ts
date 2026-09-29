@@ -9,7 +9,7 @@ import {
 } from '@deployhealth/core';
 import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './client';
-import { alerts, checks, deploys, endpoints, findings, projects, scans, type Alert, type Check, type Endpoint } from './schema';
+import { alerts, checks, deploys, endpointDailyStats, endpoints, findings, projects, scans, type Alert, type Check, type Endpoint } from './schema';
 
 // ---------------------------------------------------------------------------------------------
 // Endpoint CRUD (owner-scoped)
@@ -310,6 +310,55 @@ async function latestScanFindings(tx: Tx, deployId: string) {
 export async function pruneChecks(db: Db, olderThan: Date): Promise<number> {
   const deleted = await db.delete(checks).where(lt(checks.checkedAt, olderThan)).returning({ id: checks.id });
   return deleted.length;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Uptime over a range (handoff and reports)
+// ---------------------------------------------------------------------------------------------
+
+export interface CheckTally {
+  checks: number;
+  ok: number;
+}
+
+/** ok / checks, or null with no checks. */
+export function uptimeRatio(tally: CheckTally): number | null {
+  return tally.checks ? tally.ok / tally.checks : null;
+}
+
+/** Midnight UTC of `date`'s day. */
+export function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+/**
+ * Checks and ok checks for one endpoint in [from, to). Complete UTC days that have been rolled
+ * up into endpoint_daily_stats count from there (they outlive the 30-day raw retention); every
+ * other day counts its raw checks. Pass day-aligned bounds for exact results on old ranges.
+ */
+export async function uptimeBetween(db: Db, endpointId: string, from: Date, to: Date): Promise<CheckTally> {
+  const fromIso = from.toISOString();
+  const toIso = to.toISOString();
+  const result = await db.execute<{ checks: number; ok: number }>(sql`
+    select coalesce(sum(x.checks), 0)::int as checks, coalesce(sum(x.ok), 0)::int as ok from (
+      select d.checks, d.ok from ${endpointDailyStats} d
+      where d.endpoint_id = ${endpointId}
+        and (d.day::timestamp at time zone 'UTC') >= ${fromIso}::timestamptz
+        and (d.day::timestamp at time zone 'UTC') < ${toIso}::timestamptz
+      union all
+      select count(*)::int, (count(*) filter (where c.ok))::int from ${checks} c
+      where c.endpoint_id = ${endpointId}
+        and c.checked_at >= ${fromIso}::timestamptz and c.checked_at < ${toIso}::timestamptz
+        and not exists (
+          select 1 from ${endpointDailyStats} d
+          where d.endpoint_id = c.endpoint_id
+            and d.day = (c.checked_at at time zone 'UTC')::date
+            and (d.day::timestamp at time zone 'UTC') >= ${fromIso}::timestamptz
+        )
+    ) x
+  `);
+  const row = result.rows[0]!;
+  return { checks: Number(row.checks), ok: Number(row.ok) };
 }
 
 // ---------------------------------------------------------------------------------------------
