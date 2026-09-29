@@ -1,10 +1,9 @@
-import { BlockedUrlError, type EndpointMethod } from '@deployhealth/core';
+import { BlockedUrlError, CHECK_TIMEOUT_MS, MAX_REDIRECTS, type EndpointMethod } from '@deployhealth/core';
 import { guardedRequest, type HttpRequester } from './guarded-http';
 
 export { USER_AGENT, type HttpRequester, type ResponseHead } from './guarded-http';
 
-export const CHECK_TIMEOUT_MS = 10_000;
-export const MAX_REDIRECTS = 5;
+export { CHECK_TIMEOUT_MS, MAX_REDIRECTS } from '@deployhealth/core';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 export interface CheckTarget {
   url: string;

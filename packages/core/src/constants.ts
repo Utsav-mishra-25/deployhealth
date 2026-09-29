@@ -29,5 +29,9 @@ export const ALERT_FAILURE_THRESHOLD = 2;
 /** An alert links the most recent deploy within this window before the first failed check. */
 export const DEPLOY_LINK_WINDOW_MINUTES = 30;
 
+/** One uptime check's whole budget (connect, TLS, redirects, headers), and its redirect limit. */
+export const CHECK_TIMEOUT_MS = 10_000;
+export const MAX_REDIRECTS = 5;
+
 /** Checks older than this are deleted nightly. */
 export const CHECK_RETENTION_DAYS = 30;
