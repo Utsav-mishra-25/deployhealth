@@ -20,6 +20,13 @@ const schema = z
     REPORT_SHARE_SECRET: z.string().min(32, 'REPORT_SHARE_SECRET must be at least 32 characters (openssl rand -base64 32)').optional(),
     /** Where to report vulnerabilities, shown on /security and in security.txt. Optional. */
     SECURITY_CONTACT_EMAIL: z.email('SECURITY_CONTACT_EMAIL must be an email address').optional(),
+    /** Verifies GitHub App webhook deliveries (X-Hub-Signature-256). Unset: the webhook answers 404. */
+    GITHUB_APP_WEBHOOK_SECRET: z.string().min(16, 'GITHUB_APP_WEBHOOK_SECRET must be at least 16 characters (openssl rand -hex 32)').optional(),
+    /** The App's URL name, for the install link github.com/apps/<slug>/installations/new. */
+    GITHUB_APP_SLUG: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]*$/, 'GITHUB_APP_SLUG is the lowercase name in the App URL, e.g. deployhealth')
+      .optional(),
   })
   .refine((env) => env.NODE_ENV !== 'production' || (env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET), {
     message: 'AUTH_GITHUB_ID and AUTH_GITHUB_SECRET are required in production',
@@ -46,6 +53,8 @@ export function serverEnv(): ServerEnv {
     DEMO_PUBLIC: process.env.DEMO_PUBLIC || undefined,
     REPORT_SHARE_SECRET: process.env.REPORT_SHARE_SECRET || undefined,
     SECURITY_CONTACT_EMAIL: process.env.SECURITY_CONTACT_EMAIL || undefined,
+    GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET || undefined,
+    GITHUB_APP_SLUG: process.env.GITHUB_APP_SLUG || undefined,
   });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.') || 'env'}: ${i.message}`).join('\n');

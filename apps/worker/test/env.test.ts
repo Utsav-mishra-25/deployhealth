@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { parseWorkerEnv } from '../src/env';
 
@@ -9,6 +10,7 @@ describe('parseWorkerEnv', () => {
       DATABASE_URL,
       DEMO_PUBLIC: '0',
       DEMO_BASE_URL: null,
+      GITHUB_APP: null,
     });
   });
 
@@ -25,5 +27,26 @@ describe('parseWorkerEnv', () => {
   it('rejects anything but 0 or 1, and a missing DATABASE_URL', () => {
     expect(() => parseWorkerEnv({ DATABASE_URL, DEMO_PUBLIC: 'yes', DEMO_BASE_URL: undefined })).toThrow(/0 or 1/);
     expect(() => parseWorkerEnv({ DATABASE_URL: undefined, DEMO_PUBLIC: undefined, DEMO_BASE_URL: undefined })).toThrow(/DATABASE_URL/);
+  });
+
+  it('reads the GitHub App id and its base64 PEM key, and never echoes the key in errors', () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+    const b64 = Buffer.from(pem).toString('base64');
+    expect(parseWorkerEnv({ DATABASE_URL, GITHUB_APP_ID: '123456', GITHUB_APP_PRIVATE_KEY: b64 }).GITHUB_APP).toEqual({ appId: 123456, privateKey: pem });
+    // A raw PEM with escaped newlines (how some dashboards store it) works too.
+    expect(parseWorkerEnv({ DATABASE_URL, GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem.replace(/\n/g, '\\n') }).GITHUB_APP?.privateKey).toBe(pem);
+
+    expect(() => parseWorkerEnv({ DATABASE_URL, GITHUB_APP_ID: '123456' })).toThrow(/both GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY/);
+    expect(() => parseWorkerEnv({ DATABASE_URL, GITHUB_APP_ID: 'deployhealth', GITHUB_APP_PRIVATE_KEY: b64 })).toThrow(/numeric id/);
+    const secretLooking = Buffer.from('secret-but-not-a-key').toString('base64');
+    let message = '';
+    try {
+      parseWorkerEnv({ DATABASE_URL, GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: secretLooking });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/not a valid private key/);
+    expect(message).not.toContain(secretLooking);
   });
 });
