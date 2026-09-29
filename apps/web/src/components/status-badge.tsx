@@ -1,4 +1,4 @@
-import type { UptimeStatus } from '@deployhealth/core/browser';
+import { failingFor, type UptimeStatus } from '@deployhealth/core/browser';
 import type { EndpointStatus } from '@deployhealth/db';
 
 const TONES = {
@@ -41,4 +41,21 @@ const ENDPOINT: Record<EndpointStatus, [keyof typeof TONES, string]> = {
 export function EndpointStatusBadge({ status }: { status: EndpointStatus }) {
   const [tone, label] = ENDPOINT[status];
   return <Badge tone={tone} label={label} testId="endpoint-status" />;
+}
+
+/**
+ * "Down for 21m" (or "Failing for 1m" before an alert opens), shown next to a badge while the
+ * latest check is failing. `since` is the first failed check of the current run.
+ */
+export function FailingFor({ state, since }: { state: 'down' | 'failing'; since: Date }) {
+  return (
+    <time
+      dateTime={since.toISOString()}
+      title={`First failed check: ${since.toUTCString()}`}
+      data-testid="failing-for"
+      className={`text-xs font-medium ${state === 'down' ? 'text-red-700' : 'text-amber-800'}`}
+    >
+      {failingFor(state, since, new Date())}
+    </time>
+  );
 }

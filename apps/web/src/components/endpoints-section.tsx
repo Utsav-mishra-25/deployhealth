@@ -4,7 +4,7 @@ import { EndpointForm } from '@/app/projects/[projectId]/endpoint-form';
 import { ChecksTable } from './checks-table';
 import { ConfirmButton } from './confirm-button';
 import { LatencyChart } from './latency-chart';
-import { EndpointStatusBadge } from './status-badge';
+import { EndpointStatusBadge, FailingFor } from './status-badge';
 
 const EVERY: Record<number, string> = { 60: 'every minute', 300: 'every 5 min', 900: 'every 15 min' };
 
@@ -32,6 +32,7 @@ export function EndpointsSection({ projectId, endpoints }: { projectId: string; 
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <EndpointStatusBadge status={m.status} />
+              {m.failingSince && <FailingFor state={m.status === 'down' ? 'down' : 'failing'} since={m.failingSince} />}
               <span className="truncate font-mono text-sm">{m.endpoint.url}</span>
               <span className="text-xs text-gray-500">
                 {m.endpoint.method} · {EVERY[m.endpoint.intervalSeconds]} · expects {m.endpoint.expectedStatus}

@@ -2,7 +2,7 @@ import type { ProjectListItem } from '@deployhealth/db';
 import Link from 'next/link';
 import { shortSha } from '@/lib/format';
 import { CountPills } from './counts';
-import { UptimeBadge } from './status-badge';
+import { FailingFor, UptimeBadge } from './status-badge';
 import { TimeAgo } from './time-ago';
 
 /** Table rows for projects: env findings, last deploy and uptime. Used on /clients and client pages. */
@@ -28,7 +28,10 @@ export function ProjectRows({ projects, indent = false }: { projects: ProjectLis
             )}
           </td>
           <td className="py-3 pr-4 pl-3">
-            <UptimeBadge status={p.uptime} />
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <UptimeBadge status={p.uptime} />
+              {p.failingSince && <FailingFor state={p.uptime === 'down' ? 'down' : 'failing'} since={p.failingSince} />}
+            </div>
           </td>
         </tr>
       ))}
