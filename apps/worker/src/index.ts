@@ -1,20 +1,22 @@
 import { claimDueEndpoints, createDb, pruneChecks, recordCheck } from '@deployhealth/db';
+import { seed } from '@deployhealth/db/seed';
 import { PgBoss } from 'pg-boss';
 import { runCheck } from './check';
 import { workerEnv } from './env';
-import { CHECK_QUEUE, checkEndpoints, PRUNE_QUEUE, pruneOldChecks } from './jobs';
+import { CHECK_QUEUE, checkEndpoints, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
 import { sendWebhook } from './webhook';
 
 const log = (message: string) => console.log(message);
 
 /**
- * Two pg-boss queues, both `singleton` so runs never overlap:
+ * pg-boss queues, all `singleton` so runs never overlap:
  * - check-endpoints, every minute: checks whatever is due (per-endpoint intervals live in
  *   endpoints.next_check_at, so there is no per-endpoint cron);
- * - prune-checks, nightly at 03:17 UTC: deletes checks older than 30 days.
+ * - prune-checks, nightly at 03:17 UTC: deletes checks older than 30 days;
+ * - reseed-demo, only when DEMO_PUBLIC=1: nightly at 04:41 UTC and once on start.
  */
 async function main(): Promise<void> {
-  const { DATABASE_URL } = workerEnv();
+  const { DATABASE_URL, DEMO_PUBLIC, DEMO_BASE_URL } = workerEnv();
   const handle = createDb(DATABASE_URL);
   const { db } = handle;
   const boss = new PgBoss(DATABASE_URL);
@@ -41,7 +43,18 @@ async function main(): Promise<void> {
     await pruneOldChecks({ prune: (olderThan) => pruneChecks(db, olderThan), log });
   });
 
-  log(`[worker] ready: ${CHECK_QUEUE} every minute, ${PRUNE_QUEUE} nightly`);
+  await boss.createQueue(RESEED_QUEUE, { policy: 'singleton', retryLimit: 2 });
+  if (DEMO_PUBLIC === '1' && DEMO_BASE_URL) {
+    await boss.schedule(RESEED_QUEUE, '41 4 * * *');
+    await boss.work(RESEED_QUEUE, async () => {
+      await reseedDemo({ seed: (now) => seed(db, now, { baseUrl: DEMO_BASE_URL }), log });
+    });
+    await boss.send(RESEED_QUEUE, {});
+  } else {
+    await boss.unschedule(RESEED_QUEUE);
+  }
+
+  log(`[worker] ready: ${CHECK_QUEUE} every minute, ${PRUNE_QUEUE} nightly${DEMO_PUBLIC === '1' ? `, ${RESEED_QUEUE} nightly and now` : ''}`);
 
   const shutdown = async (signal: string) => {
     log(`[worker] ${signal} received, stopping`);

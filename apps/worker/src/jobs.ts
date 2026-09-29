@@ -4,6 +4,7 @@ import type { CheckResult, CheckTarget } from './check';
 
 export const CHECK_QUEUE = 'check-endpoints';
 export const PRUNE_QUEUE = 'prune-checks';
+export const RESEED_QUEUE = 'reseed-demo';
 
 export interface CheckEndpointsDeps {
   claimDue: () => Promise<DueEndpoint[]>;
@@ -70,4 +71,15 @@ async function forEachLimited<T>(items: readonly T[], limit: number, fn: (item: 
     while (next < items.length) await fn(items[next++]!);
   });
   await Promise.all(workers);
+}
+
+/**
+ * Restore the public demo to its seed state (one transaction; see seed() in @deployhealth/db).
+ * Runs nightly and once when the worker starts, so production needs no manual seed step. The
+ * seed's ingest token is never logged: nobody should be able to post scans to the demo.
+ */
+export async function reseedDemo(deps: { seed: (now: Date) => Promise<unknown>; now?: () => Date; log: (message: string) => void }): Promise<void> {
+  const started = Date.now();
+  await deps.seed(deps.now?.() ?? new Date());
+  deps.log(`[reseed-demo] demo data restored in ${Date.now() - started}ms`);
 }
