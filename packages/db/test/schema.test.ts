@@ -36,10 +36,14 @@ describe('schema', () => {
       'endpoint_daily_stats',
       'endpoints',
       'findings',
+      'installation_repos',
+      'installations',
+      'pr_checks',
       'projects',
       'scan_variables',
       'scans',
       'users',
+      'webhook_deliveries',
     ]);
   });
 

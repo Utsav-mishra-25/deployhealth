@@ -13,7 +13,7 @@ import {
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { failingSinceSql } from './monitoring';
-import { alerts, clients, deploys, endpoints, findings, projects, scans, scanVariables, users, type Deploy, type Project, type Scan, type User } from './schema';
+import { alerts, clients, deploys, endpoints, findings, prChecks, projects, scans, scanVariables, users, type Deploy, type Project, type Scan, type User } from './schema';
 
 // ---------------------------------------------------------------------------------------------
 // Users
@@ -147,6 +147,8 @@ export interface ProjectListItem {
   failingSince: Date | null;
   /** Labels (name, else host) of the endpoints behind a down or degraded badge, longest-failing first. */
   failingEndpoints: string[];
+  /** Open pull requests whose latest GitHub App check found undeclared env vars. */
+  openPrsWithUndeclared: number;
 }
 
 /** The owner's projects, newest first, each with its latest deploy and that deploy's latest scan. */
@@ -170,8 +172,9 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     failing_since: string | null;
     down_endpoints: EndpointRef[];
     failing_endpoint_refs: EndpointRef[];
+    open_prs_with_undeclared: number;
   }>(sql`
-    select p.id, p.name, p.repo_full_name, p.client_id, p.created_at,
+    select p.id, p.name, p.repo_full_name, p.client_id, p.created_at, prs.open_prs_with_undeclared,
            d.sha, d.branch, d.deployed_at,
            s.missing_count, s.unused_count, s.mismatch_count,
            u.enabled_endpoints, u.open_alerts, u.failing_endpoints, u.down_since, u.failing_since,
@@ -204,6 +207,15 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
         from ${endpoints} e where e.project_id = p.id and e.enabled
       ) ep
     ) u on true
+    left join lateral (
+      select count(*)::int as open_prs_with_undeclared
+      from (
+        select distinct on (pc.pr_number) pc.undeclared_vars, pc.closed_at
+        from ${prChecks} pc where pc.project_id = p.id
+        order by pc.pr_number, pc.created_at desc
+      ) latest
+      where latest.closed_at is null and jsonb_array_length(latest.undeclared_vars) > 0
+    ) prs on true
     where p.owner_id = ${ownerId}
     order by p.created_at desc
   `);
@@ -223,6 +235,7 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
         ? null
         : { missing: row.missing_count, unused: row.unused_count ?? 0, mismatch: row.mismatch_count ?? 0 },
     ...uptimeAndSince(row),
+    openPrsWithUndeclared: row.open_prs_with_undeclared,
   }));
 }
 

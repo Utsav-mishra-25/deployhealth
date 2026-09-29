@@ -29,6 +29,7 @@ import {
   rotateProjectToken,
 } from '../src/queries';
 import { getHandoffData } from '../src/handoff';
+import { agentPrStats, getGithubAppStatus, listPrChecksForOwner, updatePrCheckMode, upsertInstallation, upsertPrCheck } from '../src/github';
 import { alerts, clients, endpoints, projects } from '../src/schema';
 import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
@@ -92,6 +93,18 @@ describe("user A cannot read user B's data", () => {
     expect(await getHandoffData(db, a.id, bProject.id)).toBeNull();
     expect((await getHandoffData(db, b.id, bProject.id))?.project.name).toBe(bProject.name);
   });
+
+  it('GitHub App status, pull request checks and agent stats', async () => {
+    const { a, b, bClient, bProject } = await twoUsers();
+    const inst = await upsertInstallation(db, { githubInstallationId: 1, accountLogin: 'bob', accountType: 'User', installerGithubId: b.githubId }, [bProject.repoFullName]);
+    await upsertPrCheck(db, { projectId: bProject.id, installationId: inst.id, prNumber: 1, headSha: 'h', baseSha: 'b', authorLogin: 'claude[bot]', authorIsAgent: true, conclusion: 'neutral', undeclaredVars: ['X'] });
+    expect(await getGithubAppStatus(db, a.id, bProject.id)).toBeNull();
+    expect(await listPrChecksForOwner(db, a.id, bProject.id)).toEqual([]);
+    const range = [new Date(Date.now() - 86_400_000), new Date(Date.now() + 86_400_000)] as const;
+    expect(await agentPrStats(db, a.id, bClient.id, ...range)).toEqual({ undeclared: 0, total: 0 });
+    expect(await agentPrStats(db, b.id, bClient.id, ...range)).toEqual({ undeclared: 1, total: 1 });
+    expect(await listPrChecksForOwner(db, b.id, bProject.id)).toHaveLength(1);
+  });
 });
 
 describe("user A cannot modify user B's data", () => {
@@ -119,6 +132,13 @@ describe("user A cannot modify user B's data", () => {
     expect(bAfter).toMatchObject({ clientId: bClient.id, alertWebhookUrl: null, apiTokenHash: bProject.apiTokenHash });
     const [aAfter] = await db.select().from(projects).where(eq(projects.id, aProject.id));
     expect(aAfter?.clientId).toBeNull();
+  });
+
+  it('pull request check mode', async () => {
+    const { a, bProject } = await twoUsers();
+    expect(await updatePrCheckMode(db, a.id, bProject.id, 'off')).toBe(false);
+    const [row] = await db.select().from(projects).where(eq(projects.id, bProject.id));
+    expect(row!.prCheckMode).toBe('comment');
   });
 
   it('endpoints', async () => {

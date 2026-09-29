@@ -6,3 +6,4 @@ export * from './monitoring';
 export * from './handoff';
 export * from './reports';
 export * from './demo';
+export * from './github';

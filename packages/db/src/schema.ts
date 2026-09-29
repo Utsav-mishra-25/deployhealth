@@ -6,6 +6,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -20,6 +21,8 @@ const ts = (name: string) => timestamp(name, { withTimezone: true });
 
 export const deploySource = pgEnum('deploy_source', ['ingest', 'manual']);
 export const findingKind = pgEnum('finding_kind', ['missing', 'unused', 'mismatch']);
+/** What the GitHub App does on a project's pull requests: nothing, comment (neutral check), or fail the check. */
+export const prCheckMode = pgEnum('pr_check_mode', ['off', 'comment', 'strict']);
 
 /** GitHub users who have signed in. Upserted by `github_id` on every sign-in. */
 export const users = pgTable('users', {
@@ -70,6 +73,8 @@ export const projects = pgTable(
     alertWebhookUrl: text('alert_webhook_url'),
     /** "How to deploy" for the handoff export. Markdown, untrusted: rendered without raw HTML. */
     deployNotes: text('deploy_notes'),
+    /** GitHub App pull request checks for this repo (only once the App is installed on it). */
+    prCheckMode: prCheckMode('pr_check_mode').notNull().default('comment'),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -211,6 +216,119 @@ export const checks = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------------------------
+// GitHub App: installations, pull request checks, webhook deliveries
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A GitHub App installation, from signed webhook deliveries only. `user_id` links it to the
+ * deployhealth account whose GitHub id installed it (`installer_github_id`, the delivery's sender):
+ * set when the installation arrives if that user exists, else at their next sign-in. Pull requests
+ * are checked only for projects owned by that user.
+ */
+export const installations = pgTable(
+  'installations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    githubInstallationId: bigint('github_installation_id', { mode: 'number' }).notNull().unique(),
+    accountLogin: text('account_login').notNull(),
+    /** 'User' or 'Organization'. */
+    accountType: text('account_type').notNull(),
+    installerGithubId: bigint('installer_github_id', { mode: 'number' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    suspendedAt: ts('suspended_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('installations_installer_idx').on(t.installerGithubId), index('installations_user_idx').on(t.userId)],
+);
+
+/** The repositories an installation can see ("owner/repo"), kept in sync from webhooks. */
+export const installationRepos = pgTable(
+  'installation_repos',
+  {
+    installationId: uuid('installation_id')
+      .notNull()
+      .references(() => installations.id, { onDelete: 'cascade' }),
+    repoFullName: text('repo_full_name').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.installationId, t.repoFullName] }), index('installation_repos_repo_idx').on(sql`lower(${t.repoFullName})`)],
+);
+
+/** A variable reference in a pull request's code. At most PR_REFS_PER_VAR are stored per variable. */
+export interface PrVarRef {
+  file: string;
+  line: number;
+}
+export interface PrAddedVar {
+  name: string;
+  refs: PrVarRef[];
+  /** References in total (refs may be truncated). */
+  total: number;
+  /** In the .env.example of every scope that references it. */
+  declared: boolean;
+}
+export interface PrRemovedVar {
+  name: string;
+  refs: PrVarRef[];
+  total: number;
+}
+export interface PrRenamedVar {
+  from: string;
+  to: string;
+  file: string;
+  line: number;
+  declared: boolean;
+}
+export interface PrEnvFile {
+  path: string;
+  /** Committed by this pull request (not already on the base branch). */
+  added: boolean;
+}
+
+/** One check of one pull request head. A new push adds a row; the comment and check run are updated. */
+export const prChecks = pgTable(
+  'pr_checks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    installationId: uuid('installation_id')
+      .notNull()
+      .references(() => installations.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    baseSha: text('base_sha').notNull(),
+    authorLogin: text('author_login').notNull(),
+    authorIsAgent: boolean('author_is_agent').notNull().default(false),
+    agentName: text('agent_name'),
+    addedVars: jsonb('added_vars').$type<PrAddedVar[]>().notNull().default([]),
+    removedVars: jsonb('removed_vars').$type<PrRemovedVar[]>().notNull().default([]),
+    renamedVars: jsonb('renamed_vars').$type<PrRenamedVar[]>().notNull().default([]),
+    undeclaredVars: jsonb('undeclared_vars').$type<string[]>().notNull().default([]),
+    committedEnvFiles: jsonb('committed_env_files').$type<PrEnvFile[]>().notNull().default([]),
+    secretHits: integer('secret_hits').notNull().default(0),
+    conclusion: text('conclusion', { enum: ['neutral', 'success', 'failure'] }).notNull(),
+    commentId: bigint('comment_id', { mode: 'number' }),
+    checkRunId: bigint('check_run_id', { mode: 'number' }),
+    /** Set when the pull request is closed or merged; cleared if it's reopened. */
+    closedAt: ts('closed_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('pr_checks_head_uq').on(t.projectId, t.prNumber, t.headSha),
+    index('pr_checks_project_created_idx').on(t.projectId, t.createdAt),
+    check('pr_checks_conclusion_check', sql`${t.conclusion} in ('neutral', 'success', 'failure')`),
+  ],
+);
+
+/** X-GitHub-Delivery ids already accepted, so a redelivery isn't processed twice. Pruned after 24 h. */
+export const webhookDeliveries = pgTable('webhook_deliveries', {
+  deliveryId: text('delivery_id').primaryKey(),
+  receivedAt: ts('received_at').notNull().defaultNow(),
+});
+
 /**
  * One row per target hostname: the earliest time its next check may start. The claim query hands
  * out start times HOST_CHECK_SPACING_MS apart per hostname, across all users, and saves the next
@@ -282,3 +400,7 @@ export type Alert = typeof alerts.$inferSelect;
 export type ScanVariable = typeof scanVariables.$inferSelect;
 export type EndpointDailyStat = typeof endpointDailyStats.$inferSelect;
 export type CheckHost = typeof checkHosts.$inferSelect;
+export type Installation = typeof installations.$inferSelect;
+export type PrCheck = typeof prChecks.$inferSelect;
+export type NewPrCheck = typeof prChecks.$inferInsert;
+export type PrCheckMode = (typeof prCheckMode.enumValues)[number];
