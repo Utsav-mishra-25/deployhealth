@@ -13,17 +13,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
-        <header className="border-b border-gray-200 bg-white">
+        <header className="border-b border-gray-200 bg-white print:hidden">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
             <Link href={session ? '/clients' : '/'} className="font-semibold tracking-tight">
               deploy<span className="text-emerald-600">health</span>
             </Link>
             {session?.user && (
               <div className="flex items-center gap-3 text-sm">
-                {session.user.image && (
-                  // eslint-disable-next-line @next/next/no-img-element -- tiny avatar, no optimisation needed
-                  <img src={session.user.image} alt="" className="h-6 w-6 rounded-full" />
-                )}
                 <span className="text-gray-700" data-testid="current-user">
                   {session.user.login}
                 </span>
