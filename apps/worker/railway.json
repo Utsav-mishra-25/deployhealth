@@ -3,7 +3,7 @@
   "build": {
     "builder": "RAILPACK",
     "buildCommand": "pnpm --filter @deployhealth/worker... build",
-    "watchPatterns": ["apps/worker/**", "packages/**", "pnpm-lock.yaml"]
+    "watchPatterns": ["/apps/worker/**", "/packages/**", "/package.json", "/pnpm-lock.yaml", "/pnpm-workspace.yaml", "/tsconfig.base.json", "/.nvmrc"]
   },
   "deploy": {
     "startCommand": "pnpm --filter @deployhealth/worker start",

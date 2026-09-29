@@ -3,7 +3,7 @@
   "build": {
     "builder": "RAILPACK",
     "buildCommand": "pnpm --filter @deployhealth/web... build",
-    "watchPatterns": ["apps/web/**", "packages/**", "pnpm-lock.yaml"]
+    "watchPatterns": ["/apps/web/**", "/packages/**", "/package.json", "/pnpm-lock.yaml", "/pnpm-workspace.yaml", "/tsconfig.base.json", "/.nvmrc"]
   },
   "deploy": {
     "preDeployCommand": ["node packages/db/dist/migrate.js"],
