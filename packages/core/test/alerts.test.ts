@@ -4,6 +4,7 @@ import {
   alertResolvedMessage,
   decideAlert,
   endpointLabel,
+  failingFor,
   formatDuration,
   uptimeStatus,
   webhookPayload,
@@ -105,8 +106,28 @@ describe('alert messages', () => {
 
   it('formats durations and labels', () => {
     expect([0, 59_999, 60_000, 3_600_000, 3_660_000].map(formatDuration)).toEqual(['under a minute', 'under a minute', '1m', '1h', '1h 1m']);
+    const hours = (h: number) => h * 3_600_000;
+    expect([hours(23) + 3_540_000, hours(24), hours(24) + 3_540_000, hours(51)].map(formatDuration)).toEqual(['23h 59m', '1d', '1d', '2d 3h']);
     expect(endpointLabel('https://api.acme.com/health?x=1')).toBe('api.acme.com');
     expect(endpointLabel('not a url')).toBe('not a url');
+  });
+});
+
+describe('failingFor', () => {
+  const now = new Date('2026-09-28T12:00:00Z');
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+
+  it('measures from the first failed check of the run to now, in whole minutes', () => {
+    expect(failingFor('down', ago(21 * 60_000), now)).toBe('Down for 21m');
+    expect(failingFor('down', ago(21 * 60_000 + 59_999), now)).toBe('Down for 21m');
+    expect(failingFor('down', ago(3_600_000 + 5 * 60_000), now)).toBe('Down for 1h 5m');
+    expect(failingFor('down', ago(3 * 86_400_000 + 7_200_000), now)).toBe('Down for 3d 2h');
+  });
+
+  it('says Failing before an alert opens, and never goes negative', () => {
+    expect(failingFor('failing', ago(90_000), now)).toBe('Failing for 1m');
+    expect(failingFor('failing', ago(10_000), now)).toBe('Failing for under a minute');
+    expect(failingFor('down', new Date(now.getTime() + 5_000), now)).toBe('Down for under a minute');
   });
 });
 
