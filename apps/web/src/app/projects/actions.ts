@@ -9,6 +9,7 @@ import {
   createProject,
   DuplicateProjectNameError,
   rotateProjectToken,
+  updatePrCheckMode,
   updateProjectSettings,
 } from '@deployhealth/db';
 import { revalidatePath } from 'next/cache';
@@ -146,4 +147,19 @@ export async function updateProjectSettingsAction(projectId: string, _prev: Sett
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/clients');
   return { status: 'saved' };
+}
+
+export type PrCheckModeState = { status: 'idle' } | { status: 'saved'; at: number } | { status: 'error'; message: string };
+
+const prCheckModes = z.enum(['off', 'comment', 'strict']);
+
+/** What the GitHub App does on this project's pull requests: off, comment, or fail the check. */
+export async function updatePrCheckModeAction(projectId: string, _prev: PrCheckModeState, form: FormData): Promise<PrCheckModeState> {
+  const user = await requireWritableUser();
+  const mode = prCheckModes.safeParse(form.get('mode'));
+  if (!isUuid(projectId) || !mode.success) return { status: 'error', message: 'Choose off, comment or strict.' };
+  if (!(await updatePrCheckMode(getDb(), user.id, projectId, mode.data))) return { status: 'error', message: 'Project not found.' };
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/settings`);
+  return { status: 'saved', at: Date.now() };
 }

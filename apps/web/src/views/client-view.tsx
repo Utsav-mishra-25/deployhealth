@@ -1,4 +1,5 @@
-import { getClientBySlug, listClientsOverview } from '@deployhealth/db';
+import { monthOf } from '@deployhealth/core';
+import { agentPrStats, getClientBySlug, listClientsOverview } from '@deployhealth/db';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { deleteClientAction } from '@/app/clients/actions';
@@ -13,7 +14,9 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
   const db = getDb();
   const client = await getClientBySlug(db, ownerId, slug);
   if (!client) notFound();
-  const projects = (await listClientsOverview(db, ownerId)).clients.find((c) => c.id === client.id)?.projects ?? [];
+  const month = monthOf(new Date());
+  const [overview, agentPrs] = await Promise.all([listClientsOverview(db, ownerId), agentPrStats(db, ownerId, client.id, month.from, month.to)]);
+  const projects = overview.clients.find((c) => c.id === client.id)?.projects ?? [];
 
   return (
     <div className="space-y-8">
@@ -49,6 +52,14 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
           )}
         </div>
       </div>
+
+      <p className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700" data-testid="agent-pr-stat">
+        Agent PRs that added undeclared env vars this month:{' '}
+        <strong className={agentPrs.undeclared > 0 ? 'text-red-700' : 'text-gray-900'}>
+          {agentPrs.undeclared} of {agentPrs.total}
+        </strong>
+        <span className="text-gray-500"> · pull requests by coding agents (Claude, Codex, Copilot, Cursor, Devin), checked by the GitHub App</span>
+      </p>
 
       {client.notes && (
         <section aria-labelledby="notes">

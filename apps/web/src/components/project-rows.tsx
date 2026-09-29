@@ -26,7 +26,14 @@ export function ProjectRows({
             </Link>
             <div className="text-xs text-gray-500">{p.repoFullName}</div>
           </td>
-          <td className="px-3 py-3">{p.counts ? <CountPills counts={p.counts} /> : <span className="text-sm text-gray-400">No scans yet</span>}</td>
+          <td className="px-3 py-3">
+            {p.counts ? <CountPills counts={p.counts} /> : <span className="text-sm text-gray-400">No scans yet</span>}
+            {p.openPrsWithUndeclared > 0 && (
+              <Link href={`${paths.project(p.id)}#pull-requests`} className="mt-1 block text-xs font-medium text-red-700 hover:underline" data-testid="open-prs-undeclared">
+                {p.openPrsWithUndeclared} open PR{p.openPrsWithUndeclared === 1 ? '' : 's'} with undeclared env vars
+              </Link>
+            )}
+          </td>
           <td className="px-3 py-3 text-sm text-gray-600">
             {p.lastDeploy ? (
               <>

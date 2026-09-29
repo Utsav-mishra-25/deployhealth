@@ -9,6 +9,7 @@ import {
   forgetDelivery,
   getGithubAppStatus,
   linkInstallationsForUser,
+  listInstallationsForUser,
   listPrChecksForOwner,
   markPullRequestClosed,
   pruneDeliveries,
@@ -225,6 +226,15 @@ describe('project settings: App status and mode (owner-scoped)', () => {
     expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'suspended', accountLogin: 'alice' });
     const stranger = await makeUser(db);
     expect(await getGithubAppStatus(db, stranger.id, project.id)).toBeNull();
+  });
+
+  it('lists only the installations linked to the user, with their repos', async () => {
+    const alice = await userWithGithubId(101);
+    await install(1, 101, ['acme/shop', 'acme/api'], 'acme');
+    await install(2, 999, ['other/repo'], 'other');
+    expect(await listInstallationsForUser(db, alice.id)).toEqual([
+      { accountLogin: 'acme', accountType: 'Organization', suspended: false, repos: ['acme/api', 'acme/shop'] },
+    ]);
   });
 
   it("changes the mode only on the owner's project", async () => {

@@ -1,4 +1,4 @@
-import { getClientForOwner, getLatestScan, getProjectForOwner, getProjectMonitoring, listDeploys, listOpenAlerts } from '@deployhealth/db';
+import { getClientForOwner, getLatestScan, getProjectForOwner, getProjectMonitoring, listDeploys, listOpenAlerts, listPrChecksForOwner } from '@deployhealth/db';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertsBanner } from '@/components/alerts-banner';
@@ -7,6 +7,7 @@ import { SummaryCards } from '@/components/counts';
 import { DeployList } from '@/components/deploy-list';
 import { EndpointsSection } from '@/components/endpoints-section';
 import { FindingsByKind } from '@/components/findings-table';
+import { PrChecksSection } from '@/components/pr-checks';
 import { TimeAgo } from '@/components/time-ago';
 import { getDb } from '@/lib/db';
 import { isUuid, shortSha } from '@/lib/format';
@@ -34,11 +35,12 @@ export async function ProjectView({
   const project = await getProjectForOwner(db, projectId, ownerId);
   if (!project) notFound();
 
-  const [client, deploys, openAlerts, monitoring] = await Promise.all([
+  const [client, deploys, openAlerts, monitoring, prChecks] = await Promise.all([
     project.clientId ? getClientForOwner(db, ownerId, project.clientId) : null,
     listDeploys(db, project.id),
     listOpenAlerts(db, ownerId, project.id),
     getProjectMonitoring(db, ownerId, project.id),
+    listPrChecksForOwner(db, ownerId, project.id),
   ]);
   const latestId = deploys[0]?.deploy.id;
   const selectedId = isUuid(requestedDeploy) ? requestedDeploy : latestId;
@@ -124,6 +126,10 @@ export async function ProjectView({
       )}
 
       <EndpointsSection projectId={project.id} endpoints={monitoring} readOnly={readOnly} />
+
+      {(prChecks.length > 0 || project.prCheckMode !== 'off') && (
+        <PrChecksSection repoFullName={project.repoFullName} checks={prChecks} readOnly={readOnly} />
+      )}
 
       {detail && (
         <>

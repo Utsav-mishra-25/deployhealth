@@ -338,3 +338,27 @@ export async function agentPrStats(db: Db, ownerId: string, clientId: string, fr
   `);
   return result.rows[0] ?? { total: 0, undeclared: 0 };
 }
+
+export interface InstallationSummary {
+  accountLogin: string;
+  accountType: string;
+  suspended: boolean;
+  repos: string[];
+}
+
+/** The installations linked to this user, with the repositories each can see. */
+export async function listInstallationsForUser(db: Db, userId: string): Promise<InstallationSummary[]> {
+  const rows = await db
+    .select({ id: installations.id, accountLogin: installations.accountLogin, accountType: installations.accountType, suspendedAt: installations.suspendedAt, repo: installationRepos.repoFullName })
+    .from(installations)
+    .leftJoin(installationRepos, eq(installationRepos.installationId, installations.id))
+    .where(eq(installations.userId, userId))
+    .orderBy(installations.accountLogin, installationRepos.repoFullName);
+  const byId = new Map<string, InstallationSummary>();
+  for (const r of rows) {
+    const summary = byId.get(r.id) ?? { accountLogin: r.accountLogin, accountType: r.accountType, suspended: r.suspendedAt !== null, repos: [] };
+    if (r.repo) summary.repos.push(r.repo);
+    byId.set(r.id, summary);
+  }
+  return [...byId.values()];
+}

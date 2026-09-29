@@ -1,12 +1,14 @@
 import { CLI_NPX, githubActionSnippet, TOKEN_SECRET_NAME } from '@deployhealth/core';
-import { getClientForOwner, getProjectForOwner, listClients } from '@deployhealth/db';
+import { getClientForOwner, getGithubAppStatus, getProjectForOwner, listClients, type GithubAppStatus } from '@deployhealth/db';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/auth';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { CodeBlock } from '@/components/code-block';
+import { serverEnv } from '@/env';
 import { appUrl } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
+import { PrCheckModeForm } from './pr-check-mode-form';
 import { ProjectSettingsForm } from './project-settings-form';
 import { RegenerateToken } from './regenerate-token';
 
@@ -19,10 +21,12 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const db = getDb();
   const project = await getProjectForOwner(db, projectId, user.id);
   if (!project) notFound();
-  const [client, clients] = await Promise.all([
+  const [client, clients, appStatus] = await Promise.all([
     project.clientId ? getClientForOwner(db, user.id, project.clientId) : null,
     listClients(db, user.id),
+    getGithubAppStatus(db, user.id, project.id),
   ]);
+  const appSlug = serverEnv().GITHUB_APP_SLUG;
 
   const url = await appUrl();
   const snippet = githubActionSnippet({ appUrl: url });
@@ -74,6 +78,32 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
       </section>
 
+      <section aria-labelledby="github-app">
+        <h2 id="github-app" className="text-lg font-semibold">
+          GitHub App
+        </h2>
+        <p className="mt-1 mb-3 text-sm text-gray-600">
+          Checks every pull request on <strong>{project.repoFullName}</strong>: which env vars it adds, removes or renames, new
+          ones missing from <code>.env.example</code>, committed <code>.env</code> files and secret-shaped strings. It comments
+          once per pull request and adds a <code>deployhealth / env</code> check. Names and file:line only, never values.
+        </p>
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
+          <AppStatusLine status={appStatus!} repo={project.repoFullName} />
+          {appSlug ? (
+            <a
+              href={`https://github.com/apps/${appSlug}/installations/new`}
+              className="inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              data-testid="install-github-app"
+            >
+              {appStatus?.state === 'active' ? 'Manage the GitHub App' : 'Install the GitHub App'}
+            </a>
+          ) : (
+            <p className="text-sm text-gray-500">The GitHub App isn&apos;t configured on this deployment (GITHUB_APP_SLUG).</p>
+          )}
+          <PrCheckModeForm projectId={project.id} mode={project.prCheckMode} />
+        </div>
+      </section>
+
       <section>
         <h2 className="text-lg font-semibold">Try it locally</h2>
         <p className="mt-1 mb-3 text-sm text-gray-600">
@@ -83,5 +113,34 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         <CodeBlock code={localRun} label="shell" />
       </section>
     </div>
+  );
+}
+
+function AppStatusLine({ status, repo }: { status: GithubAppStatus; repo: string }) {
+  const text = {
+    'not-installed': <>Not installed on {repo} yet.</>,
+    active: (
+      <>
+        <span className="font-medium text-emerald-700">Installed</span> on {'accountLogin' in status && status.accountLogin}: pull requests on {repo} are
+        checked.
+      </>
+    ),
+    suspended: (
+      <>
+        <span className="font-medium text-amber-700">Suspended</span> on {'accountLogin' in status && status.accountLogin}. Unsuspend it in GitHub&apos;s
+        settings to resume checks.
+      </>
+    ),
+    'other-account': (
+      <>
+        Installed on {'accountLogin' in status && status.accountLogin}, but by a GitHub account other than yours, so this project&apos;s pull
+        requests aren&apos;t checked. Install it yourself (you need admin rights on the repository), or sign in with the account that did.
+      </>
+    ),
+  }[status.state];
+  return (
+    <p className="text-sm text-gray-700" data-testid="github-app-status">
+      {text}
+    </p>
   );
 }
