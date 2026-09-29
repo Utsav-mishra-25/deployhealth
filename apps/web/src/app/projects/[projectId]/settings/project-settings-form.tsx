@@ -11,11 +11,13 @@ export function ProjectSettingsForm({
   clients,
   clientId,
   alertWebhookUrl,
+  deployNotes,
 }: {
   projectId: string;
   clients: Array<{ id: string; name: string }>;
   clientId: string | null;
   alertWebhookUrl: string | null;
+  deployNotes: string | null;
 }) {
   const [state, action, pending] = useActionState<SettingsState, FormData>(updateProjectSettingsAction.bind(null, projectId), {
     status: 'idle',
@@ -50,6 +52,21 @@ export function ProjectSettingsForm({
           Discord, append <code>/slack</code> to the webhook URL.
         </span>
         {fields?.alertWebhookUrl && <span className="mt-1 block text-sm text-red-600">{fields.alertWebhookUrl}</span>}
+      </label>
+      <label className="block">
+        <span className="text-sm font-medium">How to deploy</span> <span className="text-sm text-gray-400">(optional, Markdown)</span>
+        <textarea
+          name="deployNotes"
+          rows={8}
+          maxLength={20_000}
+          defaultValue={deployNotes ?? ''}
+          placeholder={'## Railway\n\n1. Push to `main`; Railway builds and deploys it.\n2. Migrations run in the pre-deploy step.'}
+          className={`${input} font-mono`}
+        />
+        <span className="mt-1 block text-xs text-gray-500">
+          The &ldquo;How to deploy&rdquo; section of the handoff export. Raw HTML and images aren&rsquo;t rendered.
+        </span>
+        {fields?.deployNotes && <span className="mt-1 block text-sm text-red-600">{fields.deployNotes}</span>}
       </label>
       {state.status === 'error' && !fields && <p className="text-sm text-red-600">{state.message}</p>}
       <div className="flex items-center gap-3">

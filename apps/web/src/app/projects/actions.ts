@@ -14,6 +14,7 @@ import {
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireWritableUser } from '@/lib/guard';
+import { MAX_DEPLOY_NOTES } from '@/lib/validation';
 import { appUrl } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
@@ -109,9 +110,12 @@ export async function regenerateTokenAction(projectId: string, _prev: Regenerate
 export type SettingsState =
   | { status: 'idle' }
   | { status: 'saved' }
-  | { status: 'error'; message: string; fields?: { clientId?: string; alertWebhookUrl?: string } };
+  | { status: 'error'; message: string; fields?: { clientId?: string; alertWebhookUrl?: string; deployNotes?: string } };
 
-/** Client assignment and alert webhook. The webhook URL passes the same SSRF guard as endpoints. */
+/**
+ * Client assignment, alert webhook and deploy notes. The webhook URL passes the same SSRF guard as
+ * endpoints; deploy notes are stored as written and rendered as untrusted Markdown.
+ */
 export async function updateProjectSettingsAction(projectId: string, _prev: SettingsState, form: FormData): Promise<SettingsState> {
   const user = await requireWritableUser();
   if (!isUuid(projectId)) return { status: 'error', message: 'Project not found.' };
@@ -131,7 +135,13 @@ export async function updateProjectSettingsAction(projectId: string, _prev: Sett
     }
   }
 
-  const ok = await updateProjectSettings(getDb(), user.id, projectId, { clientId, alertWebhookUrl: webhook });
+  const deployNotes = String(form.get('deployNotes') ?? '').replace(/\r\n/g, '\n').trim() || null;
+  if (deployNotes && deployNotes.length > MAX_DEPLOY_NOTES) {
+    const message = `Keep deploy notes under ${MAX_DEPLOY_NOTES.toLocaleString('en')} characters`;
+    return { status: 'error', message, fields: { deployNotes: message } };
+  }
+
+  const ok = await updateProjectSettings(getDb(), user.id, projectId, { clientId, alertWebhookUrl: webhook, deployNotes });
   if (!ok) return { status: 'error', message: 'Project or client not found.' };
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/clients');

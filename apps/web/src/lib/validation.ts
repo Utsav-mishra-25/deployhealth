@@ -52,3 +52,6 @@ export function endpointFormValues(form: FormData) {
     enabled: form.get('enabled') === 'on',
   };
 }
+
+/** Longest deploy notes accepted (the database enforces the same cap). */
+export const MAX_DEPLOY_NOTES = 20_000;

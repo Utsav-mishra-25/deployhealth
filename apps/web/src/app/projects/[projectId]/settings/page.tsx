@@ -44,13 +44,16 @@ node deployhealth-scan.mjs --dry-run`;
       </div>
 
       <section>
-        <h2 className="text-lg font-semibold">Client &amp; alerts</h2>
-        <p className="mt-1 mb-3 text-sm text-gray-600">Group this project under a client, and choose where alerts are sent.</p>
+        <h2 className="text-lg font-semibold">Client, alerts &amp; handoff</h2>
+        <p className="mt-1 mb-3 text-sm text-gray-600">
+          Group this project under a client, choose where alerts are sent, and write down how it deploys.
+        </p>
         <ProjectSettingsForm
           projectId={project.id}
           clients={clients.map((c) => ({ id: c.id, name: c.name }))}
           clientId={project.clientId}
           alertWebhookUrl={project.alertWebhookUrl}
+          deployNotes={project.deployNotes}
         />
       </section>
 

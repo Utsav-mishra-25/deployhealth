@@ -88,6 +88,8 @@ function clientOwnedBy(clientId: string | null, userId: string) {
 export interface ProjectSettingsInput {
   clientId: string | null;
   alertWebhookUrl: string | null;
+  /** Markdown for the handoff's "How to deploy"; null clears it, omitted keeps it. */
+  deployNotes?: string | null;
 }
 
 /**
@@ -102,7 +104,7 @@ export async function updateProjectSettings(
 ): Promise<boolean> {
   const updated = await db
     .update(projects)
-    .set({ clientId: input.clientId, alertWebhookUrl: input.alertWebhookUrl })
+    .set({ clientId: input.clientId, alertWebhookUrl: input.alertWebhookUrl, deployNotes: input.deployNotes })
     .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId), clientOwnedBy(input.clientId, ownerId)))
     .returning({ id: projects.id });
   return updated.length === 1;
