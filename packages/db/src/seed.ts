@@ -3,10 +3,10 @@ import { generateToken, hashToken, tokenHint, type EnvFileBasename, type Finding
 import { eq } from 'drizzle-orm';
 import { createClient } from './clients';
 import type { Db } from './client';
-import { DEMO_GITHUB_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
+import { DEMO_GITHUB_ID, DEMO_INSTALLATION_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
 import { recordCheck, type CheckOutcome } from './monitoring';
 import { createProject, recordScan, upsertGithubUser } from './queries';
-import { checks, endpoints, projects, users } from './schema';
+import { checks, endpoints, installationRepos, installations, prChecks, projects, users, type NewPrCheck, type Project } from './schema';
 
 export const DEMO_PROJECT = { name: 'acme-storefront', repoFullName: 'acme/storefront' } as const;
 export const DEMO_DEPLOY_COUNT = 10;
@@ -396,5 +396,73 @@ async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResul
   await insertChecks(db, folio!.id, folioChecks);
   await finishEndpoint(db, folio!.id, folioChecks, 900);
 
+  await seedPullRequests(db, now, user.id, storefront, northwindSite);
+
   return { userId: user.id, projectId: storefront.id, token };
+}
+
+/**
+ * The GitHub App side of the demo: an installation on the storefront and northwind repos, and a
+ * few checked pull requests, two of them by coding agents that added undeclared env vars.
+ */
+async function seedPullRequests(db: Db, now: Date, userId: string, storefront: Project, northwind: Project): Promise<void> {
+  // Installations aren't owned by the user row (it only links them), so clear the old one here.
+  await db.delete(installations).where(eq(installations.githubInstallationId, DEMO_INSTALLATION_ID));
+  const [installation] = await db
+    .insert(installations)
+    .values({ githubInstallationId: DEMO_INSTALLATION_ID, accountLogin: 'acme-corp', accountType: 'Organization', installerGithubId: DEMO_GITHUB_ID, userId })
+    .returning();
+  await db.insert(installationRepos).values([storefront, northwind].map((p) => ({ installationId: installation!.id, repoFullName: p.repoFullName })));
+
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
+  const common = (projectId: string, prNumber: number, hours: number) => ({
+    projectId,
+    installationId: installation!.id,
+    prNumber,
+    headSha: sha(`pr-${prNumber}-head`),
+    baseSha: sha(`pr-${prNumber}-base`),
+    createdAt: hoursAgo(hours),
+    updatedAt: hoursAgo(hours),
+  });
+  const rows: NewPrCheck[] = [
+    {
+      ...common(storefront.id, 87, 3),
+      authorLogin: 'claude[bot]',
+      authorIsAgent: true,
+      agentName: 'Claude',
+      addedVars: [
+        { name: 'CACHE_TTL', refs: [{ file: 'src/lib/cache.ts', line: 12 }, { file: 'src/lib/cache.ts', line: 31 }], total: 2, declared: false },
+        { name: 'REDIS_URL', refs: [{ file: 'src/lib/cache.ts', line: 8 }], total: 1, declared: true },
+      ],
+      undeclaredVars: ['CACHE_TTL'],
+      conclusion: 'neutral',
+    },
+    {
+      ...common(storefront.id, 86, 26),
+      authorLogin: 'Copilot',
+      authorIsAgent: true,
+      agentName: 'Copilot',
+      renamedVars: [{ from: 'MAILER_KEY', to: 'MAIL_API_KEY', file: 'src/lib/mail.ts', line: 4, declared: true }],
+      conclusion: 'success',
+      closedAt: hoursAgo(20),
+    },
+    {
+      ...common(storefront.id, 85, 48),
+      authorLogin: 'maya-lopez',
+      removedVars: [{ name: 'LEGACY_CHECKOUT', refs: [{ file: 'src/checkout/index.ts', line: 30 }], total: 1 }],
+      conclusion: 'success',
+      closedAt: hoursAgo(40),
+    },
+    {
+      ...common(northwind.id, 12, 5),
+      authorLogin: 'devin-ai-integration[bot]',
+      authorIsAgent: true,
+      agentName: 'Devin',
+      addedVars: [{ name: 'ORDER_WEBHOOK_SECRET', refs: [{ file: 'api/orders.py', line: 18 }], total: 1, declared: false }],
+      undeclaredVars: ['ORDER_WEBHOOK_SECRET'],
+      committedEnvFiles: [{ path: '.env.local', added: true }],
+      conclusion: 'neutral',
+    },
+  ];
+  await db.insert(prChecks).values(rows);
 }

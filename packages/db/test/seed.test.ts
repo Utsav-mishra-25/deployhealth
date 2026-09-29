@@ -2,11 +2,12 @@ import { githubActionSnippet, hashToken, parseHandoffVariables, renderHandoffMar
 import { eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { listClientsOverview } from '../src/clients';
+import { agentPrStats, listPrChecksForOwner } from '../src/github';
 import { getHandoffData } from '../src/handoff';
 import { DEMO_GITHUB_ID, DEMO_PROJECT_IDS } from '../src/demo';
 import { getProjectMonitoring, listOpenAlerts } from '../src/monitoring';
 import { findProjectByTokenHash, getLatestScan, listDeploys } from '../src/queries';
-import { alerts, checks, clients, endpoints, projects, users } from '../src/schema';
+import { alerts, checks, clients, endpoints, installations, prChecks, projects, users } from '../src/schema';
 import { DEMO_DEPLOY_COUNT, DEMO_PROJECT, demoBrokenUrl, demoDeploys, SCENARIO, seed } from '../src/seed';
 import { makeUser, openTestDb, truncateAll } from './test-db';
 
@@ -142,8 +143,24 @@ describe('seed', () => {
     expect(second.projectId).toBe(DEMO_PROJECT_IDS.storefront);
     expect((await db.select({ message: alerts.message }).from(alerts)).map((a) => a.message).sort()).toEqual(firstMessages);
     expect(await db.select().from(endpoints)).toHaveLength(4);
+    expect(await db.$count(installations)).toBe(1);
+    expect(await db.$count(prChecks)).toBe(4);
     expect(await listDeploys(db, second.projectId)).toHaveLength(DEMO_DEPLOY_COUNT);
     expect((await db.select().from(users).where(eq(users.id, other.id)))[0]).toBeTruthy();
+  });
+
+  it('shows checked pull requests: agents adding undeclared vars, on the project and the client', async () => {
+    const { userId } = await seed(db, NOW);
+    const storefront = await listPrChecksForOwner(db, userId, DEMO_PROJECT_IDS.storefront);
+    expect(storefront.map((c) => [c.prNumber, c.authorLogin, c.agentName, c.conclusion, c.undeclared, c.closed])).toEqual([
+      [87, 'claude[bot]', 'Claude', 'neutral', 1, false],
+      [86, 'Copilot', 'Copilot', 'success', 0, true],
+      [85, 'maya-lopez', null, 'success', 0, true],
+    ]);
+    const [acme] = (await listClientsOverview(db, userId)).clients.filter((c) => c.name === 'Acme Corp');
+    expect(acme!.projects[0]!.openPrsWithUndeclared).toBe(1);
+    const september = [new Date('2026-09-01T00:00:00Z'), new Date('2026-10-01T00:00:00Z')] as const;
+    expect(await agentPrStats(db, userId, acme!.id, ...september)).toEqual({ undeclared: 1, total: 2 });
   });
 
   it('rolls back completely when it fails part-way', async () => {

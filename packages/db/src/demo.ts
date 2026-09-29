@@ -15,6 +15,9 @@ export const DEMO_LOGIN = 'demo';
  * Separate from the demo user so local development and the e2e test can create and edit data.
  */
 export const DEV_GITHUB_ID = -2;
+
+/** The demo's GitHub App installation. GitHub installation ids are positive, so -1 never collides. */
+export const DEMO_INSTALLATION_ID = -1;
 export const DEV_LOGIN = 'dev';
 
 /** Fixed ids for the demo projects, so /demo/projects/<id> links survive the nightly reseed. */
