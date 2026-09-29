@@ -75,6 +75,7 @@ the build command builds the workspace packages it depends on first).
    | `AUTH_GITHUB_SECRET` | Client secret | The GitHub OAuth app from step 5 (add it then) |
    | `REPORT_SHARE_SECRET` | output of `openssl rand -base64 32` | Optional. Signs report share links; see below |
    | `DEMO_PUBLIC` | `1` | Optional. Serves the read-only public demo at `/demo` (and `/api/demo/broken`). `0` or unset turns both off (404) |
+   | `PORT` | `3000` | Optional. See step 2.6 |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
 
@@ -83,9 +84,13 @@ the build command builds the workspace packages it depends on first).
    out *and* invalidates every share link you've sent. Set `REPORT_SHARE_SECRET` to rotate them
    separately; rotating it invalidates all share links at once (that's the only way to revoke one).
 
-6. **Settings → Networking → Generate Domain.** If Railway asks for a port, use the one in the
-   deploy log's `Local: http://localhost:<port>` line (Railway sets `PORT`, and `next start`
-   listens on it). Note the URL, e.g. `https://web-production-1234.up.railway.app`.
+6. **Settings → Networking → Generate Domain.** Railway injects its own `PORT` variable, and
+   `next start` listens on whatever `PORT` says, so the domain must point at that port. Either:
+   - set `PORT=3000` in web's variables and give the domain port **3000**, or
+   - leave `PORT` unset and point the domain at the injected port, shown in the deploy log's
+     `Local: http://localhost:<port>` line.
+
+   Note the URL, e.g. `https://web-production-1234.up.railway.app`.
 
 ## 3. Add the `worker` service
 
@@ -165,6 +170,29 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
   signing in, the worker log shows `[reseed-demo] demo data restored in …ms` after each start, and
   within a couple of minutes "Acme API" is failing for real (its checks show `Expected 200, got 503`).
 
+## 7. Verify the rate limiter
+
+Shared reports (`/share/*`) are rate-limited per client IP, taken from the **last**
+`X-Forwarded-For` entry: the one Railway's edge proxy adds. Earlier entries come from the client,
+so check a client can't pick its own IP. Send a spoofed header (`203.0.113.7` is a documentation
+address; any made-up value works):
+
+```sh
+curl -s 'https://<your-domain>/api/health?ip=1' -H 'X-Forwarded-For: 203.0.113.7'
+curl -s https://api.ipify.org; echo    # your real public IP, to compare
+```
+
+`?ip=1` makes web log one line (without it, `/api/health` logs nothing). In web's **Deploy Logs**:
+
+```
+[health] client ip 198.51.100.23 (x-forwarded-for: 203.0.113.7, 198.51.100.23)
+```
+
+The `client ip` must be your real IP (the second command's output, or your IPv6 address if the
+request went over IPv6), **not** `203.0.113.7`. If it shows the spoofed value, the proxy passed your
+header through without adding its own hop: anyone could dodge the limit by changing the header.
+Don't rely on the limiter in that case, and open an issue.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -172,6 +200,7 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 | Build fails resolving `@deployhealth/core` or `workspace:*` | A Root Directory is set. Clear it (step 2.3 / 3.3). |
 | The build or start runs the wrong command (e.g. the root `pnpm build`) | A field from step 2.4 / 3.4 is empty or mistyped, so Railpack used its default. Compare it with the table. |
 | Every push redeploys both services | The watch paths are empty. Add the patterns from step 2.4 / 3.4. |
+| The domain returns "Application failed to respond" | The domain's port isn't the one web listens on. See step 2.6: set `PORT=3000` or use the injected port. |
 | Every page 500s; the log mentions `AUTH_GITHUB_*` | Step 5 isn't done, or a value is empty. |
 | Every page 500s; the log mentions `AUTH_SECRET` | It is shorter than 32 characters. Regenerate it with `openssl rand -base64 32`. |
 | GitHub says the redirect URI is not associated | The callback URL doesn't exactly match `https://<your-domain>/api/auth/callback/github`. |
