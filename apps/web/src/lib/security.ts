@@ -1,7 +1,8 @@
 import { serverEnv } from '@/env';
+import { REPO_URL } from '@/lib/legal';
 
 /** Where reports go when SECURITY_CONTACT_EMAIL is unset (the repository must allow private reporting). */
-export const SECURITY_ADVISORY_URL = 'https://github.com/Utsav-mishra-25/deployhealth/security/advisories/new';
+export const SECURITY_ADVISORY_URL = `${REPO_URL}/security/advisories/new`;
 
 export interface SecurityContact {
   /** mailto: link, or the GitHub advisory form. */

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { auth, signOut } from '@/auth';
+import { REPO_URL } from '@/lib/legal';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -41,7 +42,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Link href="/security" className="hover:text-gray-900">
               Security
             </Link>
-            <a href="https://github.com/Utsav-mishra-25/deployhealth" className="hover:text-gray-900">
+            <Link href="/privacy" className="hover:text-gray-900">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-gray-900">
+              Terms
+            </Link>
+            <a href={REPO_URL} className="hover:text-gray-900">
               Source on GitHub
             </a>
           </nav>
