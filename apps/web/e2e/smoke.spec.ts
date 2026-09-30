@@ -99,6 +99,26 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.getByRole('button', { name: 'Share report' })).toHaveCount(0);
 });
 
+test('a project with no env file: one notice instead of MISSING rows, and a starting .env.example', async ({ page }) => {
+  const PORTFOLIO = '0d3e0000-0000-4000-8000-000000000003';
+  await page.goto(`/demo/projects/${PORTFOLIO}`);
+  const notice = page.getByTestId('no-env-file-notice');
+  await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText('No .env.example here: 2 variables referenced');
+  await expect(page.locator('#findings-missing')).toContainText('0 findings');
+
+  await notice.getByRole('link', { name: 'Copy them as a starting .env.example' }).click();
+  await expect(page).toHaveURL(new RegExp(`/demo/projects/${PORTFOLIO}/handoff#variables$`));
+  const scope = page.getByTestId('handoff-scope').filter({ hasText: 'Repository root' });
+  await expect(scope.getByRole('row', { name: /CONTACT_FORM_ENDPOINT/ })).toContainText('no env file yet');
+  await expect(scope.getByTestId('env-example')).toContainText('CONTACT_FORM_ENDPOINT=\nNEXT_PUBLIC_SITE_URL=');
+  await expect(scope.getByRole('button', { name: 'Copy as .env.example' })).toBeVisible();
+
+  // The Markdown download carries the same starting file.
+  const markdown = await (await page.request.get(`/demo/projects/${PORTFOLIO}/handoff.md`)).text();
+  expect(markdown).toContain('```dotenv\nCONTACT_FORM_ENDPOINT=\nNEXT_PUBLIC_SITE_URL=\n```');
+});
+
 test('signed in: client and project, a named endpoint, deploy notes, handoff and a shared report', async ({ page, browser }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Continue as dev user' }).click();
