@@ -38,7 +38,7 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     return Response.json({ error: 'Invalid payload', issues }, { status: 400 });
   }
 
-  const { sha, branch, timestamp, findings, variables } = parsed.data;
+  const { sha, branch, timestamp, findings, variables, env_scopes } = parsed.data;
   const result = await deps.recordScan({
     projectId: project.id,
     sha: sha.toLowerCase(),
@@ -48,6 +48,7 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     findings,
     // `optional` is stored only when true (CLI 0.2.0+ sends it; 0.1.0 never does).
     variables: variables?.map(({ optional, ...v }) => (optional ? { ...v, optional } : v)),
+    envScopes: env_scopes ?? null,
   });
   return Response.json(result satisfies IngestResponse, { status: 201 });
 }
