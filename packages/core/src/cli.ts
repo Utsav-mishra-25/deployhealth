@@ -29,7 +29,9 @@ Options:
   --sha <sha>          commit being deployed (default: git rev-parse HEAD)
   --branch <name>      branch being deployed (default: current git branch)
   --dir <path>         directory to scan (default: current directory)
-  --ignore <glob>      skip variables matching a glob, e.g. NODE_ENV (repeatable)
+  --ignore <glob>      skip variables matching a glob, e.g. NEXT_PUBLIC_* (repeatable)
+  --no-default-ignore  also check names the platform or runtime provides (NODE_ENV,
+                       CI, GITHUB_SHA, npm_*, VERCEL_*, RAILWAY_*, RENDER_*, FLY_*, ...)
   --exclude <pattern>  skip paths matching a gitignore-style pattern (repeatable)
   --dry-run            print the findings instead of sending them
   --json               with --dry-run, print JSON
@@ -44,6 +46,7 @@ const OPTIONS = {
   branch: { type: 'string' },
   dir: { type: 'string' },
   ignore: { type: 'string', multiple: true },
+  'no-default-ignore': { type: 'boolean' },
   exclude: { type: 'string', multiple: true },
   'dry-run': { type: 'boolean' },
   json: { type: 'boolean' },
@@ -70,7 +73,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   }
 
   const root = resolve(io.cwd, values.dir ?? '.');
-  const result = await scanProject(root, { ignore: values.ignore, exclude: values.exclude });
+  const result = await scanProject(root, { ignore: values.ignore, exclude: values.exclude, defaultIgnore: !values['no-default-ignore'] });
   for (const w of result.warnings) io.stderr(`warning ${w.file}${w.line ? `:${w.line}` : ''}: ${w.message}\n`);
 
   if (values['dry-run']) {
@@ -100,6 +103,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     timestamp: io.now().toISOString(),
     findings: result.findings,
     variables: result.variables,
+    env_scopes: result.envScopes,
   };
 
   const endpoint = `${values.url.replace(/\/+$/, '')}/api/ingest/scan`;
@@ -131,7 +135,15 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
 }
 
 function toJson(result: ScanResult) {
-  return { counts: result.counts, scopes: result.scopes, findings: result.findings, variables: result.variables, warnings: result.warnings };
+  return {
+    counts: result.counts,
+    scopes: result.scopes,
+    env_scopes: result.envScopes,
+    findings: result.findings,
+    variables: result.variables,
+    default_ignored: result.defaultIgnored,
+    warnings: result.warnings,
+  };
 }
 
 const TITLES: Record<FindingKind, string> = { missing: 'MISSING', unused: 'UNUSED', mismatch: 'MISMATCH' };
@@ -148,6 +160,25 @@ function renderText(result: ScanResult): string {
       const extra = kind === 'mismatch' ? ` (missing from ${f.env_file})` : '';
       out.push(`  ${f.var_name.padEnd(28)} ${where}${extra}`);
     }
+    out.push('');
+  }
+
+  const optional = result.variables.filter((v) => v.optional && v.defined_in.length === 0);
+  if (optional.length > 0) {
+    out.push(`OPTIONAL (${optional.length}): a default in code, not defined in an env file`);
+    for (const v of optional) out.push(`  ${v.var_name.padEnd(28)} ${v.scope || '(root)'}`);
+    out.push('');
+  }
+
+  for (const { scope } of result.envScopes.filter((s) => s.env_files.length === 0)) {
+    const count = result.variables.filter((v) => v.scope === scope).length;
+    if (count === 0) continue;
+    out.push(`No .env.example in ${scope || 'the repository root'}: ${count} variable${count === 1 ? '' : 's'} referenced (--json lists them).`);
+    out.push('');
+  }
+
+  if (result.defaultIgnored.length > 0) {
+    out.push(`Skipped (the platform or runtime provides them): ${result.defaultIgnored.join(', ')}. --no-default-ignore includes them.`);
     out.push('');
   }
   return `${out.join('\n')}`;

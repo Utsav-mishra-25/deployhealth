@@ -47,10 +47,10 @@ const EXPECTED: FindingRow[] = [
   missing('AWS_REGION', 'src/server.ts', 5),
   missing('GO_TOKEN', 'cmd/api/main.go', 7),
   missing('LOG_LEVEL', 'src/server.ts', 4),
-  missing('NODE_ENV', 'src/server.ts', 6),
+  // NODE_ENV (src/server.ts:6) is runtime-provided: skipped by default.
   missing('REGION', 'cmd/api/main.go', 8),
   missing('SMTP_HOST', 'lib/mailer.rb', 2),
-  missing('SMTP_HOST', 'lib/mailer.rb', 3),
+  // lib/mailer.rb:3 is ENV.fetch("SMTP_HOST", "localhost"): it has a default, so it isn't MISSING.
   missing('VITE_FEATURE_FLAG', 'src/App.tsx', 3),
   missing('WORKER_DEBUG', 'worker/tasks.py', 5),
   unused('DATABASE_URL', 'apps/admin/.env.example', 2), // only root-scope code reads it
@@ -133,7 +133,25 @@ describe('scanProject on the fixture', () => {
 
   it('counts distinct variable names per kind', async () => {
     const result = await scanProject(root);
-    expect(result.counts).toEqual({ missing: 9, unused: 4, mismatch: 3 });
+    expect(result.counts).toEqual({ missing: 8, unused: 4, mismatch: 3 });
+  });
+
+  it('skips runtime-provided names by default, says which, and brings them back with defaultIgnore: false', async () => {
+    const result = await scanProject(root);
+    expect(result.defaultIgnored).toEqual(['NODE_ENV']);
+    expect(result.variables.map((x) => x.var_name)).not.toContain('NODE_ENV');
+    const all = await scanProject(root, { defaultIgnore: false });
+    expect(all.defaultIgnored).toEqual([]);
+    expect(all.findings).toContainEqual(missing('NODE_ENV', 'src/server.ts', 6));
+    expect(all.counts.missing).toBe(9);
+  });
+
+  it('reports each scope with the env files it has', async () => {
+    const result = await scanProject(root);
+    expect(result.envScopes).toEqual([
+      { scope: '', env_files: ['.env.example', '.env', '.env.local'] },
+      { scope: 'apps/admin', env_files: ['.env.example'] },
+    ]);
   });
 
   it('checks each file against its nearest env scope', async () => {
@@ -152,7 +170,6 @@ describe('scanProject on the fixture', () => {
       v('DATABASE_URL', '', ['.env.example', '.env']),
       v('GO_TOKEN', '', []),
       v('LOG_LEVEL', '', []),
-      v('NODE_ENV', '', []),
       v('PORT', '', ['.env.example', '.env']),
       v('REGION', '', []),
       v('SENTRY_DSN', '', ['.env.example']),
@@ -212,12 +229,14 @@ describe('scanProject edge cases', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('treats every reference as missing when there are no env files', async () => {
+  it('reports a scope with no env file once, instead of a MISSING row per reference', async () => {
     await mkdir(join(dir, 'none'), { recursive: true });
-    await writeFile(join(dir, 'none/a.ts'), 'process.env.ONLY_ONE\n');
+    await writeFile(join(dir, 'none/a.ts'), 'process.env.ONLY_ONE\nprocess.env.ONLY_ONE\n');
     const result = await scanProject(join(dir, 'none'));
-    expect(result.findings).toEqual([missing('ONLY_ONE', 'a.ts', 1)]);
+    expect(result.findings).toEqual([]);
     expect(result.scopes).toEqual(['']);
+    expect(result.envScopes).toEqual([{ scope: '', env_files: [] }]);
+    expect(result.variables).toEqual([{ var_name: 'ONLY_ONE', scope: '', defined_in: [] }]);
   });
 
   it('warns about unparsable env lines without failing', async () => {
