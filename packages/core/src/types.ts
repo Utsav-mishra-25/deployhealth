@@ -24,21 +24,44 @@ export interface Reference {
 }
 
 /** The env files read in every scope, in the order handoffs and reports list them. */
-export const ENV_FILE_BASENAMES = ['.env.example', '.env', '.env.local'] as const;
+export const ENV_FILE_BASENAMES = [
+  '.env.example',
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.development.local',
+  '.env.production',
+  '.env.production.local',
+  '.env.test',
+  '.env.test.local',
+] as const;
 export type EnvFileBasename = (typeof ENV_FILE_BASENAMES)[number];
+
+/**
+ * A scope and the env files it has. A scope with none (in practice the root, holding code outside
+ * every other scope) gets no MISSING rows: nothing there declares anything yet, so the UI shows
+ * one notice and offers the variable list as a starting `.env.example` instead.
+ */
+export interface EnvScope {
+  scope: string;
+  env_files: EnvFileBasename[];
+}
 
 /** How the scanner matches a variable name; the ingest schema enforces the same shape. */
 export const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * A variable the code references, in the env scope it belongs to, with the scope's env files that
- * define it. Names only, never values. Empty `defined_in` means it is MISSING.
+ * define it. Names only, never values. Empty `defined_in` means it is MISSING, unless it is
+ * `optional` or its scope has no env file at all.
  */
 export interface RequiredVariable {
   var_name: string;
   /** Directory that owns the env files, relative to the repo root; '' is the root. */
   scope: string;
   defined_in: EnvFileBasename[];
+  /** Every reference in the scope has an inline default, so it needn't be defined. Only set when true. */
+  optional?: true;
 }
 
 export const FINDING_KINDS = ['missing', 'unused', 'mismatch'] as const;

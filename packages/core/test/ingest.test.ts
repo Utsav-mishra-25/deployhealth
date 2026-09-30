@@ -59,9 +59,45 @@ describe('ingestPayloadSchema', () => {
     ['a name with spaces', { var_name: 'STRIPE KEY', scope: '', defined_in: [] }],
     ['a name starting with a digit', { var_name: '1KEY', scope: '', defined_in: [] }],
     ['a value in defined_in', { var_name: 'STRIPE_KEY', scope: '', defined_in: ['sk_live_123'] }],
-    ['an unknown env file', { var_name: 'STRIPE_KEY', scope: '', defined_in: ['.env.production'] }],
+    ['an unknown env file', { var_name: 'STRIPE_KEY', scope: '', defined_in: ['.env.staging'] }],
   ])('rejects variables with %s', (_label, variable) => {
     expect(ingestPayloadSchema.safeParse({ ...valid, variables: [variable] }).success).toBe(false);
+  });
+
+  it('still accepts exactly what the 0.1.0 CLI sends (no optional flags, no env scopes)', () => {
+    const v010 = { ...valid, variables: [{ var_name: 'DATABASE_URL', scope: '', defined_in: ['.env.example', '.env'] }] };
+    const parsed = ingestPayloadSchema.parse(v010);
+    expect(parsed.env_scopes).toBeUndefined();
+    expect(parsed.variables).toEqual(v010.variables);
+    expect(parsed.variables![0]).not.toHaveProperty('optional');
+  });
+
+  it('accepts 0.2.0 payloads: the newer env file names, optional variables and env scopes', () => {
+    const variables = [
+      { var_name: 'PROD_DB_URL', scope: 'apps/api', defined_in: ['.env.production', '.env.test.local'] },
+      { var_name: 'PORT', scope: 'apps/api', defined_in: [], optional: true },
+    ];
+    const env_scopes = [
+      { scope: '', env_files: [] },
+      { scope: 'apps/api', env_files: ['.env.example', '.env.development', '.env.production'] },
+    ];
+    const parsed = ingestPayloadSchema.parse({ ...valid, variables, env_scopes });
+    expect(parsed.variables).toEqual(variables);
+    expect(parsed.env_scopes).toEqual(env_scopes);
+  });
+
+  it('drops fields it does not know, so a newer CLI never breaks an older server on them', () => {
+    const parsed = ingestPayloadSchema.parse({ ...valid, some_future_field: [1], variables: [{ var_name: 'A', scope: '', defined_in: [], later: true }] });
+    expect(parsed).not.toHaveProperty('some_future_field');
+    expect(parsed.variables![0]).toEqual({ var_name: 'A', scope: '', defined_in: [] });
+  });
+
+  it.each([
+    ['an unknown env file', [{ scope: '', env_files: ['.env.staging'] }]],
+    ['a value instead of an env file', [{ scope: '', env_files: ['sk_live_123'] }]],
+    ['too many scopes', Array.from({ length: 1001 }, (_, i) => ({ scope: `s${i}`, env_files: [] }))],
+  ])('rejects env scopes with %s', (_label, env_scopes) => {
+    expect(ingestPayloadSchema.safeParse({ ...valid, env_scopes }).success).toBe(false);
   });
 
   it('caps the number of findings', () => {
