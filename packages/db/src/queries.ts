@@ -5,12 +5,13 @@ import {
   uptimeStatus,
   type EndpointRef,
   type EnvFileBasename,
+  type EnvScope,
   type FindingCounts,
   type FindingRow,
   type RequiredVariable,
   type UptimeStatus,
 } from '@deployhealth/core';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { failingSinceSql } from './monitoring';
 import { alerts, clients, deploys, endpoints, findings, prChecks, projects, scans, scanVariables, users, type Deploy, type Project, type Scan, type User } from './schema';
@@ -271,6 +272,8 @@ export interface RecordScanInput {
   findings: readonly FindingRow[];
   /** Every referenced variable (names only). Omitted by older CLIs; the scan then says so. */
   variables?: readonly RequiredVariable[];
+  /** Every scope with its env files. Omitted by CLIs before 0.2.0; stored as null. */
+  envScopes?: readonly EnvScope[] | null;
 }
 
 export interface RecordScanResult {
@@ -311,6 +314,7 @@ export async function recordScan(db: Db, input: RecordScanInput): Promise<Record
         unusedCount: counts.unused,
         mismatchCount: counts.mismatch,
         variablesReported: input.variables !== undefined,
+        envScopes: input.envScopes ? input.envScopes.map((s) => ({ scope: s.scope, env_files: [...s.env_files] })) : null,
       })
       .returning({ id: scans.id });
 
@@ -330,7 +334,9 @@ export async function recordScan(db: Db, input: RecordScanInput): Promise<Record
     const variables = mergeVariables(input.variables ?? []);
     for (let i = 0; i < variables.length; i += FINDINGS_BATCH) {
       await tx.insert(scanVariables).values(
-        variables.slice(i, i + FINDINGS_BATCH).map((v) => ({ scanId: scan!.id, scope: v.scope, varName: v.var_name, definedIn: v.defined_in })),
+        variables
+          .slice(i, i + FINDINGS_BATCH)
+          .map((v) => ({ scanId: scan!.id, scope: v.scope, varName: v.var_name, definedIn: v.defined_in, optional: v.optional === true })),
       );
     }
 
@@ -338,29 +344,32 @@ export async function recordScan(db: Db, input: RecordScanInput): Promise<Record
   });
 }
 
-/** One row per (scope, name); a repeated one merges its env files. */
+/** One row per (scope, name); a repeated one merges its env files, and stays optional only if every copy is. */
 function mergeVariables(variables: readonly RequiredVariable[]): RequiredVariable[] {
-  const byKey = new Map<string, Set<EnvFileBasename>>();
+  const byKey = new Map<string, { files: Set<EnvFileBasename>; optional: boolean }>();
   for (const v of variables) {
     const key = `${v.scope}\0${v.var_name}`;
-    const files = byKey.get(key) ?? new Set<EnvFileBasename>();
-    for (const f of v.defined_in) files.add(f);
-    byKey.set(key, files);
+    const merged = byKey.get(key) ?? { files: new Set<EnvFileBasename>(), optional: true };
+    for (const f of v.defined_in) merged.files.add(f);
+    merged.optional &&= v.optional === true;
+    byKey.set(key, merged);
   }
-  return [...byKey].map(([key, files]) => {
+  return [...byKey].map(([key, { files, optional }]) => {
     const [scope, var_name] = key.split('\0') as [string, string];
-    return { scope, var_name, defined_in: ENV_FILE_BASENAMES.filter((b) => files.has(b)) };
+    const variable: RequiredVariable = { scope, var_name, defined_in: ENV_FILE_BASENAMES.filter((b) => files.has(b)) };
+    if (optional) variable.optional = true;
+    return variable;
   });
 }
 
-/** A scan's variables, by scope ('' first) then name. */
+/** A scan's variables, by scope ('' first) then name. `optional` is set only when true. */
 export async function getScanVariables(db: Db, scanId: string): Promise<RequiredVariable[]> {
   const rows = await db
-    .select({ scope: scanVariables.scope, var_name: scanVariables.varName, defined_in: scanVariables.definedIn })
+    .select({ scope: scanVariables.scope, var_name: scanVariables.varName, defined_in: scanVariables.definedIn, optional: scanVariables.optional })
     .from(scanVariables)
     .where(eq(scanVariables.scanId, scanId))
     .orderBy(asc(scanVariables.scope), asc(scanVariables.varName));
-  return rows.map((r) => ({ scope: r.scope, var_name: r.var_name, defined_in: r.defined_in as EnvFileBasename[] }));
+  return rows.map((r) => ({ scope: r.scope, var_name: r.var_name, defined_in: r.defined_in as EnvFileBasename[], ...(r.optional ? { optional: true as const } : {}) }));
 }
 
 export interface DeployListItem {
@@ -415,6 +424,11 @@ export interface ScanDetail {
   deploy: Deploy;
   scan: Scan;
   findings: FindingRow[];
+  /**
+   * Scopes with no env file at all, with how many variables they reference: the project page shows
+   * one notice for each instead of MISSING rows. Empty for scans from CLIs before 0.2.0.
+   */
+  scopesWithoutEnvFiles: Array<{ scope: string; variables: number }>;
 }
 
 /**
@@ -443,5 +457,19 @@ export async function getLatestScan(db: Db, projectId: string, deployId: string)
     .where(eq(findings.scanId, row.scan.id))
     .orderBy(asc(findings.kind), asc(findings.varName), asc(findings.file), asc(findings.line));
 
-  return { deploy: row.deploy, scan: row.scan, findings: rows };
+  const bare = (row.scan.envScopes ?? []).filter((s) => s.env_files.length === 0).map((s) => s.scope);
+  const counts =
+    bare.length === 0
+      ? []
+      : await db
+          .select({ scope: scanVariables.scope, variables: sql<number>`count(*)::int` })
+          .from(scanVariables)
+          .where(and(eq(scanVariables.scanId, row.scan.id), inArray(scanVariables.scope, bare)))
+          .groupBy(scanVariables.scope);
+  const scopesWithoutEnvFiles = bare
+    .map((scope) => ({ scope, variables: counts.find((c) => c.scope === scope)?.variables ?? 0 }))
+    .filter((s) => s.variables > 0)
+    .sort((a, b) => (a.scope === '' ? -1 : b.scope === '' ? 1 : a.scope.localeCompare(b.scope)));
+
+  return { deploy: row.deploy, scan: row.scan, findings: rows, scopesWithoutEnvFiles };
 }

@@ -142,6 +142,59 @@ describe('recordScan', () => {
     expect((await getLatestScan(db, project.id, none.deployId))?.scan.variablesReported).toBe(true);
   });
 
+  it('stores optional flags and env scopes (CLI 0.2.0+), and lists the scopes with no env file', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const scan = await recordScan(db, {
+      projectId: project.id,
+      sha: 'abc1234',
+      branch: 'main',
+      deployedAt: at('2026-09-01T10:00:00Z'),
+      findings: [],
+      variables: [
+        { var_name: 'DEPLOY_KEY', scope: '', defined_in: [] },
+        { var_name: 'DEPLOY_TARGET', scope: '', defined_in: [], optional: true },
+        { var_name: 'PORT', scope: 'apps/api', defined_in: [], optional: true },
+        // Merged with a copy that isn't optional: it isn't.
+        { var_name: 'PORT', scope: 'apps/api', defined_in: ['.env.production'] },
+        { var_name: 'PROD_DB_URL', scope: 'apps/api', defined_in: ['.env.production'] },
+      ],
+      envScopes: [
+        { scope: '', env_files: [] },
+        { scope: 'apps/api', env_files: ['.env.example', '.env.production'] },
+        { scope: 'tools', env_files: [] }, // no variables: no notice
+      ],
+    });
+    expect(await getScanVariables(db, scan.scanId)).toEqual([
+      { scope: '', var_name: 'DEPLOY_KEY', defined_in: [] },
+      { scope: '', var_name: 'DEPLOY_TARGET', defined_in: [], optional: true },
+      { scope: 'apps/api', var_name: 'PORT', defined_in: ['.env.production'] },
+      { scope: 'apps/api', var_name: 'PROD_DB_URL', defined_in: ['.env.production'] },
+    ]);
+    const detail = await getLatestScan(db, project.id, scan.deployId);
+    expect(detail?.scan.envScopes).toEqual([
+      { scope: '', env_files: [] },
+      { scope: 'apps/api', env_files: ['.env.example', '.env.production'] },
+      { scope: 'tools', env_files: [] },
+    ]);
+    expect(detail?.scopesWithoutEnvFiles).toEqual([{ scope: '', variables: 2 }]);
+  });
+
+  it('stores a 0.1.0-shaped scan exactly as before: no env scopes, nothing optional, no notices', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const scan = await recordScan(db, {
+      projectId: project.id,
+      sha: 'abc1234',
+      branch: 'main',
+      deployedAt: at('2026-09-01T10:00:00Z'),
+      findings: FINDINGS,
+      variables: [{ var_name: 'REDIS_URL', scope: '', defined_in: [] }],
+    });
+    const detail = await getLatestScan(db, project.id, scan.deployId);
+    expect(detail?.scan.envScopes).toBeNull();
+    expect(detail?.scopesWithoutEnvFiles).toEqual([]);
+    expect(await getScanVariables(db, scan.scanId)).toEqual([{ scope: '', var_name: 'REDIS_URL', defined_in: [] }]);
+  });
+
   it('adds a scan to the existing deploy when the same sha is reported again', async () => {
     const project = await makeProject(db, (await makeUser(db)).id);
     const base = { projectId: project.id, sha: 'abc1234', deployedAt: at('2026-09-01T10:00:00Z') };

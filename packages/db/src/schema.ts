@@ -16,6 +16,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import type { EnvScope } from '@deployhealth/core';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -119,6 +120,12 @@ export const scans = pgTable(
     mismatchCount: integer('mismatch_count').notNull(),
     /** Whether the CLI sent the full variable list (older CLIs don't), so scan_variables is complete. */
     variablesReported: boolean('variables_reported').notNull().default(false),
+    /**
+     * Every scope with the env files it has (CLI 0.2.0+); null from older CLIs. A scope with none
+     * has no MISSING rows: the project page shows a notice, and deploy correlation looks at the
+     * variables it newly references instead.
+     */
+    envScopes: jsonb('env_scopes').$type<EnvScope[]>(),
   },
   (t) => [index('scans_deploy_time_idx').on(t.deployId, t.createdAt.desc())],
 );
@@ -155,6 +162,8 @@ export const scanVariables = pgTable(
     scope: text('scope').notNull(),
     varName: text('var_name').notNull(),
     definedIn: text('defined_in').array().notNull().default(sql`'{}'::text[]`),
+    /** Every reference has an inline default in code (CLI 0.2.0+), so it needn't be defined. */
+    optional: boolean('optional').notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.scanId, t.scope, t.varName] })],
 );
