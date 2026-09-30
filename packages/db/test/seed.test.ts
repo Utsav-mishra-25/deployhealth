@@ -152,18 +152,29 @@ describe('seed', () => {
     expect((await db.select().from(users).where(eq(users.id, other.id)))[0]).toBeTruthy();
   });
 
-  it('shows checked pull requests: agents adding undeclared vars, on the project and the client', async () => {
+  it('shows the three sample pull requests on the storefront: the agent PR behind the incident, a rename, a strict failure', async () => {
     const { userId } = await seed(db, NOW);
     const storefront = await listPrChecksForOwner(db, userId, DEMO_PROJECT_IDS.storefront);
-    expect(storefront.map((c) => [c.prNumber, c.authorLogin, c.agentName, c.conclusion, c.undeclared, c.closed])).toEqual([
-      [87, 'claude[bot]', 'Claude', 'neutral', 1, false],
-      [86, 'Copilot', 'Copilot', 'success', 0, true],
-      [85, 'maya-lopez', null, 'success', 0, true],
+    expect(storefront.map((c) => [c.prNumber, c.authorLogin, c.agentName, c.conclusion, c.undeclared, c.secretHits, c.closed])).toEqual([
+      [88, 'sam-okafor', null, 'failure', 0, 1, false],
+      [87, 'claude[bot]', 'Claude', 'neutral', 2, 0, true],
+      [86, 'maya-lopez', null, 'success', 0, 0, true],
     ]);
-    const [acme] = (await listClientsOverview(db, userId)).clients.filter((c) => c.name === 'Acme Corp');
-    expect(acme!.projects[0]!.openPrsWithUndeclared).toBe(1);
+    const rows = await db.select().from(prChecks).where(eq(prChecks.projectId, DEMO_PROJECT_IDS.storefront));
+    const byNumber = new Map(rows.map((r) => [r.prNumber, r]));
+    expect(byNumber.get(87)!.undeclaredVars).toEqual(['REDIS_URL', 'STRIPE_KEY']);
+    expect(byNumber.get(87)!.addedVars.every((v) => !v.declared)).toBe(true);
+    // Merged a minute before the deploy that broke Acme API.
+    expect(byNumber.get(87)!.closedAt).toEqual(new Date(NOW.getTime() - (SCENARIO.deployMinutesAgo + 1) * 60_000));
+    expect(byNumber.get(86)!.renamedVars).toEqual([{ from: 'SENDGRID_KEY', to: 'EMAIL_API_KEY', file: 'apps/api/src/lib/mail.ts', line: 4, declared: true }]);
+    expect(byNumber.get(88)!.committedEnvFiles).toEqual([{ path: 'apps/web/.env.local', added: true }]);
+
+    const overview = await listClientsOverview(db, userId);
+    const [acme, northwind] = overview.clients;
+    expect(acme!.projects[0]!.openPrsWithUndeclared).toBe(0);
+    expect(northwind!.projects[0]!.openPrsWithUndeclared).toBe(1);
     const september = [new Date('2026-09-01T00:00:00Z'), new Date('2026-10-01T00:00:00Z')] as const;
-    expect(await agentPrStats(db, userId, acme!.id, ...september)).toEqual({ undeclared: 1, total: 2 });
+    expect(await agentPrStats(db, userId, acme!.id, ...september)).toEqual({ undeclared: 1, total: 1 });
   });
 
   it('keeps the incident fresh: the deploy is inside the freshness window and Acme API has been down under an hour', async () => {

@@ -415,16 +415,19 @@ async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResul
   await insertChecks(db, folio!.id, folioChecks);
   await finishEndpoint(db, folio!.id, folioChecks, 900);
 
-  await seedPullRequests(db, now, user.id, storefront, northwindSite);
+  await seedPullRequests(db, now, user.id, storefront, northwindSite, deployedAt);
 
   return { userId: user.id, projectId: storefront.id, token };
 }
 
 /**
  * The GitHub App side of the demo: an installation on the storefront and northwind repos, and a
- * few checked pull requests, two of them by coding agents that added undeclared env vars.
+ * few checked pull requests. On the storefront, the story behind the incident: Claude's PR #87 adds
+ * REDIS_URL and STRIPE_KEY without declaring them (flagged, merged anyway, deployed as b52952e a
+ * minute later), next to a clean rename and a strict-mode failure for a committed .env.local.
+ * Sample data: the web app renders these rows without links to GitHub.
  */
-async function seedPullRequests(db: Db, now: Date, userId: string, storefront: Project, northwind: Project): Promise<void> {
+async function seedPullRequests(db: Db, now: Date, userId: string, storefront: Project, northwind: Project, incidentDeployAt: Date): Promise<void> {
   // Installations aren't owned by the user row (it only links them), so clear the old one here.
   await db.delete(installations).where(eq(installations.githubInstallationId, DEMO_INSTALLATION_ID));
   const [installation] = await db
@@ -433,47 +436,49 @@ async function seedPullRequests(db: Db, now: Date, userId: string, storefront: P
     .returning();
   await db.insert(installationRepos).values([storefront, northwind].map((p) => ({ installationId: installation!.id, repoFullName: p.repoFullName })));
 
-  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
-  const common = (projectId: string, prNumber: number, hours: number) => ({
+  const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+  const common = (projectId: string, prNumber: number, checkedMinutesAgo: number) => ({
     projectId,
     installationId: installation!.id,
     prNumber,
     headSha: sha(`pr-${prNumber}-head`),
     baseSha: sha(`pr-${prNumber}-base`),
-    createdAt: hoursAgo(hours),
-    updatedAt: hoursAgo(hours),
+    createdAt: minutesAgo(checkedMinutesAgo),
+    updatedAt: minutesAgo(checkedMinutesAgo),
   });
   const rows: NewPrCheck[] = [
     {
-      ...common(storefront.id, 87, 3),
+      // (c) A committed apps/web/.env.local and one secret-shaped string: a failure, as strict mode reports it.
+      ...common(storefront.id, 88, 35),
+      authorLogin: 'sam-okafor',
+      committedEnvFiles: [{ path: 'apps/web/.env.local', added: true }],
+      secretHits: 1,
+      conclusion: 'failure',
+    },
+    {
+      // (a) The coding agent's PR: two new variables, neither declared in apps/api/.env.example.
+      ...common(storefront.id, 87, 150),
       authorLogin: 'claude[bot]',
       authorIsAgent: true,
       agentName: 'Claude',
       addedVars: [
-        { name: 'CACHE_TTL', refs: [{ file: 'src/lib/cache.ts', line: 12 }, { file: 'src/lib/cache.ts', line: 31 }], total: 2, declared: false },
-        { name: 'REDIS_URL', refs: [{ file: 'src/lib/cache.ts', line: 8 }], total: 1, declared: true },
+        { name: 'REDIS_URL', refs: [{ file: 'apps/api/src/lib/cache.ts', line: 6 }], total: 1, declared: false },
+        { name: 'STRIPE_KEY', refs: [{ file: 'apps/api/src/billing/stripe.ts', line: 3 }], total: 1, declared: false },
       ],
-      undeclaredVars: ['CACHE_TTL'],
+      undeclaredVars: ['REDIS_URL', 'STRIPE_KEY'],
       conclusion: 'neutral',
+      closedAt: new Date(incidentDeployAt.getTime() - 60_000),
     },
     {
-      ...common(storefront.id, 86, 26),
-      authorLogin: 'Copilot',
-      authorIsAgent: true,
-      agentName: 'Copilot',
-      renamedVars: [{ from: 'MAILER_KEY', to: 'MAIL_API_KEY', file: 'src/lib/mail.ts', line: 4, declared: true }],
-      conclusion: 'success',
-      closedAt: hoursAgo(20),
-    },
-    {
-      ...common(storefront.id, 85, 48),
+      // (b) A clean rename by a person, with .env.example updated in the same PR.
+      ...common(storefront.id, 86, 26 * 60),
       authorLogin: 'maya-lopez',
-      removedVars: [{ name: 'LEGACY_CHECKOUT', refs: [{ file: 'src/checkout/index.ts', line: 30 }], total: 1 }],
+      renamedVars: [{ from: 'SENDGRID_KEY', to: 'EMAIL_API_KEY', file: 'apps/api/src/lib/mail.ts', line: 4, declared: true }],
       conclusion: 'success',
-      closedAt: hoursAgo(40),
+      closedAt: minutesAgo(20 * 60),
     },
     {
-      ...common(northwind.id, 12, 5),
+      ...common(northwind.id, 12, 5 * 60),
       authorLogin: 'devin-ai-integration[bot]',
       authorIsAgent: true,
       agentName: 'Devin',
