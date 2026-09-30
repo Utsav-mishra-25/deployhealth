@@ -221,8 +221,8 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **Env vars:** each app reads `process.env` only in its `env.ts`, and by name
   (`DATABASE_URL: process.env.DATABASE_URL`), never by spreading `process.env`. That keeps
   `pnpm scan:self` meaningful. Every variable must appear in that app's `.env.example`.
-  Runtime-provided ones (`NODE_ENV`) are skipped by the scanner's `DEFAULT_IGNORE`, so the
-  self-scan needs no `--ignore`.
+  Runtime-provided ones (`NODE_ENV`) are skipped by the scanner's `DEFAULT_IGNORE`, and tests
+  and fixtures are skipped by default, so the self-scan needs no `--ignore` or `--exclude`.
 - **Authorization:** every read or write of clients, projects, endpoints, checks and alerts goes
   through a query that takes the signed-in user's id and filters on it (`getProjectForOwner`,
   `getClientBySlug(db, userId, …)`, `updateEndpoint(db, ownerId, …)`, …). Assigning a project to
@@ -317,7 +317,11 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   `undefined`/`null`/`None`/`nil`) is never MISSING, and a variable read only that way is
   `optional`; a scope with no env file gets no MISSING rows, only its `EnvScope`, which the project
   page turns into one notice and the handoff into a starting `.env.example`. PR checks count an
-  optional variable as declared.
+  optional variable as declared. **Tests and fixtures** (`test-paths.ts`: `TEST_DIRS` at any depth,
+  and `*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`, `*_test.py`, `conftest.py`, `*_spec.rb`;
+  env files never count as test files) are skipped by `walk`, `selectTreeFiles` (so the App never
+  fetches them) and `scanFiles`: no findings, variables or scopes from them; the CLI still reads
+  their source so a test-only variable isn't UNUSED. `--include-tests` / `includeTests: true`.
 - **Client components** import only from `@deployhealth/core/browser` (the main entry pulls in
   `node:fs` / `node:crypto`). Type-only imports from the main entry are fine.
 - **The dev login** ("Continue as dev user", provider `dev`, signs in as the writable `dev` user,
@@ -336,7 +340,9 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   no env file) for `test/scan-defaults.test.ts`. Their `.env`, `.env.local` and `.env.*.local`
   files are committed through negations in the root `.gitignore`. Decoys (node_modules, dist,
   .git, …) are written into a temp copy at test time rather than committed. The scanner reads
-  comments too, so write example code in comments as `process.env.<NAME>`.
+  comments too, so write example code in comments as `process.env.<NAME>`. The fixtures sit under
+  `test/`, which the scanner skips by default, but their tests scan the fixture directory itself
+  as the root, so the rules apply to paths inside it.
 
 ## Releasing the CLI (`deployhealth-scan` on npm)
 
