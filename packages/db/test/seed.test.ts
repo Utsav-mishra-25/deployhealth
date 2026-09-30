@@ -242,6 +242,24 @@ describe('seed', () => {
     expect((await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.portfolio, NOW))?.deployNotes).toBeNull();
   });
 
+  it('shows the quieter scan: portfolio has no env file (a notice, no MISSING rows), and PORT is optional', async () => {
+    const result = await seed(db, NOW);
+    const [portfolioDeploy] = await listDeploys(db, DEMO_PROJECT_IDS.portfolio);
+    const portfolio = await getLatestScan(db, DEMO_PROJECT_IDS.portfolio, portfolioDeploy!.deploy.id);
+    expect(portfolio?.findings).toEqual([]);
+    expect(portfolio?.scopesWithoutEnvFiles).toEqual([{ scope: '', variables: 2 }]);
+    const handoff = await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.portfolio, NOW);
+    expect(handoff?.envScopes).toEqual([{ scope: '', env_files: [] }]);
+
+    const storefront = await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.storefront, NOW);
+    expect(storefront?.variables).toContainEqual({ var_name: 'PORT', scope: 'apps/api', defined_in: ['.env.example'], optional: true });
+    expect(storefront?.envScopes?.map((s) => s.scope)).toEqual(['apps/api', 'apps/web', 'apps/worker']);
+    // Every storefront scope has env files, so the scripted alert reads exactly as before.
+    expect((await listOpenAlerts(db, result.userId, result.projectId))[0]?.alert.message).toBe(
+      'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY',
+    );
+  });
+
   it('builds deterministic, unique shas in chronological order', () => {
     const deploys = demoDeploys(NOW);
     expect(new Set(deploys.map((d) => d.sha)).size).toBe(DEMO_DEPLOY_COUNT);
