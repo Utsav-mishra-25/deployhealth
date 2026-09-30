@@ -6,6 +6,7 @@ export { analyzeScope, compareFindings, newMissingVars, newUndeclaredVars, summa
 export { DEFAULT_IGNORE } from './default-ignore';
 export { ENV_FILE_NAMES, scanFiles, scanProject, selectTreeFiles, type ScanOptions, type ScanResult } from './scan';
 export { DEFAULT_SKIP_DIRS } from './walker';
+export { isTestPath, TEST_DIRS } from './test-paths';
 export * from './ingest';
 export * from './limits';
 export * from './ssrf';

@@ -54,6 +54,25 @@ describe('--dry-run', () => {
     expect(out.stdout).not.toContain('Skipped');
   });
 
+  it('skips tests and fixtures, says how many, and scans them with --include-tests', async () => {
+    // Scanning packages/core itself: its test/ directory (fixtures included) is left out by default.
+    const core = fileURLToPath(new URL('..', import.meta.url));
+    const { io, out } = makeIo({ cwd: core });
+    expect(await run(['--dry-run', '--json'], io)).toBe(EXIT.ok);
+    const skipped = JSON.parse(out.stdout);
+    expect(skipped.test_files_skipped).toBeGreaterThan(20);
+    expect(skipped.scopes).toEqual([]); // no fixture scopes (and core's own code reads no env vars)
+    const { io: io2, out: out2 } = makeIo({ cwd: core });
+    expect(await run(['--dry-run'], io2)).toBe(EXIT.ok);
+    expect(out2.stdout).toMatch(/Skipped \d+ test and fixture files \(read only to see which variables they use\)\. --include-tests includes them\./);
+
+    const { io: io3, out: out3 } = makeIo({ cwd: core });
+    expect(await run(['--dry-run', '--json', '--include-tests'], io3)).toBe(EXIT.ok);
+    const all = JSON.parse(out3.stdout);
+    expect(all.test_files_skipped).toBe(0);
+    expect(all.scopes).toEqual(expect.arrayContaining(['test/fixtures/project', 'test/fixtures/defaults/services/api']));
+  });
+
   it('lists optional variables and a scope with no env file instead of MISSING rows', async () => {
     const { io, out } = makeIo({ cwd: DEFAULTS });
     expect(await run(['--dry-run'], io)).toBe(EXIT.ok);

@@ -13,6 +13,8 @@ export interface ScopeInput {
   references: Reference[];
   envFiles: ScopeEnvFile[];
   isIgnored: (name: string) => boolean;
+  /** Names test files in this scope read: they keep a variable from being UNUSED, nothing more. */
+  usedByTests?: ReadonlySet<string>;
 }
 
 /**
@@ -21,13 +23,14 @@ export interface ScopeInput {
  * - missing:  referenced without an inline default, and not defined in any of the scope's env
  *             files (one row per reference). Never in a scope with no env file at all: nothing
  *             there declares anything yet, so the scope is reported once (EnvScope) instead.
- * - unused:   defined in an env file, never referenced in the scope (one row per defining file)
+ * - unused:   defined in an env file, never referenced in the scope (one row per defining file);
+ *             a read in a test file counts, so a test-only variable isn't unused
  * - mismatch: in `.env` but not `.env.example`, or the reverse; only when both exist
  */
-export function analyzeScope({ references, envFiles, isIgnored }: ScopeInput): FindingRow[] {
+export function analyzeScope({ references, envFiles, isIgnored, usedByTests }: ScopeInput): FindingRow[] {
   const rows: FindingRow[] = [];
   const defined = new Set(envFiles.flatMap((f) => f.entries.map((e) => e.key)));
-  const referenced = new Set(references.map((r) => r.name));
+  const referenced = new Set([...references.map((r) => r.name), ...(usedByTests ?? [])]);
 
   for (const ref of envFiles.length === 0 ? [] : references) {
     if (isIgnored(ref.name) || ref.hasDefault || defined.has(ref.name)) continue;
