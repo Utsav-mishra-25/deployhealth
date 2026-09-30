@@ -8,8 +8,10 @@ import {
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
   newMissingVars,
+  newUndeclaredVars,
   type EndpointInterval,
   type EndpointMethod,
+  type RequiredVariable,
 } from '@deployhealth/core';
 import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './client';
@@ -23,6 +25,7 @@ import {
   findings,
   projects,
   scans,
+  scanVariables,
   users,
   type Alert,
   type Check,
@@ -329,6 +332,7 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
       firstFailureAt,
       deploy: link?.deploy ?? null,
       newMissing: link?.newMissing ?? [],
+      newUndeclared: link?.newUndeclared ?? [],
     });
     const [alert] = await tx
       .insert(alerts)
@@ -371,11 +375,14 @@ async function firstFailureOfStreak(tx: Tx, endpointId: string): Promise<Date> {
 interface DeployLink {
   deploy: { id: string; sha: string; deployedAt: Date };
   newMissing: string[];
+  /** Newly referenced in scopes with no env file (which have no MISSING rows); [] for older scans. */
+  newUndeclared: string[];
 }
 
 /**
- * The project's most recent deploy in the window before `firstFailureAt`, and the MISSING vars
- * its latest scan has that the previous scanned deploy's latest scan didn't.
+ * The project's most recent deploy in the window before `firstFailureAt`, the MISSING vars its
+ * latest scan has that the previous scanned deploy's latest scan didn't, and, for scopes with no
+ * env file (CLI 0.2.0+ reports them), the variables it references that the previous scan didn't.
  */
 async function linkDeploy(tx: Tx, projectId: string, firstFailureAt: Date): Promise<DeployLink | null> {
   const windowStart = new Date(firstFailureAt.getTime() - DEPLOY_LINK_WINDOW_MINUTES * 60_000);
@@ -393,7 +400,7 @@ async function linkDeploy(tx: Tx, projectId: string, firstFailureAt: Date): Prom
     .limit(1);
   if (!deploy) return null;
 
-  const current = await latestScanFindings(tx, deploy.id);
+  const current = await latestScanOf(tx, deploy.id);
   const [previous] = await tx
     .select({ id: deploys.id })
     .from(deploys)
@@ -406,23 +413,45 @@ async function linkDeploy(tx: Tx, projectId: string, firstFailureAt: Date): Prom
     )
     .orderBy(desc(deploys.deployedAt))
     .limit(1);
-  const before = previous ? await latestScanFindings(tx, previous.id) : null;
+  const before = previous ? await latestScanOf(tx, previous.id) : null;
 
-  return { deploy, newMissing: newMissingVars(current, before) };
+  const newMissing = newMissingVars(current.findings, before?.findings ?? null);
+  const undeclared = current.envScopes
+    ? newUndeclaredVars({ variables: await scanVariableRows(tx, current.scanId), envScopes: current.envScopes }, before ? await referencedNames(tx, before) : null)
+    : [];
+  return { deploy, newMissing, newUndeclared: undeclared.filter((name) => !newMissing.includes(name)) };
 }
 
-async function latestScanFindings(tx: Tx, deployId: string) {
+/** A deploy's latest scan: its id, env scopes (null from CLIs before 0.2.0) and findings. */
+async function latestScanOf(tx: Tx, deployId: string) {
   const [scan] = await tx
-    .select({ id: scans.id })
+    .select({ id: scans.id, envScopes: scans.envScopes })
     .from(scans)
     .where(eq(scans.deployId, deployId))
     .orderBy(desc(scans.createdAt))
     .limit(1);
-  if (!scan) return [];
-  return tx
-    .select({ kind: findings.kind, var_name: findings.varName })
-    .from(findings)
-    .where(eq(findings.scanId, scan.id));
+  if (!scan) return { scanId: null, envScopes: null, findings: [] };
+  const rows = await tx.select({ kind: findings.kind, var_name: findings.varName }).from(findings).where(eq(findings.scanId, scan.id));
+  return { scanId: scan.id, envScopes: scan.envScopes, findings: rows };
+}
+
+async function scanVariableRows(tx: Tx, scanId: string | null): Promise<RequiredVariable[]> {
+  if (!scanId) return [];
+  const rows = await tx
+    .select({ scope: scanVariables.scope, var_name: scanVariables.varName, optional: scanVariables.optional })
+    .from(scanVariables)
+    .where(eq(scanVariables.scanId, scanId));
+  return rows.map((r) => ({ scope: r.scope, var_name: r.var_name, defined_in: [], ...(r.optional ? { optional: true as const } : {}) }));
+}
+
+/**
+ * Every name a scan referenced: its variable list, plus its findings' names (a scan from an older
+ * CLI has no variable list, but then every reference in a scope with no env file was a MISSING row).
+ */
+async function referencedNames(tx: Tx, scan: { scanId: string | null; findings: ReadonlyArray<{ var_name: string }> }): Promise<Set<string>> {
+  const names = new Set(scan.findings.map((f) => f.var_name));
+  for (const v of await scanVariableRows(tx, scan.scanId)) names.add(v.var_name);
+  return names;
 }
 
 /** Delete checks older than `olderThan`. Returns how many were removed. */
