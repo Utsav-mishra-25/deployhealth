@@ -1,20 +1,33 @@
 import {
   alertDuration,
   describeFinding,
+  dotenvExample,
   FINDING_SECTIONS,
   formatInterval,
   formatPercent,
   formatUtc,
   groupVariablesByScope,
   plural,
+  scopesWithoutEnvFiles,
+  VARIABLE_STATUS_LABELS,
+  variableStatus,
   type HandoffData,
+  type VariableStatus,
 } from '@deployhealth/core';
 import Link from 'next/link';
+import { CopyButton } from '@/components/copy-button';
 import { PrintButton } from '@/components/print-button';
 import { SafeMarkdown } from '@/components/safe-markdown';
 
 const th = 'py-1.5 pr-4 text-left text-xs font-medium uppercase tracking-wide text-gray-500';
 const td = 'py-1.5 pr-4 align-top';
+
+const STATUS_CLASS: Record<VariableStatus, string> = {
+  ok: '',
+  optional: 'text-gray-500',
+  'no-env-file': 'text-amber-800',
+  missing: 'font-semibold text-red-700',
+};
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
@@ -33,7 +46,10 @@ function Section({ id, title, children }: { id: string; title: string; children:
  */
 export function HandoffView({ data, backHref, markdownHref }: { data: HandoffData; backHref: string; markdownHref: string }) {
   const groups = groupVariablesByScope(data.variables);
-  const missing = data.variables.filter((v) => v.defined_in.length === 0).length;
+  const bareScopes = scopesWithoutEnvFiles(data.envScopes);
+  const statuses = data.variables.map((v) => variableStatus(v, bareScopes));
+  const missing = statuses.filter((s) => s === 'missing').length;
+  const undeclared = statuses.filter((s) => s === 'no-env-file').length;
 
   return (
     <article className="mx-auto max-w-4xl space-y-8 rounded-lg border border-gray-200 bg-white p-8 print:border-0 print:p-0" data-testid="handoff">
@@ -88,10 +104,16 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
               <code className="font-mono break-all">{data.scan.branch}</code>, {formatUtc(data.scan.deployedAt)}), grouped by the env-file scope that has
               to define it.{' '}
               {missing ? <strong className="text-red-700">{plural(missing, 'variable')} missing.</strong> : 'None missing.'}
+              {undeclared > 0 && ` ${plural(undeclared, 'variable')} ${undeclared === 1 ? 'is' : 'are'} in a scope with no env file yet.`}
             </p>
             {groups.map((group) => (
-              <div key={group.scope} className="space-y-1">
-                <h3 className="text-sm font-semibold">{group.scope === '' ? group.label : <code className="font-mono break-all">{group.scope}</code>}</h3>
+              <div key={group.scope} className="space-y-1" data-testid="handoff-scope">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">{group.scope === '' ? group.label : <code className="font-mono break-all">{group.scope}</code>}</h3>
+                  <span className="print:hidden">
+                    <CopyButton text={dotenvExample(group.variables)} label="Copy as .env.example" />
+                  </span>
+                </div>
                 <table className="doc-table w-full table-fixed text-sm" data-testid="handoff-variables">
                   <colgroup>
                     <col className="w-[45%]" />
@@ -110,11 +132,19 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
                       <tr key={v.var_name}>
                         <td className={`${td} font-mono break-all`}>{v.var_name}</td>
                         <td className={`${td} font-mono break-words text-gray-600`}>{v.defined_in.length ? v.defined_in.join(', ') : '—'}</td>
-                        <td className={td}>{v.defined_in.length ? 'ok' : <strong className="text-red-700">missing</strong>}</td>
+                        <td className={`${td} ${STATUS_CLASS[variableStatus(v, bareScopes)]}`}>{VARIABLE_STATUS_LABELS[variableStatus(v, bareScopes)]}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                {bareScopes.has(group.scope) && (
+                  <div className="space-y-1 pt-2" data-testid="env-example">
+                    <p className="text-sm text-gray-600">
+                      No env file in this scope yet. A starting <code className="font-mono">.env.example</code> (names only):
+                    </p>
+                    <pre className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-xs">{dotenvExample(group.variables)}</pre>
+                  </div>
+                )}
               </div>
             ))}
           </>
