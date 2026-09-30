@@ -8,14 +8,30 @@ Find env var drift in a repository and report it to
 - **UNUSED**: defined in an env file but never read;
 - **MISMATCH**: in `.env` but not `.env.example`, or the reverse.
 
-It scans JavaScript/TypeScript, Python, Go and Ruby, respects `.gitignore`, and treats each folder
-with its own `.env.example` as a separate scope (monorepos). One file, no dependencies, Node 20+.
+It scans JavaScript/TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`),
+Python, Go and Ruby, respects `.gitignore`, and treats each folder with its own env files as a
+separate scope (monorepos). It reads `.env.example`, `.env`, `.env.local`, `.env.development`,
+`.env.production`, `.env.test` and their `.local` variants. One file, no dependencies, Node 20+.
+
+A first scan stays quiet:
+
+- **Names the platform or runtime provides are skipped**: `NODE_ENV`, `CI`, `npm_*`, GitHub
+  Actions' default variables (`GITHUB_SHA`, `GITHUB_REF_NAME`, …, not your own `GITHUB_` names),
+  `RUNNER_*`, `VERCEL_*`, `RAILWAY_*`, `RENDER_*`, `FLY_*` and a few more. `--no-default-ignore`
+  checks them too; `--dry-run` lists what was skipped.
+- **A read with a default on the same line isn't MISSING**: `process.env.X ?? "a"` or `|| "a"`,
+  `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`, `ENV.fetch("X", "a")`,
+  `ENV.fetch("X") { … }`, `ENV["X"] || "a"`. Such variables are listed as optional. (A default of
+  `undefined`, `null`, `None` or `nil` is no default.)
+- **A folder with no env file at all gets one line**, "No .env.example …: N variables referenced",
+  instead of a MISSING row per reference; deployhealth's handoff offers them as a starting
+  `.env.example`.
 
 ## Try it locally
 
 ```sh
-npx deployhealth-scan@0.1.0 --dry-run          # grouped findings with file:line
-npx deployhealth-scan@0.1.0 --dry-run --json   # the same, as JSON
+npx deployhealth-scan@0.2.0 --dry-run          # grouped findings with file:line
+npx deployhealth-scan@0.2.0 --dry-run --json   # the same, as JSON
 ```
 
 With `--dry-run` nothing leaves your machine.
@@ -50,21 +66,22 @@ jobs:
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
         run: |
-          npx --yes deployhealth-scan@0.1.0 \
+          npx --yes deployhealth-scan@0.2.0 \
             --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
             --branch "$GITHUB_REF_NAME"
 ```
 
-Pin the version (`@0.1.0`) so an update never runs in your CI unreviewed. For a self-hosted
+Pin the version (`@0.2.0`) so an update never runs in your CI unreviewed. For a self-hosted
 deployhealth, change `--url` to your instance.
 
 ## What it sends
 
 The commit sha and branch, and for each finding the variable name, `file:line` and env file name,
-plus the list of variable names each env file defines. **Never values:** the scanner reads env
-files for the names they define; values are neither sent nor printed.
+plus every referenced variable name with the env files that define it (and whether the code has a
+default), and each scope's env file names. **Never values:** the scanner reads env files for the
+names they define; values are neither sent nor printed.
 
 ## Options
 
@@ -74,7 +91,9 @@ files for the names they define; values are neither sent nor printed.
 --sha <sha>          commit being deployed (default: git rev-parse HEAD)
 --branch <name>      branch being deployed (default: current git branch)
 --dir <path>         directory to scan (default: current directory)
---ignore <glob>      skip variables matching a glob, e.g. NODE_ENV (repeatable)
+--ignore <glob>      skip variables matching a glob, e.g. NEXT_PUBLIC_* (repeatable)
+--no-default-ignore  also check names the platform or runtime provides (NODE_ENV,
+                     CI, GITHUB_SHA, npm_*, VERCEL_*, RAILWAY_*, RENDER_*, FLY_*, ...)
 --exclude <pattern>  skip paths matching a gitignore-style pattern (repeatable)
 --dry-run            print the findings instead of sending them
 --json               with --dry-run, print JSON
