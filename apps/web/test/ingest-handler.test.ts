@@ -46,8 +46,39 @@ describe('handleIngest', () => {
         source: 'ingest',
         findings: [FINDING],
         variables: undefined,
+        envScopes: null,
       },
     ]);
+  });
+
+  it('still takes exactly what the 0.1.0 CLI sends: stored with no env scopes and nothing optional', async () => {
+    const { deps, recorded } = setup();
+    const variables = [
+      { var_name: 'DATABASE_URL', scope: '', defined_in: ['.env.example', '.env'] },
+      { var_name: 'REDIS_URL', scope: 'apps/api', defined_in: [] },
+    ];
+    const response = await handleIngest(post({ ...PAYLOAD, variables }), deps);
+    expect(response.status).toBe(201);
+    expect(recorded[0]).toMatchObject({ findings: [FINDING], variables, envScopes: null });
+    expect(recorded[0]!.variables!.some((v) => 'optional' in v)).toBe(false);
+  });
+
+  it('stores what 0.2.0 adds: optional variables, the newer env file names and env scopes', async () => {
+    const { deps, recorded } = setup();
+    const variables = [
+      { var_name: 'PORT', scope: 'apps/api', defined_in: [], optional: true },
+      { var_name: 'PROD_DB_URL', scope: 'apps/api', defined_in: ['.env.production'], optional: false },
+    ];
+    const env_scopes = [
+      { scope: '', env_files: [] },
+      { scope: 'apps/api', env_files: ['.env.example', '.env.production'] },
+    ];
+    expect((await handleIngest(post({ ...PAYLOAD, findings: [], variables, env_scopes }), deps)).status).toBe(201);
+    expect(recorded[0]?.variables).toEqual([
+      { var_name: 'PORT', scope: 'apps/api', defined_in: [], optional: true },
+      { var_name: 'PROD_DB_URL', scope: 'apps/api', defined_in: ['.env.production'] },
+    ]);
+    expect(recorded[0]?.envScopes).toEqual(env_scopes);
   });
 
   it('passes referenced variables through when the CLI sends them', async () => {
