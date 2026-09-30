@@ -53,6 +53,20 @@ describe('diffEnvVars on fixture trees', () => {
     expect(diffEnvVars(await scan(BASE), await scan(BASE))).toEqual({ added: [], removed: [], renamed: [], undeclared: [] });
   });
 
+  it('treats a variable with a default wherever it is read as declared, and skips platform names', async () => {
+    const head = {
+      ...BASE,
+      'src/cache.ts': `const ttl = ${ENV}.CACHE_TTL ?? 60;\nconst again = ${ENV}.CACHE_TTL || 60;\nconst sha = ${ENV}.GITHUB_SHA;`,
+      'src/queue.ts': `const q = ${ENV}.QUEUE_NAME ?? 'jobs';\nconst other = ${ENV}.QUEUE_NAME;`,
+    };
+    const diff = diffEnvVars(await scan(BASE), await scan(head));
+    expect(diff.added.map((a) => [a.name, a.declared])).toEqual([
+      ['CACHE_TTL', true], // a default at every read
+      ['QUEUE_NAME', false], // one read has no default
+    ]);
+    expect(diff.undeclared).toEqual(['QUEUE_NAME']);
+  });
+
   it('stores at most 20 references per variable but keeps the total', async () => {
     const many = Array.from({ length: 30 }, (_, i) => `${ENV}.BUSY_VAR // ${i}`).join('\n');
     const diff = diffEnvVars(await scan({ 'a.ts': '' }), await scan({ 'a.ts': many }));
