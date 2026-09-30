@@ -209,19 +209,36 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    commit sha and branch. The job's token is read-only (`permissions: contents: read`), and the
    workflow runs on pushes only, never on pull requests from forks, since it reads a secret.
 3. **The scanner** walks the repo, respecting `.gitignore` and skipping `node_modules`, `dist`,
-   `.git`, `.next` and virtualenvs. It finds references in JS/TS (`process.env.X`,
-   `process.env["X"]`, `import.meta.env.X`), Python (`os.environ["X"]`, `os.environ.get("X")`,
-   `os.getenv("X")`), Go (`os.Getenv("X")`, `os.LookupEnv("X")`) and Ruby (`ENV["X"]`,
-   `ENV.fetch("X")`), and reads `.env`, `.env.example` and `.env.local`.
+   `.git`, `.next` and virtualenvs. It finds references in JS/TS (`.js`, `.jsx`, `.mjs`, `.cjs`,
+   `.ts`, `.tsx`, `.mts`, `.cts`: `process.env.X`, `process.env["X"]`, `import.meta.env.X`),
+   Python (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`), Go (`os.Getenv("X")`,
+   `os.LookupEnv("X")`) and Ruby (`ENV["X"]`, `ENV.fetch("X")`), and reads `.env.example`,
+   `.env`, `.env.local`, `.env.development`, `.env.production`, `.env.test` and their `.local`
+   variants.
    - **Env scopes (monorepos).** Every directory with an env file is a scope, and each source file
      is checked against its nearest one. So `apps/web/src/x.ts` is compared with
      `apps/web/.env.example`, not with another package's.
    - Findings are **MISSING** (referenced, not defined in the scope), **UNUSED** (defined, never
      referenced) and **MISMATCH** (in `.env` but not `.env.example`, or the reverse), each with
      `file:line`.
-4. **The CLI posts** `{ sha, branch, timestamp, findings[], variables[] }` with
+   - **A first scan stays quiet** (CLI 0.2.0; pull request checks use the same rules):
+     - Names the platform or runtime provides are skipped: `NODE_ENV`, `CI`, `NEXT_RUNTIME`,
+       `npm_*`, `HOME`, `PATH` and the like, GitHub Actions' default variables (`GITHUB_SHA`,
+       `GITHUB_REF_NAME`, …; not a `GITHUB_*` prefix, so an app's own `GITHUB_CLIENT_SECRET`
+       still counts), `RUNNER_*`, `VERCEL`/`VERCEL_*`/`NEXT_PUBLIC_VERCEL_*`, `RAILWAY_*`,
+       `RENDER`/`RENDER_*` and `FLY_*`. `--no-default-ignore` checks them too.
+     - A read with a default on the same line isn't MISSING: `process.env.X ?? "a"` / `|| "a"`,
+       `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`,
+       `ENV.fetch("X", "a")`, `ENV.fetch("X") { … }`, `ENV["X"] || "a"`. (`undefined`, `null`,
+       `None` and `nil` aren't defaults.) Variables read only that way are listed as optional.
+     - A scope with no env file at all (in practice the root, for code outside every other scope)
+       gets no MISSING rows. The project page says "No .env.example here: N variables referenced"
+       once, and the handoff offers the list as a starting `.env.example`.
+4. **The CLI posts** `{ sha, branch, timestamp, findings[], variables[], env_scopes[] }` with
    `Authorization: Bearer <token>`. `variables` lists every referenced name per scope with the env
-   files that define it. **Env values never leave CI**: the contract only admits names.
+   files that define it (and `optional` when the code has a default); `env_scopes` lists each
+   scope's env files. Both are optional, so payloads from older CLIs still work. **Env values never
+   leave CI**: the contract only admits names.
 5. **The server** checks the token (by hash) before reading the body, validates the payload with
    the schema the CLI was built against, then in one transaction:
    - creates the **deploy** for that sha, or reuses it when CI re-runs;
@@ -278,6 +295,9 @@ deploy's latest scan, and the message lists only MISSING variables that are **ne
 deploy:
 
 - `Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY`
+- `Acme API started failing 4m after deploy b52952e, which introduced 2 new env vars no env file declares: REDIS_URL, STRIPE_KEY`
+  (a scope with no env file has no MISSING rows, so there the new list is the variables that deploy
+  newly references; scans from CLIs before 0.2.0 don't report scopes and correlate as before)
 - `Acme API started failing 4m after deploy b52952e, which had no new config findings`
 - `Acme API started failing; no deploy in the 30 minutes before the first failure`
 
@@ -366,8 +386,8 @@ request checks read at most **2,000 files and 20 MB** per pull request.
 - **Handoffs list the variables of the latest scan.** Scans from CLI versions before variable
   listing only show findings until the Action runs again.
 - **Regex scanning.** References inside comments and strings count; aliased or destructured access
-  (`const { X } = process.env`) is missed; only `.env`, `.env.example` and `.env.local` are read
-  automatically.
+  (`const { X } = process.env`) is missed; a default counts only on the same line as the read; other
+  env file names (`.env.staging`, say) aren't read.
 - **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team
   sharing).
 - **Pull request checks follow the installer.** An App installed by an org admin checks pull
