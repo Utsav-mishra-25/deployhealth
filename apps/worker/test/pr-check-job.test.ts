@@ -78,6 +78,28 @@ describe('prCheck against a mocked Octokit', () => {
     expect(rows[0]).toMatchObject({ commentId: [...mock.state.comments.keys()][0], checkRunId: [...mock.state.checkRuns.keys()][0] });
   });
 
+  it('never reports (or downloads) test files and fixtures, but keeps a source file named like one', async () => {
+    const withTests = {
+      ...HEAD,
+      'src/cache.test.ts': `expect(${ENV}.UNIT_ONLY)`,
+      'src/__tests__/cache.ts': `${ENV}.JEST_ONLY`,
+      'e2e/login.spec.ts': `${ENV}.E2E_ONLY`,
+      'tests/test_cache.py': 'os.getenv("PY_TEST_ONLY")',
+      'test/fixtures/app/.env.example': 'FIXTURE_VAR=\n',
+      'test/fixtures/app/index.ts': `${ENV}.FIXTURE_VAR`,
+      'src/contest.ts': `${ENV}.CONTEST_VAR`,
+    };
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: withTests } }));
+    const { deps, rows } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]!.addedVars.map((v) => v.name)).toEqual(['CONTEST_VAR', 'REDIS_URL']);
+    expect(rows[0]!.undeclaredVars).toEqual(['CONTEST_VAR', 'REDIS_URL']);
+    const comment = [...mock.state.comments.values()][0]!.body;
+    for (const name of ['UNIT_ONLY', 'JEST_ONLY', 'E2E_ONLY', 'PY_TEST_ONLY', 'FIXTURE_VAR']) expect(comment).not.toContain(name);
+    // Test files never count against the fetch budget: same downloads as without them, plus contest.ts.
+    expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toHaveLength(5);
+  });
+
   it('fails the check in strict mode, and succeeds once the variable is declared', async () => {
     const mock = mockOctokit(repo());
     expect(await prCheck(JOB, harness(mock, { mode: 'strict' }).deps)).toBe('failure');
