@@ -43,6 +43,13 @@
       "when": 1790713343027,
       "tag": "0005_github_app",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790787366882,
+      "tag": "0006_quieter_scan",
+      "breakpoints": true
     }
   ]
 }
