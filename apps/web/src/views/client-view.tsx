@@ -85,9 +85,9 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
           <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500">No projects for this client yet.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm max-sm:block">
               <ProjectTableHead />
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 max-sm:block">
                 <ProjectRows projects={projects} paths={paths} />
               </tbody>
             </table>

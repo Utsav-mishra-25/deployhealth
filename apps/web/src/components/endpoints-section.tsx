@@ -43,7 +43,7 @@ export function EndpointsSection({
               <EndpointStatusBadge status={m.status} />
               {m.failingSince && <FailingFor state={m.status === 'down' ? 'down' : 'failing'} since={m.failingSince} />}
               {m.endpoint.name && <span className="font-medium">{m.endpoint.name}</span>}
-              <span className={m.endpoint.name ? 'truncate font-mono text-xs text-gray-500' : 'truncate font-mono text-sm'}>
+              <span className={m.endpoint.name ? 'min-w-0 font-mono text-xs break-all text-gray-500' : 'min-w-0 font-mono text-sm break-all'}>
                 {m.endpoint.url}
               </span>
               <span className="text-xs text-gray-500">
@@ -64,13 +64,15 @@ export function EndpointsSection({
             <p className="px-4 py-6 text-center text-sm text-gray-500">No checks yet</p>
           ) : (
             <div className="grid gap-6 px-4 py-4 lg:grid-cols-2">
-              <div>
+              <div className="min-w-0">
                 <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">Latency, last 24h</h3>
                 <LatencyChart data={m.latency.map((p) => ({ hour: p.hour.toISOString(), p50: p.p50, p95: p.p95 }))} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">Recent checks</h3>
-                <ChecksTable checks={m.recent} />
+                <div className="overflow-x-auto">
+                  <ChecksTable checks={m.recent} />
+                </div>
               </div>
             </div>
           )}

@@ -75,7 +75,7 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
         <section key={project.name} aria-label={project.name} className="doc-section space-y-4" data-testid="report-project">
           <div className="border-b border-gray-200 pb-1">
             <h2 className="text-lg font-semibold">{project.name}</h2>
-            <p className="text-xs text-gray-500">github.com/{project.repoFullName}</p>
+            <p className="text-xs break-all text-gray-500">github.com/{project.repoFullName}</p>
           </div>
 
           <div className="space-y-1">
@@ -99,7 +99,7 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
                 <tbody className="divide-y divide-gray-100">
                   {project.endpoints.map((e) => (
                     <tr key={e.url + e.label}>
-                      <td className={`${td} font-medium`}>{e.label}</td>
+                      <td className={`${td} font-medium break-words`}>{e.label}</td>
                       <td className={`${td} tabular-nums text-gray-600`}>{e.checks.toLocaleString('en')}</td>
                       <td className={`${td} tabular-nums`}>{formatPercent(e.uptime)}</td>
                     </tr>
@@ -114,26 +114,28 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
             {project.incidents.length === 0 ? (
               <p className="text-sm text-gray-600">None.</p>
             ) : (
-              <table className="doc-table w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className={th}>Opened</th>
-                    <th className={th}>Resolved</th>
-                    <th className={th}>Duration</th>
-                    <th className={th}>What happened</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {project.incidents.map((i) => (
-                    <tr key={i.openedAt.toISOString() + i.message}>
-                      <td className={`${td} whitespace-nowrap`}>{formatUtc(i.openedAt)}</td>
-                      <td className={`${td} whitespace-nowrap`}>{i.resolvedAt ? formatUtc(i.resolvedAt) : 'still open'}</td>
-                      <td className={`${td} whitespace-nowrap`}>{formatDuration(i.durationMs)}</td>
-                      <td className={td}>{i.message}</td>
+              <div className="doc-scroll">
+                <table className="doc-table w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className={th}>Opened</th>
+                      <th className={th}>Resolved</th>
+                      <th className={th}>Duration</th>
+                      <th className={th}>What happened</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {project.incidents.map((i) => (
+                      <tr key={i.openedAt.toISOString() + i.message}>
+                        <td className={`${td} whitespace-nowrap`}>{formatUtc(i.openedAt)}</td>
+                        <td className={`${td} whitespace-nowrap`}>{i.resolvedAt ? formatUtc(i.resolvedAt) : 'still open'}</td>
+                        <td className={`${td} whitespace-nowrap`}>{formatDuration(i.durationMs)}</td>
+                        <td className={td}>{i.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 
@@ -142,32 +144,34 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
               Deploys <span className="font-normal text-gray-500">· {plural(project.deploys.length, 'deploy')}</span>
             </h3>
             {project.deploys.length > 0 && (
-              <table className="doc-table w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className={th}>Deployed</th>
-                    <th className={th}>Commit</th>
-                    <th className={th}>Introduced</th>
-                    <th className={th}>Fixed</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {project.deploys.map((d) => (
-                    <tr key={d.sha}>
-                      <td className={`${td} whitespace-nowrap`}>{formatUtc(d.deployedAt)}</td>
-                      <td className={`${td} whitespace-nowrap font-mono`}>
-                        {d.sha.slice(0, 7)} <span className="text-gray-500">{d.branch}</span>
-                      </td>
-                      <td className={td}>
-                        <Keys keys={d.introduced} tone="red" />
-                      </td>
-                      <td className={td}>
-                        <Keys keys={d.fixed} tone="green" />
-                      </td>
+              <div className="doc-scroll">
+                <table className="doc-table w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className={th}>Deployed</th>
+                      <th className={th}>Commit</th>
+                      <th className={th}>Introduced</th>
+                      <th className={th}>Fixed</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {project.deploys.map((d) => (
+                      <tr key={d.sha}>
+                        <td className={`${td} whitespace-nowrap`}>{formatUtc(d.deployedAt)}</td>
+                        <td className={`${td} whitespace-nowrap font-mono`}>
+                          {d.sha.slice(0, 7)} <span className="text-gray-500">{d.branch}</span>
+                        </td>
+                        <td className={td}>
+                          <Keys keys={d.introduced} tone="red" />
+                        </td>
+                        <td className={td}>
+                          <Keys keys={d.fixed} tone="green" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 

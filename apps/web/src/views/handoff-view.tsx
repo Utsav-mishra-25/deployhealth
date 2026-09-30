@@ -108,8 +108,8 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
                   <tbody className="divide-y divide-gray-100">
                     {group.variables.map((v) => (
                       <tr key={v.var_name}>
-                        <td className={`${td} font-mono`}>{v.var_name}</td>
-                        <td className={`${td} font-mono text-gray-600`}>{v.defined_in.length ? v.defined_in.join(', ') : '—'}</td>
+                        <td className={`${td} font-mono break-all`}>{v.var_name}</td>
+                        <td className={`${td} font-mono break-words text-gray-600`}>{v.defined_in.length ? v.defined_in.join(', ') : '—'}</td>
                         <td className={td}>{v.defined_in.length ? 'ok' : <strong className="text-red-700">missing</strong>}</td>
                       </tr>
                     ))}
@@ -125,31 +125,33 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
         {data.endpoints.length === 0 ? (
           <p className="text-sm text-gray-600">No endpoints are monitored.</p>
         ) : (
-          <table className="doc-table w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className={th}>Endpoint</th>
-                <th className={th}>URL</th>
-                <th className={th}>Check</th>
-                <th className={th}>Expects</th>
-                <th className={th}>Uptime, 30 days</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {data.endpoints.map((e) => (
-                <tr key={e.url + e.label}>
-                  <td className={`${td} font-medium`}>{e.label}</td>
-                  <td className={`${td} font-mono text-xs break-all text-gray-600`}>{e.url}</td>
-                  <td className={td}>
-                    {e.method} {formatInterval(e.intervalSeconds)}
-                    {!e.enabled && ' (paused)'}
-                  </td>
-                  <td className={td}>{e.expectedStatus}</td>
-                  <td className={`${td} tabular-nums`}>{formatPercent(e.uptime)}</td>
+          <div className="doc-scroll">
+            <table className="doc-table w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className={th}>Endpoint</th>
+                  <th className={th}>URL</th>
+                  <th className={th}>Check</th>
+                  <th className={th}>Expects</th>
+                  <th className={th}>Uptime, 30 days</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {data.endpoints.map((e) => (
+                  <tr key={e.url + e.label}>
+                    <td className={`${td} font-medium`}>{e.label}</td>
+                    <td className={`${td} font-mono text-xs break-all text-gray-600`}>{e.url}</td>
+                    <td className={td}>
+                      {e.method} {formatInterval(e.intervalSeconds)}
+                      {!e.enabled && ' (paused)'}
+                    </td>
+                    <td className={td}>{e.expectedStatus}</td>
+                    <td className={`${td} tabular-nums`}>{formatPercent(e.uptime)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Section>
 
@@ -205,26 +207,28 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
         {data.alerts.length === 0 ? (
           <p className="text-sm text-gray-600">No alerts.</p>
         ) : (
-          <table className="doc-table w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className={th}>Opened</th>
-                <th className={th}>Resolved</th>
-                <th className={th}>Duration</th>
-                <th className={th}>What happened</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {data.alerts.map((a) => (
-                <tr key={a.openedAt.toISOString() + a.message}>
-                  <td className={`${td} whitespace-nowrap`}>{formatUtc(a.openedAt)}</td>
-                  <td className={`${td} whitespace-nowrap`}>{a.resolvedAt ? formatUtc(a.resolvedAt) : 'still open'}</td>
-                  <td className={`${td} whitespace-nowrap`}>{alertDuration(a, data.generatedAt)}</td>
-                  <td className={td}>{a.message}</td>
+          <div className="doc-scroll">
+            <table className="doc-table w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className={th}>Opened</th>
+                  <th className={th}>Resolved</th>
+                  <th className={th}>Duration</th>
+                  <th className={th}>What happened</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {data.alerts.map((a) => (
+                  <tr key={a.openedAt.toISOString() + a.message}>
+                    <td className={`${td} whitespace-nowrap`}>{formatUtc(a.openedAt)}</td>
+                    <td className={`${td} whitespace-nowrap`}>{a.resolvedAt ? formatUtc(a.resolvedAt) : 'still open'}</td>
+                    <td className={`${td} whitespace-nowrap`}>{alertDuration(a, data.generatedAt)}</td>
+                    <td className={td}>{a.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Section>
 

@@ -4,6 +4,11 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* A document table too wide for a phone scrolls sideways inside this wrapper (printed: full width). */
+.doc-scroll {
+  overflow-x: auto;
+}
+
 /* Printable documents (handoff, report): white page, full width, no app chrome, sections kept whole. */
 @media print {
   @page {
@@ -22,7 +27,11 @@
   .doc-table tr {
     break-inside: avoid;
   }
+  .doc-scroll {
+    overflow: visible;
+  }
 }
+
 
 /* User-written Markdown (deploy notes), rendered by SafeMarkdown. */
 .markdown > * + * {
