@@ -5,7 +5,8 @@ last deploy break it.**
 
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 
-The hosted version at deployhealth.dev is free while in beta.
+The hosted version at deployhealth.dev is free while in beta. Its home page explains the product in
+one screen and links to the demo; once you're signed in, it takes you straight to your clients.
 
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
@@ -93,8 +94,11 @@ creates a signed link your client can open without an account, valid for 90 days
 The demo is a real deployhealth instance showing sample clients (Acme Corp, Northwind Bakery), read
 only, no sign-up: **https://deployhealth.dev/demo**
 
-Its alert is real: "Acme API" points at an endpoint that always answers 503, and the worker checks
-it every minute. The data resets to its starting state every night.
+Clients, deploys and pull request checks are sample data. The alert is real: "Acme API" points at an
+endpoint that always answers 503, and the worker checks it every minute. The worker reseeds the demo
+every 30 minutes, so whenever you look, the deploy behind the incident is 12 to 42 minutes old and
+Acme API has been down for well under an hour. The sample pull requests aren't on GitHub, so the
+demo doesn't link to them.
 
 To run it yourself, follow [Local setup](#local-setup) and open http://localhost:3000/demo.
 
@@ -119,6 +123,13 @@ to report a vulnerability, with our commitment to email affected users within 72
 confirming an incident. The same contact is in
 [`/.well-known/security.txt`](https://deployhealth.dev/.well-known/security.txt).
 
+[**/privacy**](https://deployhealth.dev/privacy) says what the hosted service stores about you, for
+how long, where (Railway, Singapore), who processes it, and how to have it deleted;
+[**/terms**](https://deployhealth.dev/terms) are the short terms of the beta. Both are linked in
+the footer. Every response carries `X-Content-Type-Options`, `Referrer-Policy`,
+`X-Frame-Options: DENY` with `frame-ancestors 'none'`, and a `Permissions-Policy`; HSTS is set at
+the proxy (Cloudflare), not by the app.
+
 ## Licensing
 
 The CLI and scanner (packages/core) are MIT. The web app and worker are FSL-1.1-MIT: free to use and
@@ -136,6 +147,7 @@ self-host, not to offer as a competing hosted service; converts to MIT two years
 | 2. Clients, uptime and alerts | Done | Clients, uptime checks from a worker, alerts linked to deploys, Slack/Discord webhooks |
 | 3. Demo, handoff and reports | Done | Public read-only demo, endpoint names, handoff export, monthly client reports with share links |
 | 4. Security and pull requests | Done | CLI on npm, hard caps, /security, GitHub App env checks on every pull request |
+| 4.5 Launch polish | Done | Landing page, a demo that's fresh at any hour with sample PR checks, phone layouts, /privacy and /terms, link previews, security headers |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -243,7 +255,9 @@ contents: read` to the job and `package-manager-cache: false` to `actions/setup-
 - **`prune-checks`** runs nightly (03:17 UTC): it rolls every complete UTC day up into daily
   totals, then deletes raw checks from whole days more than 30 days back. Reports read the daily
   totals, so months stay accurate after the raw checks are gone.
-- **`reseed-demo`** (only with `DEMO_PUBLIC=1`) restores the public demo nightly and on start.
+- **`reseed-demo`** (only with `DEMO_PUBLIC=1`) restores the public demo every 30 minutes and on
+  start, in one transaction (about a second). A failed run (say, the worker started before web
+  applied a new migration) retries after 1, 2, 4, 8 and 16 minutes.
 
 ### Alerts and the correlation rule
 
