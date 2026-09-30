@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { generateToken, hashToken, tokenHint, type EnvFileBasename, type FindingRow, type RequiredVariable } from '@deployhealth/core';
+import { generateToken, hashToken, tokenHint, type EnvFileBasename, type EnvScope, type FindingRow, type RequiredVariable } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { createClient } from './clients';
 import type { Db } from './client';
@@ -95,6 +95,8 @@ export interface SeedDeploy {
   source: 'ingest' | 'manual';
   findings: FindingRow[];
   variables: RequiredVariable[];
+  /** The scopes and their env files, as CLI 0.2.0+ reports them. */
+  envScopes: EnvScope[];
 }
 
 /** A variable the code references in `scope` from deploy `from` on (1-based). */
@@ -103,13 +105,15 @@ interface DemoVariable {
   name: string;
   definedIn: EnvFileBasename[];
   from?: number;
+  /** Every reference has an inline default (e.g. `process.env.PORT ?? 3000`). */
+  optional?: true;
 }
 
 /** What acme-storefront's code references, per env scope. */
 const STOREFRONT_VARIABLES: DemoVariable[] = [
   { scope: 'apps/api', name: 'DATABASE_URL', definedIn: ['.env.example', '.env'] },
   { scope: 'apps/api', name: 'JWT_SECRET', definedIn: ['.env.example', '.env'] },
-  { scope: 'apps/api', name: 'PORT', definedIn: ['.env.example'] },
+  { scope: 'apps/api', name: 'PORT', definedIn: ['.env.example'], optional: true },
   { scope: 'apps/api', name: 'LOG_LEVEL', definedIn: ['.env.example', '.env'] },
   { scope: 'apps/api', name: 'SENTRY_DSN', definedIn: ['.env.example', '.env'] },
   { scope: 'apps/api', name: 'STRIPE_WEBHOOK_SECRET', definedIn: ['.env.example', '.env'], from: 4 },
@@ -125,6 +129,9 @@ const STOREFRONT_VARIABLES: DemoVariable[] = [
   { scope: 'apps/worker', name: 'S3_BUCKET', definedIn: ['.env.example'] },
 ];
 
+/** acme-storefront's scopes: each app has a .env.example and a committed .env. */
+const STOREFRONT_ENV_SCOPES: EnvScope[] = ['apps/api', 'apps/web', 'apps/worker'].map((scope) => ({ scope, env_files: ['.env.example', '.env'] }));
+
 /** The env scope a file belongs to in the demo repos: `apps/<name>` or the root. */
 const scopeOf = (file: string | null) => /^apps\/[^/]+/.exec(file ?? '')?.[0] ?? '';
 
@@ -136,7 +143,12 @@ function variablesAt(n: number, list: DemoVariable[], findings: FindingRow[]): R
   const missing = new Set(findings.filter((f) => f.kind === 'missing').map((f) => `${scopeOf(f.file)}:${f.var_name}`));
   return list
     .filter((v) => n >= (v.from ?? 1))
-    .map((v) => ({ var_name: v.name, scope: v.scope, defined_in: missing.has(`${v.scope}:${v.name}`) ? [] : v.definedIn }));
+    .map((v) => ({
+      var_name: v.name,
+      scope: v.scope,
+      defined_in: missing.has(`${v.scope}:${v.name}`) ? [] : v.definedIn,
+      ...(v.optional ? { optional: v.optional } : {}),
+    }));
 }
 
 const STOREFRONT_DEPLOY_NOTES = `## Where it runs
@@ -184,6 +196,7 @@ export function demoDeploys(now: Date): SeedDeploy[] {
       source: n === 7 ? 'manual' : 'ingest',
       findings: STOREFRONT_ISSUES.filter((i) => n >= i.from && n <= i.to).map((i) => i.finding),
       variables: [],
+      envScopes: STOREFRONT_ENV_SCOPES,
     };
   }).map((d, index) => ({ ...d, variables: variablesAt(index + 1, STOREFRONT_VARIABLES, d.findings) }));
 }
@@ -203,18 +216,24 @@ function northwindDeploys(now: Date): SeedDeploy[] {
     source: 'ingest',
     findings,
     variables: variablesAt(n, list, findings),
+    envScopes: [{ scope: '', env_files: ['.env.example', '.env'] }],
   });
   return [deploy(1, hoursAgo(now, 150), [webhook, sendgrid]), deploy(2, hoursAgo(now, 90), [sendgrid]), deploy(3, hoursAgo(now, 26), [sendgrid])];
 }
 
+/**
+ * portfolio has no env file at all, as many small projects start: its variables are listed (with
+ * no MISSING rows), and the project page shows "No .env.example here" with a copyable one.
+ */
 function portfolioDeploys(now: Date): SeedDeploy[] {
   const variables: RequiredVariable[] = [
-    { var_name: 'CONTACT_FORM_ENDPOINT', scope: '', defined_in: ['.env.example'] },
-    { var_name: 'NEXT_PUBLIC_SITE_URL', scope: '', defined_in: ['.env.example'] },
+    { var_name: 'CONTACT_FORM_ENDPOINT', scope: '', defined_in: [] },
+    { var_name: 'NEXT_PUBLIC_SITE_URL', scope: '', defined_in: [] },
   ];
+  const envScopes: EnvScope[] = [{ scope: '', env_files: [] }];
   return [
-    { sha: sha('portfolio-1'), branch: 'main', deployedAt: hoursAgo(now, 130), source: 'ingest', findings: [], variables },
-    { sha: sha('portfolio-2'), branch: 'main', deployedAt: hoursAgo(now, 50), source: 'ingest', findings: [], variables },
+    { sha: sha('portfolio-1'), branch: 'main', deployedAt: hoursAgo(now, 130), source: 'ingest', findings: [], variables, envScopes },
+    { sha: sha('portfolio-2'), branch: 'main', deployedAt: hoursAgo(now, 50), source: 'ingest', findings: [], variables, envScopes },
   ];
 }
 
