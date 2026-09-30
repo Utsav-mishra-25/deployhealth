@@ -4,6 +4,30 @@ import { expect, test } from '@playwright/test';
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 const SCRIPTED_ALERT = 'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY';
 
+test('landing page for a signed-out visitor, one click to the demo', async ({ page }) => {
+  const response = await page.goto('/');
+  expect(response?.status()).toBe(200);
+  await expect(page).toHaveURL(/\/$/);
+  const landing = page.getByTestId('landing');
+  await expect(landing.getByRole('alert')).toContainText(SCRIPTED_ALERT);
+  await expect(landing.getByRole('heading', { level: 1 })).toHaveText(/tells you which deploy broke what\.$/);
+  await expect(landing).toContainText('Free while in beta.');
+  await expect(landing).not.toContainText(/\$\d|per month|pricing/i);
+  await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
+  await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('type', 'image/svg+xml');
+
+  await landing.getByRole('link', { name: 'See the live demo' }).click();
+  await expect(page).toHaveURL(/\/demo$/);
+  await expect(page.getByRole('note', { name: 'Demo' })).toContainText('pull request checks are sample data, read-only');
+
+  await page.goto('/');
+  await page.getByTestId('landing').getByRole('link', { name: 'Sign in with GitHub' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('link', { name: 'See a live demo' })).toBeVisible();
+});
+
 test('public demo without a session: clients, project, handoff and report', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('link', { name: 'See a live demo' }).click();
@@ -17,32 +41,45 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.getByRole('link', { name: 'New client' })).toHaveCount(0);
   const storefrontRow = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' });
   await expect(storefrontRow.getByTestId('uptime-badge')).toHaveText('Down');
-  await expect(storefrontRow.getByTestId('failing-for')).toHaveText(/^Acme API down for 2\dm$/);
+  // Fresh at any hour: the worker reseeds every 30 minutes, so it's always been down for under an hour.
+  await expect(storefrontRow.getByTestId('failing-for')).toHaveText(/^Acme API down for [1-5]?\dm$/);
   await expect(page.getByTestId('project-row').filter({ hasText: 'northwind-site' }).getByTestId('failing-for')).toHaveCount(0);
 
   // The project: the real alert, named endpoints, percentages kept, nothing editable.
   await storefrontRow.getByRole('link', { name: 'acme-storefront' }).click();
   await expect(page).toHaveURL(`/demo/projects/${STOREFRONT}`);
+  await expect(page).toHaveTitle('acme-storefront · Live demo · deployhealth');
+  // Link previews stay generic: no project or client names in the Open Graph title.
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
   await expect(page.getByRole('alert').filter({ hasText: 'Acme API started failing' })).toContainText(SCRIPTED_ALERT);
   const apiCard = page.getByTestId('endpoint-card').filter({ hasText: 'Acme API' });
   await expect(apiCard.getByTestId('endpoint-status')).toHaveText('Down');
-  await expect(apiCard.getByTestId('failing-for')).toHaveText(/^Down for 2\dm$/);
+  await expect(apiCard.getByTestId('failing-for')).toHaveText(/^Down for [1-5]?\dm$/);
   await expect(apiCard.locator('header')).toContainText(/24h\s*[\d.]+%\s*7d\s*[\d.]+%/);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Acme Corp');
   await expect(page.locator('main form')).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Settings/ })).toHaveCount(0);
 
-  // Pull requests the GitHub App checked, with the agent that wrote each.
+  // Sample pull request checks: the agent PR behind the incident, a clean rename, a strict failure.
+  // They aren't real pull requests, so nothing links to GitHub.
   const prs = page.getByRole('region', { name: 'Pull requests' });
   await expect(prs.getByTestId('pr-check-row')).toHaveCount(3);
+  await expect(prs.getByTestId('sample-marker')).toHaveCount(3);
   const claudePr = prs.getByTestId('pr-check-row').filter({ hasText: '#87' });
   await expect(claudePr.getByTestId('agent-badge')).toHaveText('Claude');
-  await expect(claudePr.getByTestId('pr-undeclared')).toHaveText('1');
-  await expect(claudePr.getByRole('link', { name: '#87' })).toHaveAttribute('href', 'https://github.com/acme/storefront/pull/87');
+  await expect(claudePr.getByTestId('pr-undeclared')).toHaveText('2');
+  await expect(claudePr).toContainText('Flagged');
+  await expect(prs.getByTestId('pr-check-row').filter({ hasText: '#86' })).toContainText('Passed');
+  const strictPr = prs.getByTestId('pr-check-row').filter({ hasText: '#88' });
+  await expect(strictPr).toContainText('Failed');
+  await expect(strictPr).toContainText('1 possible secret');
+  await expect(prs.getByRole('link')).toHaveCount(0);
+  await expect(page.locator('main a[href*="github.com"]')).toHaveCount(0);
 
   // Export the handoff: the printable page, then the Markdown download.
   await page.getByRole('link', { name: 'Export handoff' }).click();
   await expect(page.getByRole('heading', { name: 'Handoff: acme-storefront' })).toBeVisible();
+  await expect(page).toHaveTitle('Handoff · acme-storefront · Live demo · deployhealth');
   await expect(page.getByTestId('handoff')).toContainText('All times UTC');
   await expect(page.getByTestId('handoff-variables').first()).toContainText('REDIS_URL');
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Download Markdown' }).click()]);
@@ -54,18 +91,23 @@ test('public demo without a session: clients, project, handoff and report', asyn
   // The client's monthly report, and the month's agent pull requests.
   await page.goto('/demo/clients/acme-corp');
   await expect(page.getByTestId('agent-pr-stat')).toContainText(/Agent PRs that added undeclared env vars this month: \d+ of \d+/);
+  await expect(page).toHaveTitle('Acme Corp · Live demo · deployhealth');
   await page.getByRole('link', { name: 'Monthly report' }).click();
   await expect(page.getByTestId('report-summary')).toHaveText(/^1 project, .+ uptime, .+, \d+ deploys?, .+ fixed$/);
+  await expect(page).toHaveTitle(/^Report · [A-Z][a-z]+ \d{4} · Live demo · deployhealth$/);
   await expect(page.getByTestId('report')).toContainText('All times UTC');
   await expect(page.getByRole('button', { name: 'Share report' })).toHaveCount(0);
 });
 
 test('signed in: client and project, a named endpoint, deploy notes, handoff and a shared report', async ({ page, browser }) => {
-  await page.goto('/');
-  await expect(page).toHaveURL(/\/login$/);
+  await page.goto('/login');
   await page.getByRole('button', { name: 'Continue as dev user' }).click();
   await expect(page).toHaveURL(/\/clients$/);
   await expect(page.getByTestId('current-user')).toHaveText('dev');
+  // Signed in, the home page is the clients page, as before.
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/clients$/);
+  await expect(page.getByTestId('landing')).toHaveCount(0);
 
   // Create a client, then a project for it (preselected from the client page).
   const suffix = Date.now();
@@ -104,6 +146,7 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
 
   await page.getByRole('link', { name: 'Go to project' }).click();
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
+  await expect(page).toHaveTitle(`${projectName} · deployhealth`);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(clientName);
   await expect(page.getByRole('cell', { name: 'src/server.ts:4' })).toBeVisible();
   const projectUrl = page.url();
@@ -153,6 +196,7 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   await page.getByRole('link', { name: 'Monthly report' }).click();
   await expect(page.getByTestId('report-summary')).toHaveText(/^1 project, /);
   await page.getByRole('button', { name: 'Share report' }).click();
+  await expect(page).toHaveTitle(/^Report · [A-Z][a-z]+ \d{4} · deployhealth$/);
   const shareUrl = await page.getByLabel('Share link').inputValue();
   expect(shareUrl).toMatch(/\/share\/reports\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
 
@@ -160,6 +204,10 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   const shared = await stranger.newPage();
   await shared.goto(shareUrl);
   await expect(shared.getByRole('heading', { name: new RegExp(`${clientName} · `) })).toBeVisible();
+  // The client's name stays out of the title and the link preview.
+  await expect(shared).toHaveTitle('Monthly report · deployhealth');
+  await expect(shared.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
+  await expect(shared.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow');
   await expect(shared.getByTestId('report-project')).toHaveCount(1);
   await expect(shared.getByTestId('report-project')).toContainText(projectName);
   await expect(shared.getByTestId('current-user')).toHaveCount(0);
@@ -192,4 +240,32 @@ test('security: public page linked from the footer, and security.txt', async ({ 
   const body = await txt.text();
   expect(body).toMatch(/^Contact: mailto:security@deployhealth\.example\nExpires: \d{4}-\d\d-\d\dT00:00:00\.000Z\n/);
   expect(body).toMatch(/\nPolicy: http:\/\/localhost:\d+\/security\n$/);
+});
+
+test('privacy and terms: public pages linked from the footer', async ({ page }) => {
+  await page.goto('/');
+  const footer = page.getByRole('navigation', { name: 'Footer' });
+  await expect(footer.getByRole('link')).toHaveText(['Security', 'Privacy', 'Terms', 'Source on GitHub']);
+  await footer.getByRole('link', { name: 'Privacy' }).click();
+  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(page.getByTestId('privacy')).toContainText('Utsav Mishra (India)');
+  await expect(page.getByTestId('privacy')).toContainText('even if it is private on GitHub');
+  await expect(page.getByTestId('last-updated')).toHaveText(/^Last updated: \d{1,2} [A-Z][a-z]+ \d{4}$/);
+  await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Terms' }).click();
+  await expect(page).toHaveURL(/\/terms$/);
+  await expect(page.getByTestId('terms')).toContainText('Only monitor endpoints you own or are authorised to check.');
+});
+
+test('security headers on pages, route handlers and downloads', async ({ request }) => {
+  for (const path of ['/', '/demo', '/api/health', '/sitemap.xml', `/demo/projects/${STOREFRONT}/handoff.md`]) {
+    const headers = (await request.get(path)).headers();
+    expect(headers['x-content-type-options'], path).toBe('nosniff');
+    expect(headers['referrer-policy'], path).toBe('strict-origin-when-cross-origin');
+    expect(headers['x-frame-options'], path).toBe('DENY');
+    expect(headers['content-security-policy'], path).toBe("frame-ancestors 'none'");
+    expect(headers['permissions-policy'], path).toBe('camera=(), microphone=(), geolocation=()');
+    expect(headers['strict-transport-security'], path).toBeUndefined();
+  }
+  const sitemap = await (await request.get('/sitemap.xml')).text();
+  for (const path of ['/demo', '/security', '/privacy', '/terms']) expect(sitemap).toContain(`<loc>http://localhost:3100${path}</loc>`);
 });
