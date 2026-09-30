@@ -33,7 +33,10 @@
 }
 
 
-/* User-written Markdown (deploy notes), rendered by SafeMarkdown. */
+/* User-written Markdown (deploy notes), rendered by SafeMarkdown. Long URLs wrap on phones. */
+.markdown {
+  overflow-wrap: break-word;
+}
 .markdown > * + * {
   margin-top: 0.75rem;
 }

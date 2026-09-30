@@ -85,13 +85,13 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
           <>
             <p className="text-sm text-gray-600">
               Every variable the code references in the latest scan (deploy <code className="font-mono">{data.scan.sha.slice(0, 7)}</code> on{' '}
-              <code className="font-mono">{data.scan.branch}</code>, {formatUtc(data.scan.deployedAt)}), grouped by the env-file scope that has
+              <code className="font-mono break-all">{data.scan.branch}</code>, {formatUtc(data.scan.deployedAt)}), grouped by the env-file scope that has
               to define it.{' '}
               {missing ? <strong className="text-red-700">{plural(missing, 'variable')} missing.</strong> : 'None missing.'}
             </p>
             {groups.map((group) => (
               <div key={group.scope} className="space-y-1">
-                <h3 className="text-sm font-semibold">{group.scope === '' ? group.label : <code className="font-mono">{group.scope}</code>}</h3>
+                <h3 className="text-sm font-semibold">{group.scope === '' ? group.label : <code className="font-mono break-all">{group.scope}</code>}</h3>
                 <table className="doc-table w-full table-fixed text-sm" data-testid="handoff-variables">
                   <colgroup>
                     <col className="w-[45%]" />
@@ -177,10 +177,10 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
                 <h3 className="text-sm font-semibold">
                   {section.title} ({rows.length}) <span className="font-normal text-gray-500">· {section.blurb}</span>
                 </h3>
-                <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                <ul className="list-disc space-y-0.5 pl-5 text-sm break-words">
                   {rows.map((f, i) => (
                     <li key={`${f.var_name}-${i}`}>
-                      <code className="font-mono">{f.var_name}</code>: {describeFinding(f)}
+                      <code className="font-mono break-all">{f.var_name}</code>: {describeFinding(f)}
                     </li>
                   ))}
                 </ul>

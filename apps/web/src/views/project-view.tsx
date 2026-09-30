@@ -103,8 +103,8 @@ export async function ProjectView({
             <h2 id="summary" className="text-lg font-semibold">
               {isLatest ? 'Latest scan' : 'Scan'}
             </h2>
-            <span className="text-sm text-gray-500">
-              <code className="font-mono">{shortSha(detail.deploy.sha)}</code> on {detail.deploy.branch} · deployed{' '}
+            <span className="text-sm break-words text-gray-500">
+              <code className="font-mono">{shortSha(detail.deploy.sha)}</code> on <span className="break-all">{detail.deploy.branch}</span> · deployed{' '}
               <TimeAgo date={detail.deploy.deployedAt} /> · scanned <TimeAgo date={detail.scan.createdAt} />
             </span>
             {!isLatest && (

@@ -188,10 +188,10 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
                     <p className="text-sm">
                       {section.title} ({rows.length}) <span className="text-gray-500">· {section.blurb}</span>
                     </p>
-                    <ul className="list-disc pl-5 text-sm">
+                    <ul className="list-disc pl-5 text-sm break-words">
                       {rows.map((f, i) => (
                         <li key={`${f.var_name}-${i}`}>
-                          <code className="font-mono">{f.var_name}</code>: {describeFinding(f)}
+                          <code className="font-mono break-all">{f.var_name}</code>: {describeFinding(f)}
                         </li>
                       ))}
                     </ul>
