@@ -94,7 +94,9 @@ export function Landing({ demo }: { demo: boolean }) {
       <section aria-label="Trust" className="rounded-lg border border-gray-200 bg-white p-5">
         <ul className="grid gap-3 text-sm text-gray-700 sm:grid-cols-3">
           <li>
-            <strong className="font-medium text-gray-900">Never reads your env values or response bodies.</strong>{' '}
+            <strong className="font-medium text-gray-900">
+              Your env values never leave your CI: we only see names and file:line. Response bodies are never read.
+            </strong>{' '}
             <Link href="/security" className="text-emerald-700 underline">
               What we store
             </Link>
