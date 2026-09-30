@@ -78,7 +78,7 @@ export function parseBearer(header: string | null | undefined): string | null {
   return token?.startsWith(TOKEN_PREFIX) ? token : null;
 }
 
-/** The pinned CLI invocation, e.g. `npx --yes deployhealth-scan@0.1.0`. */
+/** The pinned CLI invocation, e.g. `npx --yes deployhealth-scan@0.2.0`. */
 export const cliNpx = (version: string = PUBLISHED_CLI_VERSION) => `npx --yes ${CLI_NPM_PACKAGE}@${version}`;
 export const CLI_NPX = cliNpx();
 

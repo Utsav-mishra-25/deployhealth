@@ -28,13 +28,11 @@ jobs:
       - name: Scan env vars and report to deployhealth
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
-        # Same flags as `pnpm scan:self`: skip the scanner's deliberately broken test fixture, and
-        # NODE_ENV, which the runtime sets.
+        # No --exclude or --ignore, like `pnpm scan:self`: the CLI skips NODE_ENV and the scanner's
+        # test fixtures by default.
         run: |
-          npx --yes deployhealth-scan@0.1.0 \
+          npx --yes deployhealth-scan@0.2.0 \
             --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
-            --branch "$GITHUB_REF_NAME" \
-            --exclude packages/core/test/ \
-            --ignore NODE_ENV
+            --branch "$GITHUB_REF_NAME"
