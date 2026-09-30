@@ -53,9 +53,12 @@ apps/
     railway.json      documentation only, like web's
 packages/
   core/               scanner + shared contract, no framework deps
-    src/scan.ts       scanProject(): walks the repo, env scopes, findings rows
-    src/scanner.ts    per-language regexes (JS/TS, Python, Go, Ruby)
-    src/findings.ts   analyzeScope() / summarize(): MISSING, UNUSED, MISMATCH
+    src/scan.ts       scanProject(): walks the repo, env scopes (+ envScopes, defaultIgnored), findings rows
+    src/scanner.ts    per-language regexes (JS/TS incl. .mjs/.cjs/.mts/.cts, Python, Go, Ruby) and
+                      same-line inline defaults (Reference.hasDefault)
+    src/findings.ts   analyzeScope() / summarize(): MISSING, UNUSED, MISMATCH; newMissingVars() /
+                      newUndeclaredVars() for deploy correlation
+    src/default-ignore.ts  DEFAULT_IGNORE: names the platform or runtime provides, skipped by default
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
     src/cli.ts        deployhealth-scan (bundled by tsup into one 12 KB file, served by web)
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
@@ -69,7 +72,7 @@ packages/
     src/report.ts     report months (UTC), findingsDiff(), ReportData, reportTotals(), summaryLine()
     src/browser.ts    `@deployhealth/core/browser`: the pure subset for client components
   db/                 Drizzle schema, migrations (drizzle/), queries, seed
-    src/schema.ts     users, clients, projects, deploys, scans, findings, scan_variables,
+    src/schema.ts     users, clients, projects, deploys, scans (+ env_scopes), findings, scan_variables (+ optional),
                       endpoints, checks, check_hosts, endpoint_daily_stats, alerts, installations,
                       installation_repos, pr_checks, webhook_deliveries
     src/queries.ts    users, projects, ingest (recordScan + variables), deploys/scans reads
@@ -129,8 +132,9 @@ never match a real GitHub account) owns, in **one transaction**, with:
   `/demo/projects/<id>` links survive reseeds;
 - four endpoints, three **named** ("Acme API", "Acme storefront", "Northwind site"; portfolio's is
   unnamed to show the host fallback), with 7 days of checks (deterministic PRNG);
-- every deploy's scan with **variables** consistent with its MISSING findings, and deploy notes for
-  two projects (handoff demo);
+- every deploy's scan with **variables** consistent with its MISSING findings, **env scopes**, and
+  deploy notes for two projects (handoff demo). **portfolio has no env file**, so its page shows the
+  "No .env.example here" notice and its handoff a starting `.env.example`; acme's `PORT` is optional;
 - the **scripted incident**: acme-storefront's last deploy (b52952e, 12 minutes ago) introduces
   REDIS_URL and STRIPE_KEY; "Acme API" (`<DEMO_BASE_URL>/api/demo/broken`, always 503) fails from
   4 minutes later. Those failing checks are replayed through the real `recordCheck()`, so the open
@@ -178,7 +182,8 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **e2e** re-seeds the database in `apps/web/.env.local`, starts `next dev` on :3100 with the dev
   login and the demo on, and runs: the landing page (signed out, one click to the demo); the public
   demo without a session (overview → project with its sample PR checks → handoff page and `.md`
-  download → monthly report); the signed-in flow as the dev user (`/` → /clients, client → project
+  download → monthly report); portfolio's "No .env.example here" notice → the handoff's starting
+  `.env.example` (page and `.md`); the signed-in flow as the dev user (`/` → /clients, client → project
   → scan with variables → named endpoint → SSRF rejection → untrusted deploy notes in the handoff
   → share a report → open the link in a fresh context → tampered link 404s); /privacy and /terms;
   the security headers; and `mobile.spec.ts`, which checks at 375×812 that no public or signed-in
@@ -216,7 +221,8 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **Env vars:** each app reads `process.env` only in its `env.ts`, and by name
   (`DATABASE_URL: process.env.DATABASE_URL`), never by spreading `process.env`. That keeps
   `pnpm scan:self` meaningful. Every variable must appear in that app's `.env.example`.
-  Runtime-provided ones (currently only `NODE_ENV`) go in the self-scan's `--ignore` list.
+  Runtime-provided ones (`NODE_ENV`) are skipped by the scanner's `DEFAULT_IGNORE`, so the
+  self-scan needs no `--ignore`.
 - **Authorization:** every read or write of clients, projects, endpoints, checks and alerts goes
   through a query that takes the signed-in user's id and filters on it (`getProjectForOwner`,
   `getClientBySlug(db, userId, …)`, `updateEndpoint(db, ownerId, …)`, …). Assigning a project to
@@ -299,7 +305,19 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   plaintext is shown once, on creation or regeneration.
 - **Ingest:** authenticate first, then read the body (5 MB cap), validate with the zod schema from
   `@deployhealth/core`, and store through `recordScan()`, which computes counts server-side. A
-  re-reported sha adds a scan to the existing deploy.
+  re-reported sha adds a scan to the existing deploy. Every field a CLI release adds is optional
+  (`variables` in 0.1.0; `variables[].optional` and `env_scopes` in 0.2.0), so older payloads keep
+  working and are stored as before (`scans.env_scopes` null, nothing optional); zod drops fields it
+  doesn't know. Deploy the server before publishing a CLI that sends new values (0.2.0's env file
+  names would fail an older server's enum). `test/ingest-handler.test.ts` pins a 0.1.0 payload.
+- **The quieter first scan** (core, so the CLI and the GitHub App's PR checks share it):
+  `DEFAULT_IGNORE` (exact GitHub Actions names, never a `GITHUB_*` prefix: apps own GITHUB_ names;
+  `--no-default-ignore` / `defaultIgnore: false`); a reference with a same-line default (JS `??`/`||`,
+  Python a second argument or `or`, Ruby `ENV.fetch` default/block and `ENV[..] ||`; not
+  `undefined`/`null`/`None`/`nil`) is never MISSING, and a variable read only that way is
+  `optional`; a scope with no env file gets no MISSING rows, only its `EnvScope`, which the project
+  page turns into one notice and the handoff into a starting `.env.example`. PR checks count an
+  optional variable as declared.
 - **Client components** import only from `@deployhealth/core/browser` (the main entry pulls in
   `node:fs` / `node:crypto`). Type-only imports from the main entry are fine.
 - **The dev login** ("Continue as dev user", provider `dev`, signs in as the writable `dev` user,
@@ -312,10 +330,13 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   so they're unit-tested without pg-boss. `index.ts` only wires queues, schedules and real deps.
   Every queue uses the `singleton` policy. Checks are scheduled per endpoint via `next_check_at`,
   never with a cron per endpoint.
-- **Scanner fixture:** `packages/core/test/fixtures/project` is deliberately broken and must stay
-  in sync with the expectations in `test/scan.test.ts`. Its `.env` files are committed through
-  negations in the root `.gitignore`. Decoys (node_modules, dist, .git, …) are written into a temp
-  copy at test time rather than committed.
+- **Scanner fixtures:** `packages/core/test/fixtures/project` is deliberately broken and must stay
+  in sync with the expectations in `test/scan.test.ts`; `fixtures/defaults` covers the quieter
+  scan (every default form, the ignore list, the newer extensions and env file names, a scope with
+  no env file) for `test/scan-defaults.test.ts`. Their `.env`, `.env.local` and `.env.*.local`
+  files are committed through negations in the root `.gitignore`. Decoys (node_modules, dist,
+  .git, …) are written into a temp copy at test time rather than committed. The scanner reads
+  comments too, so write example code in comments as `process.env.<NAME>`.
 
 ## Releasing the CLI (`deployhealth-scan` on npm)
 
@@ -429,9 +450,13 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
 - **Resolve** on the next ok check.
 - **Correlation:** link (`related_deploy_id`) the project's most recent deploy in the **30 minutes
   before the first failed check**. Compare that deploy's latest scan with the previous scanned
-  deploy's latest scan, and list only the MISSING vars that are **new**. The message is built by
-  `alertOpenedMessage()`: "…started failing 4m after deploy b52952e, which introduced 2 missing
-  env vars: …", "…which had no new config findings", or "…no deploy in the 30 minutes before the
+  deploy's latest scan, and list only the MISSING vars that are **new**. Scopes with no env file
+  have no MISSING rows, so for those (only when the scan has `env_scopes`, i.e. CLI 0.2.0+) the
+  new list is the non-optional variables they reference that the previous scan didn't reference at
+  all (its variables plus its findings' names; no previous scan: all of them). The message is built
+  by `alertOpenedMessage()`: "…started failing 4m after deploy b52952e, which introduced 2 missing
+  env vars: …", "…which introduced 2 new env vars no env file declares: …" (both kinds joined by
+  ", plus"), "…which had no new config findings", or "…no deploy in the 30 minutes before the
   first failure".
 - **Webhook:** if `projects.alert_webhook_url` is set, POST `{text}` on open and on resolve. Log
   and continue on failure; at most one retry.
