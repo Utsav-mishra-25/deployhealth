@@ -15,6 +15,12 @@ export interface Reference {
   line: number;
   column: number;
   syntax: Syntax;
+  /**
+   * The code supplies a default on the same line (`process.env.X ?? 'a'`, `os.getenv("X", "a")`,
+   * Ruby's ENV.fetch with a default or a block, …), so a missing definition isn't an error. Only
+   * set when true.
+   */
+  hasDefault?: true;
 }
 
 /** The env files read in every scope, in the order handoffs and reports list them. */
