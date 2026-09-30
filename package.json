@@ -17,7 +17,7 @@
     "db:migrate": "pnpm --filter @deployhealth/db migrate",
     "db:seed": "pnpm --filter @deployhealth/db seed",
     "e2e": "pnpm --filter @deployhealth/web e2e",
-    "scan:self": "pnpm --filter @deployhealth/core build && node packages/core/bin/deployhealth-scan.mjs --dry-run --exclude packages/core/test/ --ignore NODE_ENV"
+    "scan:self": "pnpm --filter @deployhealth/core build && node packages/core/bin/deployhealth-scan.mjs --dry-run --exclude packages/core/test/"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
