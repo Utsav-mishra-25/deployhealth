@@ -4,11 +4,11 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { listClientsOverview } from '../src/clients';
 import { agentPrStats, listPrChecksForOwner } from '../src/github';
 import { getHandoffData } from '../src/handoff';
-import { DEMO_GITHUB_ID, DEMO_PROJECT_IDS } from '../src/demo';
+import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_PROJECT_IDS } from '../src/demo';
 import { getProjectMonitoring, listOpenAlerts } from '../src/monitoring';
-import { findProjectByTokenHash, getLatestScan, listDeploys } from '../src/queries';
+import { findProjectByTokenHash, getLatestScan, getProjectForOwner, listDeploys } from '../src/queries';
 import { alerts, checks, clients, endpoints, installations, prChecks, projects, users } from '../src/schema';
-import { DEMO_DEPLOY_COUNT, DEMO_PROJECT, demoBrokenUrl, demoDeploys, SCENARIO, seed } from '../src/seed';
+import { DEMO_DEPLOY_COUNT, DEMO_FRESHNESS, DEMO_PROJECT, demoBrokenUrl, demoDeploys, SCENARIO, seed } from '../src/seed';
 import { makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
@@ -97,7 +97,7 @@ describe('seed', () => {
 
     expect(api.status).toBe('down');
     expect(api.failingSince).toEqual(FIRST_FAILURE);
-    expect(api.endpoint.consecutiveFailures).toBeGreaterThanOrEqual(20);
+    expect(api.endpoint.consecutiveFailures).toBe(SCENARIO.deployMinutesAgo - SCENARIO.failureAfterDeployMinutes);
     expect(api.recent[0]).toMatchObject({ ok: false, statusCode: 503 });
     expect(api.uptime7d).toBeGreaterThan(0.99);
     expect(api.latency.length).toBeGreaterThanOrEqual(23);
@@ -137,6 +137,9 @@ describe('seed', () => {
     const second = await seed(db, later);
 
     expect(await db.select().from(users)).toHaveLength(2);
+    // The demo user row survives reseeds: ids a request read before a reseed stay valid after it.
+    expect(second.userId).toBe(first.userId);
+    expect((await db.select({ id: endpoints.id }).from(endpoints)).map((e) => e.id).sort()).toEqual(Object.values(DEMO_ENDPOINT_IDS).sort());
     expect(await db.select().from(clients)).toHaveLength(2);
     expect((await db.select({ id: projects.id }).from(projects)).map((p) => p.id).sort()).toEqual(Object.values(DEMO_PROJECT_IDS).sort());
     expect(second.projectId).toBe(first.projectId);
@@ -161,6 +164,28 @@ describe('seed', () => {
     expect(acme!.projects[0]!.openPrsWithUndeclared).toBe(1);
     const september = [new Date('2026-09-01T00:00:00Z'), new Date('2026-10-01T00:00:00Z')] as const;
     expect(await agentPrStats(db, userId, acme!.id, ...september)).toEqual({ undeclared: 1, total: 2 });
+  });
+
+  it('keeps the incident fresh: the deploy is inside the freshness window and Acme API has been down under an hour', async () => {
+    const result = await seed(db, NOW);
+    const [latest] = await listDeploys(db, result.projectId);
+    const deployAgeMinutes = (NOW.getTime() - latest!.deploy.deployedAt.getTime()) / 60_000;
+    expect(deployAgeMinutes).toBeGreaterThanOrEqual(DEMO_FRESHNESS.minDeployAgeMinutes);
+    expect(deployAgeMinutes).toBeLessThanOrEqual(DEMO_FRESHNESS.maxDeployAgeMinutes);
+    const api = (await getProjectMonitoring(db, result.userId, result.projectId, NOW)).find((m) => m.endpoint.name === SCENARIO.endpointName)!;
+    expect((NOW.getTime() - api.failingSince!.getTime()) / 60_000).toBeLessThan(DEMO_FRESHNESS.maxDownMinutes);
+  });
+
+  it('never leaves a request that started before a reseed with an empty or missing demo', async () => {
+    const first = await seed(db, NOW);
+    // What a /demo request resolved before the reseed committed…
+    const ownerId = first.userId;
+    await seed(db, new Date(NOW.getTime() + 30 * 60_000));
+    // …still finds the demo's clients and projects after it.
+    const overview = await listClientsOverview(db, ownerId);
+    expect(overview.clients.map((c) => c.name)).toEqual(['Acme Corp', 'Northwind Bakery']);
+    expect(await getProjectForOwner(db, DEMO_PROJECT_IDS.storefront, ownerId)).toMatchObject({ name: DEMO_PROJECT.name });
+    expect(await getProjectMonitoring(db, ownerId, DEMO_PROJECT_IDS.storefront)).toHaveLength(2);
   });
 
   it('rolls back completely when it fails part-way', async () => {
