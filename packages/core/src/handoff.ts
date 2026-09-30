@@ -1,6 +1,6 @@
 import { formatDuration } from './alerts';
 import { formatInterval, formatPercent, formatUtc, plural } from './format';
-import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, type EnvFileBasename, type FindingRow, type RequiredVariable } from './types';
+import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, type EnvFileBasename, type EnvScope, type FindingRow, type RequiredVariable } from './types';
 
 // The handoff export: what a freelancer gives a client when a contract ends. Built from names only
 // (the scanner never reads env values, and the ingest contract can't carry them), rendered as
@@ -33,6 +33,8 @@ export interface HandoffData {
   scan: { sha: string; branch: string; deployedAt: Date; variablesReported: boolean } | null;
   /** Every referenced variable in the latest scan. */
   variables: RequiredVariable[];
+  /** The latest scan's scopes and their env files; null for scans from CLIs before 0.2.0. */
+  envScopes: EnvScope[] | null;
   /** The latest scan's findings (open issues). */
   findings: FindingRow[];
   endpoints: HandoffEndpoint[];
@@ -70,6 +72,40 @@ export function groupVariablesByScope(variables: readonly RequiredVariable[]): V
     }));
 }
 
+/** Where a variable stands: defined, optional (a default in code), in a scope with no env file yet, or missing. */
+export type VariableStatus = 'ok' | 'optional' | 'no-env-file' | 'missing';
+
+export const VARIABLE_STATUS_LABELS: Record<VariableStatus, string> = {
+  ok: 'ok',
+  optional: 'optional (default in code)',
+  'no-env-file': 'no env file yet',
+  missing: 'missing',
+};
+
+/** The scopes a scan found with no env file at all. Empty for older scans, which didn't report scopes. */
+export function scopesWithoutEnvFiles(envScopes: readonly EnvScope[] | null): Set<string> {
+  return new Set((envScopes ?? []).filter((s) => s.env_files.length === 0).map((s) => s.scope));
+}
+
+export function variableStatus(v: RequiredVariable, bareScopes: ReadonlySet<string>): VariableStatus {
+  if (v.defined_in.length > 0) return 'ok';
+  if (v.optional) return 'optional';
+  return bareScopes.has(v.scope) ? 'no-env-file' : 'missing';
+}
+
+/**
+ * A starting `.env.example` for one scope: every variable as `NAME=`, sorted, names only (values
+ * are never known). Optional ones get a comment saying the code has a default.
+ */
+export function dotenvExample(variables: readonly RequiredVariable[]): string {
+  const lines: string[] = [];
+  for (const v of [...variables].sort((a, b) => a.var_name.localeCompare(b.var_name))) {
+    if (v.optional) lines.push('# optional: the code has a default');
+    lines.push(`${v.var_name}=`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 /** Findings grouped by kind, in the order the page and the Markdown list them. */
 export const FINDING_SECTIONS = [
   { kind: 'missing', title: 'Missing', blurb: 'referenced in code, not defined in its scope' },
@@ -96,12 +132,18 @@ function cell(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
-const MISSING_STATUS = '**missing**';
+/** The status column in Markdown: MISSING in bold, the rest as their labels. */
+function statusCell(status: VariableStatus): string {
+  return status === 'missing' ? `**${VARIABLE_STATUS_LABELS.missing}**` : VARIABLE_STATUS_LABELS[status];
+}
 
 export function renderHandoffMarkdown(data: HandoffData): string {
   const out: string[] = [];
   const line = (text = '') => out.push(text);
-  const missingCount = data.variables.filter((v) => v.defined_in.length === 0).length;
+  const bareScopes = scopesWithoutEnvFiles(data.envScopes);
+  const statuses = data.variables.map((v) => variableStatus(v, bareScopes));
+  const missingCount = statuses.filter((s) => s === 'missing').length;
+  const undeclaredCount = statuses.filter((s) => s === 'no-env-file').length;
 
   line(`# Handoff: ${data.project.name}`);
   line();
@@ -131,7 +173,10 @@ export function renderHandoffMarkdown(data: HandoffData): string {
     line(
       `Every variable the code references in the latest scan (deploy \`${data.scan.sha.slice(0, 7)}\` on \`${cell(data.scan.branch)}\`, ` +
         `${formatUtc(data.scan.deployedAt)}), grouped by the env-file scope that has to define it. ` +
-        (missingCount ? `**${plural(missingCount, 'variable')} missing.**` : 'None missing.'),
+        (missingCount ? `**${plural(missingCount, 'variable')} missing.**` : 'None missing.') +
+        (undeclaredCount
+          ? ` ${plural(undeclaredCount, 'variable')} ${undeclaredCount === 1 ? 'is' : 'are'} in a scope with no env file yet; a starting \`.env.example\` follows its table.`
+          : ''),
     );
     for (const group of groupVariablesByScope(data.variables)) {
       line();
@@ -141,7 +186,15 @@ export function renderHandoffMarkdown(data: HandoffData): string {
       line('| --- | --- | --- |');
       for (const v of group.variables) {
         const definedIn = v.defined_in.length ? v.defined_in.map((f) => `\`${f}\``).join(', ') : '—';
-        line(`| \`${v.var_name}\` | ${definedIn} | ${v.defined_in.length ? 'ok' : MISSING_STATUS} |`);
+        line(`| \`${v.var_name}\` | ${definedIn} | ${statusCell(variableStatus(v, bareScopes))} |`);
+      }
+      if (bareScopes.has(group.scope)) {
+        line();
+        line('No env file in this scope yet. A starting `.env.example` (names only):');
+        line();
+        line('```dotenv');
+        line(dotenvExample(group.variables).trimEnd());
+        line('```');
       }
     }
   }
@@ -246,11 +299,13 @@ export function parseHandoffVariables(markdown: string): RequiredVariable[] {
     const row = scope !== null ? ROW.exec(text) : null;
     if (!row || !ENV_NAME_PATTERN.test(row[1]!)) continue;
     const definedIn = row[2] === '—' ? [] : row[2]!.split(', ').map((f) => f.replace(/`/g, ''));
-    out.push({
+    const variable: RequiredVariable = {
       var_name: row[1]!,
       scope: scope!,
       defined_in: ENV_FILE_BASENAMES.filter((b) => definedIn.includes(b)) as EnvFileBasename[],
-    });
+    };
+    if (row[3] === VARIABLE_STATUS_LABELS.optional) variable.optional = true;
+    out.push(variable);
   }
   return out;
 }

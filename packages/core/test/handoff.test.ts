@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatInterval, formatPercent, formatUtc, plural } from '../src/format';
-import { groupVariablesByScope, parseHandoffVariables, renderHandoffMarkdown, type HandoffData } from '../src/handoff';
+import { dotenvExample, groupVariablesByScope, parseHandoffVariables, renderHandoffMarkdown, variableStatus, type HandoffData } from '../src/handoff';
 import type { RequiredVariable } from '../src/types';
 
 const at = (iso: string) => new Date(iso);
@@ -21,6 +21,7 @@ function data(overrides: Partial<HandoffData> = {}): HandoffData {
     client: { name: 'Acme Corp', contactEmail: 'ops@acme.example' },
     scan: { sha: 'b52952e0aa11', branch: 'main', deployedAt: at('2026-09-28T11:34:00Z'), variablesReported: true },
     variables: VARIABLES,
+    envScopes: null,
     findings: [
       { kind: 'missing', var_name: 'REDIS_URL', file: 'apps/api/src/lib/cache.ts', line: 6, env_file: null },
       { kind: 'unused', var_name: 'S3_REGION', file: 'apps/worker/.env.example', line: 5, env_file: 'apps/worker/.env.example' },
@@ -113,5 +114,55 @@ describe('renderHandoffMarkdown', () => {
     expect(renderHandoffMarkdown(data({ variables: [] }))).toContain('The code references no environment variables.');
     expect(renderHandoffMarkdown(data({ scan: null, variables: [], findings: [] }))).toContain('No scans yet.');
     expect(renderHandoffMarkdown(data({ deployNotes: null }))).toContain('_No deploy notes yet._');
+  });
+});
+
+describe('the quieter scan in the handoff (CLI 0.2.0+)', () => {
+  const variables = [
+    v('DEPLOY_KEY', '', []),
+    { ...v('DEPLOY_TARGET', '', []), optional: true as const },
+    v('STRIPE_KEY', 'apps/api', []),
+    { ...v('PORT', 'apps/api', []), optional: true as const },
+    v('DATABASE_URL', 'apps/api', ['.env.example', '.env.production']),
+  ];
+  const envScopes = [
+    { scope: '', env_files: [] },
+    { scope: 'apps/api', env_files: ['.env.example' as const, '.env.production' as const] },
+  ];
+  const md = renderHandoffMarkdown(data({ variables, envScopes, findings: [] }));
+
+  it('gives each variable a status: ok, optional, no env file yet, or missing', () => {
+    const bare = new Set(['']);
+    expect(variables.map((x) => [x.var_name, variableStatus(x, bare)])).toEqual([
+      ['DEPLOY_KEY', 'no-env-file'],
+      ['DEPLOY_TARGET', 'optional'],
+      ['STRIPE_KEY', 'missing'],
+      ['PORT', 'optional'],
+      ['DATABASE_URL', 'ok'],
+    ]);
+    expect(md).toContain('| `DEPLOY_KEY` | — | no env file yet |');
+    expect(md).toContain('| `DEPLOY_TARGET` | — | optional (default in code) |');
+    expect(md).toContain('| `STRIPE_KEY` | — | **missing** |');
+    expect(md).toContain('| `DATABASE_URL` | `.env.example`, `.env.production` | ok |');
+    expect(md).toContain('**1 variable missing.** 1 variable is in a scope with no env file yet;');
+  });
+
+  it('offers a starting .env.example, names only, under a scope with no env file', () => {
+    expect(md).toContain(
+      '### Repository root\n\n| Variable | Defined in | Status |\n| --- | --- | --- |\n| `DEPLOY_KEY` | — | no env file yet |\n| `DEPLOY_TARGET` | — | optional (default in code) |\n\n' +
+        'No env file in this scope yet. A starting `.env.example` (names only):\n\n```dotenv\nDEPLOY_KEY=\n# optional: the code has a default\nDEPLOY_TARGET=\n```',
+    );
+    expect(md.match(/```dotenv/g)).toHaveLength(1); // only where no env file exists
+    expect(dotenvExample([v('B', '', []), v('A', '', [])])).toBe('A=\nB=\n');
+  });
+
+  it('round-trips, optional flags included, and ignores the .env.example block', () => {
+    expect(parseHandoffVariables(md)).toEqual(groupVariablesByScope(variables).flatMap((g) => g.variables));
+  });
+
+  it('shows older scans (no env scopes) exactly as before', () => {
+    const older = renderHandoffMarkdown(data({ variables: [v('DEPLOY_KEY', '', [])], envScopes: null }));
+    expect(older).toContain('| `DEPLOY_KEY` | — | **missing** |');
+    expect(older).not.toContain('```dotenv');
   });
 });

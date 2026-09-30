@@ -56,6 +56,7 @@ export async function getHandoffData(db: Db, ownerId: string, projectId: string,
       ? { sha: detail.deploy.sha, branch: detail.deploy.branch, deployedAt: detail.deploy.deployedAt, variablesReported: detail.scan.variablesReported }
       : null,
     variables,
+    envScopes: null,
     findings: detail?.findings ?? [],
     endpoints: handoffEndpoints,
     window: { from, to: now },
