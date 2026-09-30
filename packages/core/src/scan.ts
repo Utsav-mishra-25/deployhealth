@@ -16,6 +16,7 @@ import {
   type Warning,
 } from './types';
 import { GitignoreMatcher } from './gitignore';
+import { isTestPath } from './test-paths';
 import { DEFAULT_SKIP_DIRS, walk } from './walker';
 
 /** Env files read in every scope (ENV_FILE_BASENAMES). Other names (e.g. `.env.staging`) are ignored. */
@@ -26,6 +27,8 @@ export interface ScanOptions {
   ignore?: readonly string[];
   /** Also skip DEFAULT_IGNORE, the names the platform or runtime provides. Default true. */
   defaultIgnore?: boolean;
+  /** Also scan test files and test/fixture directories (test-paths.ts). Default false. */
+  includeTests?: boolean;
   /** Gitignore-style path patterns to leave out of the walk, e.g. `packages/core/test/**`. */
   exclude?: readonly string[];
 }
@@ -43,6 +46,11 @@ export interface ScanResult {
   envScopes: EnvScope[];
   /** Names found (in code or env files) that only DEFAULT_IGNORE skipped, sorted. */
   defaultIgnored: string[];
+  /**
+   * Files treated as tests or fixtures (0 with `includeTests`): never reported, and their env
+   * files never make scopes. Their source is read only so a variable only tests use isn't UNUSED.
+   */
+  testFilesSkipped: number;
   sourceFiles: number;
   envFiles: string[];
   warnings: Warning[];
@@ -58,21 +66,27 @@ export interface ScanResult {
  * has none, so everything they reference is MISSING.
  */
 export async function scanProject(root: string, options: ScanOptions = {}): Promise<ScanResult> {
-  const { files, warnings } = await walk(root, {
+  const { files, warnings, testFiles } = await walk(root, {
     include: isScannable,
     exclude: options.exclude,
     keepIgnored: (name) => ENV_FILE_NAMES.has(name),
+    skipTests: !options.includeTests,
   });
-  return analyzeFiles(files, (file) => readFile(join(root, file), 'utf8'), warnings, options);
+  return analyzeFiles(files, (file) => readFile(join(root, file), 'utf8'), warnings, options, testFiles);
 }
 
 /**
  * `scanProject` over files already in memory (e.g. blobs from a git tree), keyed by POSIX path
  * relative to the repo root. Pick the paths with `selectTreeFiles` so the rules are the same.
  */
-export async function scanFiles(files: ReadonlyMap<string, string>, options: Pick<ScanOptions, 'ignore' | 'defaultIgnore'> = {}): Promise<ScanResult> {
-  const paths = [...files.keys()].filter((path) => isScannable(path, posix.basename(path))).sort();
-  return analyzeFiles(paths, async (path) => files.get(path)!, [], options);
+export async function scanFiles(
+  files: ReadonlyMap<string, string>,
+  options: Pick<ScanOptions, 'ignore' | 'defaultIgnore' | 'includeTests'> = {},
+): Promise<ScanResult> {
+  const scannable = [...files.keys()].filter((path) => isScannable(path, posix.basename(path))).sort();
+  const tests = new Set(options.includeTests ? [] : scannable.filter((path) => isTestPath(path)));
+  const paths = scannable.filter((path) => !tests.has(path));
+  return analyzeFiles(paths, async (path) => files.get(path)!, [], options, [...tests]);
 }
 
 /** Env files and source files in a scanned language. */
@@ -85,6 +99,7 @@ async function analyzeFiles(
   read: (file: string) => Promise<string>,
   warnings: Warning[],
   options: ScanOptions,
+  testFiles: readonly string[],
 ): Promise<ScanResult> {
   const envFiles: ScopeEnvFile[] = [];
   const sourceFiles: string[] = [];
@@ -110,6 +125,17 @@ async function analyzeFiles(
     referencesByScope.set(scope, [...(referencesByScope.get(scope) ?? []), ...refs]);
   }
 
+  // Test files: read only for the names they use (UNUSED), never reported. Their env files are left out.
+  const usedByTestsByScope = new Map<string, Set<string>>();
+  for (const file of testFiles) {
+    const language = languageForFile(file);
+    if (!language) continue;
+    const scope = nearestScope(dirOf(file), scopeDirs);
+    const names = usedByTestsByScope.get(scope) ?? new Set<string>();
+    for (const ref of scanSource(await read(file), language, file)) names.add(ref.name);
+    usedByTestsByScope.set(scope, names);
+  }
+
   const byUser = createNameFilter(options.ignore ?? []);
   const byDefault = createNameFilter(options.defaultIgnore === false ? [] : DEFAULT_IGNORE);
   const isIgnored = (name: string) => byUser(name) || byDefault(name);
@@ -127,6 +153,7 @@ async function analyzeFiles(
         references: referencesByScope.get(scope) ?? [],
         envFiles: envFiles.filter((f) => dirOf(f.path) === scope),
         isIgnored,
+        usedByTests: usedByTestsByScope.get(scope),
       }),
     )
     .sort(compareFindings);
@@ -150,6 +177,7 @@ async function analyzeFiles(
     scopes,
     envScopes,
     defaultIgnored,
+    testFilesSkipped: testFiles.length,
     sourceFiles: sourceFiles.length,
     envFiles: envFiles.map((f) => f.path),
     warnings,
@@ -159,13 +187,14 @@ async function analyzeFiles(
 /**
  * The files `scanProject` would read, chosen from a git tree's blob paths instead of a directory:
  * the same skipped directories, nested `.gitignore` files (read top-down through `readGitignore`,
- * so ones inside ignored directories are never read) and env files kept even when ignored.
+ * so ones inside ignored directories are never read), env files kept even when ignored, and test
+ * files and test/fixture directories left out unless `includeTests` (so they're never fetched).
  * Returns the paths to fetch, sorted.
  */
 export async function selectTreeFiles(
   paths: readonly string[],
   readGitignore: (path: string) => Promise<string>,
-  { skipDirs = DEFAULT_SKIP_DIRS }: { skipDirs?: ReadonlySet<string> } = {},
+  { skipDirs = DEFAULT_SKIP_DIRS, includeTests = false }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean } = {},
 ): Promise<string[]> {
   const gitignores = new Set(paths.filter((p) => posix.basename(p) === '.gitignore'));
   const matchers = new Map<string, GitignoreMatcher | null>(); // null: the directory is skipped or ignored
@@ -189,7 +218,7 @@ export async function selectTreeFiles(
   const selected: string[] = [];
   for (const path of [...paths].sort()) {
     const name = posix.basename(path);
-    if (!isScannable(path, name)) continue;
+    if (!isScannable(path, name) || (!includeTests && isTestPath(path))) continue;
     const matcher = await matcherFor(dirOf(path));
     if (!matcher) continue;
     if (matcher.ignores(path, false) && !ENV_FILE_NAMES.has(name)) continue;

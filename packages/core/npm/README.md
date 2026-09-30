@@ -23,6 +23,11 @@ A first scan stays quiet:
   `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`, `ENV.fetch("X", "a")`,
   `ENV.fetch("X") { … }`, `ENV["X"] || "a"`. Such variables are listed as optional. (A default of
   `undefined`, `null`, `None` or `nil` is no default.)
+- **Tests and fixtures are skipped**: `test/`, `tests/`, `__tests__/`, `spec/`, `e2e/`,
+  `fixtures/`, `__fixtures__/` and `testdata/` directories (their env files too, so a fixture's
+  `.env` never becomes a scope), and `*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`, `*_test.py`,
+  `conftest.py` and `*_spec.rb` files. They're only read to see which variables they use, so a
+  variable only tests read isn't UNUSED. `--include-tests` scans them like any other file.
 - **A folder with no env file at all gets one line**, "No .env.example …: N variables referenced",
   instead of a MISSING row per reference; deployhealth's handoff offers them as a starting
   `.env.example`.
@@ -95,6 +100,8 @@ names they define; values are neither sent nor printed.
 --no-default-ignore  also check names the platform or runtime provides (NODE_ENV,
                      CI, GITHUB_SHA, npm_*, VERCEL_*, RAILWAY_*, RENDER_*, FLY_*, ...)
 --exclude <pattern>  skip paths matching a gitignore-style pattern (repeatable)
+--include-tests      also scan tests and fixtures (test/, tests/, __tests__/, spec/,
+                     e2e/, fixtures/, testdata/, *.test.*, *.spec.*, *_test.go, ...)
 --dry-run            print the findings instead of sending them
 --json               with --dry-run, print JSON
 -v, --version        print the version

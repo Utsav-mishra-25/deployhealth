@@ -33,6 +33,8 @@ Options:
   --no-default-ignore  also check names the platform or runtime provides (NODE_ENV,
                        CI, GITHUB_SHA, npm_*, VERCEL_*, RAILWAY_*, RENDER_*, FLY_*, ...)
   --exclude <pattern>  skip paths matching a gitignore-style pattern (repeatable)
+  --include-tests      also scan tests and fixtures (test/, tests/, __tests__/, spec/,
+                       e2e/, fixtures/, testdata/, *.test.*, *.spec.*, *_test.go, ...)
   --dry-run            print the findings instead of sending them
   --json               with --dry-run, print JSON
   -v, --version        print the version
@@ -47,6 +49,7 @@ const OPTIONS = {
   dir: { type: 'string' },
   ignore: { type: 'string', multiple: true },
   'no-default-ignore': { type: 'boolean' },
+  'include-tests': { type: 'boolean' },
   exclude: { type: 'string', multiple: true },
   'dry-run': { type: 'boolean' },
   json: { type: 'boolean' },
@@ -73,7 +76,12 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   }
 
   const root = resolve(io.cwd, values.dir ?? '.');
-  const result = await scanProject(root, { ignore: values.ignore, exclude: values.exclude, defaultIgnore: !values['no-default-ignore'] });
+  const result = await scanProject(root, {
+    ignore: values.ignore,
+    exclude: values.exclude,
+    defaultIgnore: !values['no-default-ignore'],
+    includeTests: values['include-tests'],
+  });
   for (const w of result.warnings) io.stderr(`warning ${w.file}${w.line ? `:${w.line}` : ''}: ${w.message}\n`);
 
   if (values['dry-run']) {
@@ -142,6 +150,7 @@ function toJson(result: ScanResult) {
     findings: result.findings,
     variables: result.variables,
     default_ignored: result.defaultIgnored,
+    test_files_skipped: result.testFilesSkipped,
     warnings: result.warnings,
   };
 }
@@ -174,6 +183,12 @@ function renderText(result: ScanResult): string {
     const count = result.variables.filter((v) => v.scope === scope).length;
     if (count === 0) continue;
     out.push(`No .env.example in ${scope || 'the repository root'}: ${count} variable${count === 1 ? '' : 's'} referenced (--json lists them).`);
+    out.push('');
+  }
+
+  if (result.testFilesSkipped > 0) {
+    const files = result.testFilesSkipped === 1 ? 'file' : 'files';
+    out.push(`Skipped ${result.testFilesSkipped} test and fixture ${files} (read only to see which variables they use). --include-tests includes them.`);
     out.push('');
   }
 

@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitignoreMatcher } from './gitignore';
+import { isTestFileName, TEST_DIRS } from './test-paths';
 import type { Warning } from './types';
 
 /** Directory names that are never descended into, at any depth. */
@@ -26,12 +27,19 @@ export interface WalkOptions {
   keepIgnored?: (name: string) => boolean;
   skipDirs?: ReadonlySet<string>;
   respectGitignore?: boolean;
+  /**
+   * List test files and everything under test directories (test-paths.ts) in `testFiles`
+   * instead of `files`.
+   */
+  skipTests?: boolean;
 }
 
 export interface WalkResult {
   /** POSIX paths relative to the root, sorted. */
   files: string[];
   warnings: Warning[];
+  /** Files `include` accepted that are tests or fixtures (with `skipTests`), sorted. */
+  testFiles: string[];
 }
 
 /**
@@ -43,10 +51,11 @@ export async function walk(root: string, options: WalkOptions): Promise<WalkResu
   const respectGitignore = options.respectGitignore ?? true;
   const files: string[] = [];
   const warnings: Warning[] = [];
+  const testFiles: string[] = [];
 
   const excluded = GitignoreMatcher.empty().extend('', (options.exclude ?? []).join('\n'));
 
-  async function visit(relDir: string, matcher: GitignoreMatcher): Promise<void> {
+  async function visit(relDir: string, matcher: GitignoreMatcher, inTests: boolean): Promise<void> {
     const absDir = relDir === '' ? root : join(root, relDir);
     let entries;
     try {
@@ -66,16 +75,18 @@ export async function walk(root: string, options: WalkOptions): Promise<WalkResu
 
       if (entry.isDirectory()) {
         if (skipDirs.has(entry.name) || excluded.ignores(relPath, true) || matcher.ignores(relPath, true)) continue;
-        await visit(relPath, matcher);
+        await visit(relPath, matcher, inTests || (options.skipTests === true && TEST_DIRS.has(entry.name)));
       } else if (entry.isFile()) {
         if (!options.include(relPath, entry.name) || excluded.ignores(relPath, false)) continue;
         if (matcher.ignores(relPath, false) && !options.keepIgnored?.(entry.name)) continue;
-        files.push(relPath);
+        if (options.skipTests && (inTests || isTestFileName(entry.name))) testFiles.push(relPath);
+        else files.push(relPath);
       }
     }
   }
 
-  await visit('', GitignoreMatcher.empty());
+  await visit('', GitignoreMatcher.empty(), false);
   files.sort();
-  return { files, warnings };
+  testFiles.sort();
+  return { files, warnings, testFiles };
 }
