@@ -43,8 +43,10 @@ export async function ProjectView({
     listPrChecksForOwner(db, ownerId, project.id),
   ]);
   const latestId = deploys[0]?.deploy.id;
-  const selectedId = isUuid(requestedDeploy) ? requestedDeploy : latestId;
-  const detail = selectedId ? await getLatestScan(db, project.id, selectedId) : null;
+  // A deploy id that isn't this project's (or no longer exists: the demo is reseeded every 30
+  // minutes) shows the latest deploy instead of an empty page.
+  const requested = isUuid(requestedDeploy) ? await getLatestScan(db, project.id, requestedDeploy) : null;
+  const detail = requested ?? (latestId ? await getLatestScan(db, project.id, latestId) : null);
   const isLatest = detail?.deploy.id === latestId;
   const projectPath = paths.project(project.id);
 
@@ -61,15 +63,20 @@ export async function ProjectView({
         <AlertsBanner projectPath={projectPath} alerts={openAlerts} />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold">{project.name}</h1>
-            <a
-              href={`https://github.com/${project.repoFullName}`}
-              className="text-sm text-gray-500 hover:text-gray-900"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {project.repoFullName}
-            </a>
+            <h1 className="text-2xl font-semibold break-words">{project.name}</h1>
+            {readOnly ? (
+              // The demo's repositories are made up; don't link to whoever owns that name on GitHub.
+              <span className="text-sm text-gray-500">{project.repoFullName}</span>
+            ) : (
+              <a
+                href={`https://github.com/${project.repoFullName}`}
+                className="text-sm break-all text-gray-500 hover:text-gray-900"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {project.repoFullName}
+              </a>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
@@ -128,7 +135,7 @@ export async function ProjectView({
       <EndpointsSection projectId={project.id} endpoints={monitoring} readOnly={readOnly} />
 
       {(prChecks.length > 0 || project.prCheckMode !== 'off') && (
-        <PrChecksSection repoFullName={project.repoFullName} checks={prChecks} readOnly={readOnly} />
+        <PrChecksSection repoFullName={project.repoFullName} checks={prChecks} readOnly={readOnly} sample={readOnly} />
       )}
 
       {detail && (
