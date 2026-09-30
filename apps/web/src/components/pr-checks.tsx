@@ -76,8 +76,10 @@ export function PrChecksSection({
                           #{c.prNumber}
                         </a>
                       )}
-                      <span className="ml-2 font-mono text-xs text-gray-500">{shortSha(c.headSha)}</span>
-                      {c.closed && <span className="ml-2 text-xs text-gray-500">closed</span>}
+                      <div className="text-xs text-gray-500">
+                        <span className="font-mono">{shortSha(c.headSha)}</span>
+                        {c.closed && <span className="ml-2">closed</span>}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-1.5">
