@@ -136,6 +136,8 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
       'const g = process.env.CHAINED?.trim() ?? "x";',
       'const h = process.env.NEXT_LINE',
       '  ?? "x";',
+      'const i = process.env.NORMALIZED || undefined;',
+      'const j = process.env.NULLED ?? null;',
     ].join('\n');
     expect(defaults(src, 'javascript')).toEqual([
       ['WITH_NULLISH', true],
@@ -147,6 +149,8 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
       ['COMPARED', false],
       ['CHAINED', false],
       ['NEXT_LINE', false],
+      ['NORMALIZED', false], // || undefined only turns "" into undefined: no default
+      ['NULLED', false],
     ]);
   });
 
@@ -164,13 +168,15 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
   it('Python: a second argument to os.getenv / os.environ.get, or `or …` after the call', () => {
     const src = [
       'a = os.getenv("GETENV_DEFAULT", "x")',
-      "b = os.environ.get('GET_DEFAULT', None)",
+      "b = os.environ.get('GET_DEFAULT', default='x')",
       'c = os.getenv("GETENV_OR") or "x"',
       'd = os.environ.get("GET_OR") or 8000',
       'e = os.getenv("GETENV_PLAIN")',
       'f = os.environ.get("GET_PLAIN")',
       'g = os.environ["INDEXED"]',
       'h = os.environ["INDEXED_OR"] or "x"',
+      'i = os.getenv("NONE_DEFAULT", None)',
+      'j = os.environ.get("OR_NONE") or None',
     ].join('\n');
     expect(defaults(src, 'python')).toEqual([
       ['GETENV_DEFAULT', true],
@@ -181,6 +187,8 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
       ['GET_PLAIN', false],
       ['INDEXED', false], // os.environ[...] raises KeyError when unset
       ['INDEXED_OR', false],
+      ['NONE_DEFAULT', false], // the same as os.getenv("NONE_DEFAULT")
+      ['OR_NONE', false],
     ]);
   });
 
@@ -194,6 +202,8 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
       'f = ENV.fetch("FETCH_PLAIN")',
       'g = ENV["INDEX_PLAIN"]',
       'h = ENV.fetch("FETCH_OR") || "x"',
+      'i = ENV.fetch("FETCH_NIL", nil)',
+      'j = ENV["INDEX_NIL"] || nil',
     ].join('\n');
     expect(defaults(src, 'ruby')).toEqual([
       ['FETCH_DEFAULT', true],
@@ -204,6 +214,8 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
       ['FETCH_PLAIN', false],
       ['INDEX_PLAIN', false],
       ['FETCH_OR', false], // ENV.fetch without a default raises KeyError before || runs
+      ['FETCH_NIL', false], // the same as ENV["FETCH_NIL"]
+      ['INDEX_NIL', false],
     ]);
   });
 

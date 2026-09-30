@@ -16,7 +16,7 @@ export interface Reference {
   column: number;
   syntax: Syntax;
   /**
-   * The code supplies a default on the same line (`process.env.X ?? 'a'`, `os.getenv("X", "a")`,
+   * The code supplies a default on the same line (`process.env.<NAME> ?? 'a'`, `os.getenv("<NAME>", "a")`,
    * Ruby's ENV.fetch with a default or a block, …), so a missing definition isn't an error. Only
    * set when true.
    */

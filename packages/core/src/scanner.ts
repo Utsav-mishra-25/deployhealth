@@ -35,15 +35,16 @@ const NAME = '(?<name>[A-Za-z_][A-Za-z0-9_]*)';
 // A quoted name, e.g. "X" or 'X'. `quotes` is a character class body.
 const quoted = (quotes: string) => `(?<q>[${quotes}])${NAME}\\k<q>`;
 
-// What follows a reference when the code supplies a default on the same line.
-/** JS: `process.env.X ?? 'a'`, `process.env.X || 'a'` (and `??=`, `||=`). */
-const JS_DEFAULT = /^\s*(?:\?\?|\|\|)/;
-/** Python, after the quoted name: `os.getenv("X", "a")`, or `os.getenv("X") or "a"`. */
-const PY_DEFAULT = /^\s*(?:,|\)\s*or\b)/;
-/** Ruby `ENV.fetch`, after the quoted name: `ENV.fetch("X", "a")`, `ENV.fetch "X", "a"`, `ENV.fetch("X") { … }` / `do`. */
-const RUBY_FETCH_DEFAULT = /^\s*(?:,|\)\s*(?:\{|do\b))/;
-/** Ruby `ENV["X"] || "a"`. */
-const RUBY_INDEX_DEFAULT = /^\s*\|\|/;
+// What follows a reference when the code supplies a default on the same line. A "default" of
+// undefined/null/None/nil is no default at all (`… || undefined` only normalizes ""), so it doesn't count.
+/** JS: `process.env.<NAME> ?? 'a'`, `… || 'a'` (and `??=`, `||=`). */
+const JS_DEFAULT = /^\s*(?:\?\?|\|\|)=?\s*(?!(?:undefined|null)\b)\S/;
+/** Python, after the quoted name: `os.getenv("<NAME>", "a")`, or `os.getenv("<NAME>") or "a"`. */
+const PY_DEFAULT = /^\s*(?:,|\)\s*or\b)\s*(?!None\b)[^\s)]/;
+/** Ruby `ENV.fetch`, after the quoted name: `ENV.fetch("<NAME>", "a")`, `ENV.fetch "<NAME>", "a"`, `ENV.fetch("<NAME>") { … }` / `do`. */
+const RUBY_FETCH_DEFAULT = /^\s*(?:,\s*(?!nil\b)\S|\)\s*(?:\{|do\b))/;
+/** Ruby `ENV["<NAME>"] || "a"`. */
+const RUBY_INDEX_DEFAULT = /^\s*\|\|\s*(?!nil\b)\S/;
 
 /**
  * One list per language. Each regex runs over a single line, so references split across
