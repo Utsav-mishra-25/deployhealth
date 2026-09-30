@@ -46,7 +46,8 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     deployedAt: new Date(timestamp),
     source: 'ingest',
     findings,
-    variables,
+    // `optional` is stored only when true (CLI 0.2.0+ sends it; 0.1.0 never does).
+    variables: variables?.map(({ optional, ...v }) => (optional ? { ...v, optional } : v)),
   });
   return Response.json(result satisfies IngestResponse, { status: 201 });
 }

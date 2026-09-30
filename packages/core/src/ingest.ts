@@ -7,6 +7,8 @@ import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type 
 export const MAX_FINDINGS = 10_000;
 /** Upper bound on referenced variables per scan. */
 export const MAX_VARIABLES = 10_000;
+/** Upper bound on env scopes per scan. */
+export const MAX_ENV_SCOPES = 1_000;
 
 export const findingRowSchema = z.object({
   kind: z.enum(FINDING_KINDS),
@@ -18,12 +20,20 @@ export const findingRowSchema = z.object({
 
 /**
  * A referenced variable. The shape only admits names: `var_name` must look like an env var name
- * and `defined_in` can only list the three env file names, so no value can ride along.
+ * and `defined_in` can only list known env file names, so no value can ride along. `optional`
+ * (0.2.0+): every reference has an inline default.
  */
 export const requiredVariableSchema = z.object({
   var_name: z.string().max(200).regex(ENV_NAME_PATTERN, 'var_name must be an env var name'),
   scope: z.string().max(1000),
   defined_in: z.array(z.enum(ENV_FILE_BASENAMES)).max(ENV_FILE_BASENAMES.length),
+  optional: z.boolean().optional(),
+});
+
+/** A scope and the env files it has (0.2.0+). One with none gets a notice instead of MISSING rows. */
+export const envScopeSchema = z.object({
+  scope: z.string().max(1000),
+  env_files: z.array(z.enum(ENV_FILE_BASENAMES)).max(ENV_FILE_BASENAMES.length),
 });
 
 /** Body of `POST /api/ingest/scan`. Shared by the CLI (sender) and the web app (receiver). */
@@ -34,6 +44,8 @@ export const ingestPayloadSchema = z.object({
   findings: z.array(findingRowSchema).max(MAX_FINDINGS),
   /** Every referenced variable (handoff exports list them). Optional: older CLIs don't send it. */
   variables: z.array(requiredVariableSchema).max(MAX_VARIABLES).optional(),
+  /** Every scope with its env files. Optional: CLIs before 0.2.0 don't send it. */
+  env_scopes: z.array(envScopeSchema).max(MAX_ENV_SCOPES).optional(),
 });
 
 export type IngestPayload = z.infer<typeof ingestPayloadSchema>;
