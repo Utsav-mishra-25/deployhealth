@@ -105,7 +105,7 @@ interface DemoVariable {
   name: string;
   definedIn: EnvFileBasename[];
   from?: number;
-  /** Every reference has an inline default (e.g. `process.env.PORT ?? 3000`). */
+  /** Every reference has an inline default (e.g. `process.env.<NAME> ?? 3000`). */
   optional?: true;
 }
 
