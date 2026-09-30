@@ -80,18 +80,30 @@ export interface AlertOpenedInput {
   deploy: { sha: string; deployedAt: Date } | null;
   /** MISSING variables new in that deploy vs. the previous scanned deploy. */
   newMissing: readonly string[];
+  /**
+   * Variables that deploy newly references in scopes with no env file (which have no MISSING
+   * rows, so nothing declares them anywhere): `newUndeclaredVars`. Empty for older scans.
+   */
+  newUndeclared?: readonly string[];
 }
 
-export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissing }: AlertOpenedInput): string {
+export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissing, newUndeclared = [] }: AlertOpenedInput): string {
   const label = endpointLabel(endpoint);
   if (!deploy) {
     return `${label} started failing; no deploy in the ${DEPLOY_LINK_WINDOW_MINUTES} minutes before the first failure`;
   }
   const after = formatDuration(firstFailureAt.getTime() - deploy.deployedAt.getTime());
   const lead = `${label} started failing ${after} after deploy ${deploy.sha.slice(0, 7)}`;
-  if (newMissing.length === 0) return `${lead}, which had no new config findings`;
-  const noun = newMissing.length === 1 ? 'missing env var' : 'missing env vars';
-  return `${lead}, which introduced ${newMissing.length} ${noun}: ${newMissing.join(', ')}`;
+  const parts: string[] = [];
+  if (newMissing.length > 0) {
+    parts.push(`${newMissing.length} ${newMissing.length === 1 ? 'missing env var' : 'missing env vars'}: ${newMissing.join(', ')}`);
+  }
+  if (newUndeclared.length > 0) {
+    const noun = newUndeclared.length === 1 ? 'new env var' : 'new env vars';
+    parts.push(`${newUndeclared.length} ${noun} no env file declares: ${newUndeclared.join(', ')}`);
+  }
+  if (parts.length === 0) return `${lead}, which had no new config findings`;
+  return `${lead}, which introduced ${parts.join(', plus ')}`;
 }
 
 export function alertResolvedMessage({

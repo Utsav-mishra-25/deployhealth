@@ -84,6 +84,21 @@ describe('alert messages', () => {
     );
   });
 
+  it('names variables new in a scope with no env file, which have no MISSING rows', () => {
+    expect(
+      alertOpenedMessage({ endpoint: { name: 'Acme API', url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: [], newUndeclared: ['REDIS_URL', 'STRIPE_KEY'] }),
+    ).toBe('Acme API started failing 4m after deploy b52952e, which introduced 2 new env vars no env file declares: REDIS_URL, STRIPE_KEY');
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: [], newUndeclared: ['A'] })).toBe(
+      'x.dev started failing 4m after deploy b52952e, which introduced 1 new env var no env file declares: A',
+    );
+  });
+
+  it('names both kinds when a deploy has both', () => {
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: ['A'], newUndeclared: ['B', 'C'] })).toBe(
+      'x.dev started failing 4m after deploy b52952e, which introduced 1 missing env var: A, plus 2 new env vars no env file declares: B, C',
+    );
+  });
+
   it('says so when the linked deploy had no new findings', () => {
     expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
       'x.dev started failing under a minute after deploy b52952e, which had no new config findings',
