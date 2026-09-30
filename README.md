@@ -231,6 +231,12 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
        `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`,
        `ENV.fetch("X", "a")`, `ENV.fetch("X") { … }`, `ENV["X"] || "a"`. (`undefined`, `null`,
        `None` and `nil` aren't defaults.) Variables read only that way are listed as optional.
+     - Tests and fixtures are skipped: `test/`, `tests/`, `__tests__/`, `spec/`, `e2e/`,
+       `fixtures/`, `__fixtures__/` and `testdata/` directories (env files inside them make no
+       scope) and `*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`, `*_test.py`, `conftest.py`,
+       `*_spec.rb` files. The CLI reads them only to see which variables they use, so a
+       test-only variable isn't UNUSED; the GitHub App never fetches them. `--include-tests`
+       scans them.
      - A scope with no env file at all (in practice the root, for code outside every other scope)
        gets no MISSING rows. The project page says "No .env.example here: N variables referenced"
        once, and the handoff offers the list as a starting `.env.example`.
