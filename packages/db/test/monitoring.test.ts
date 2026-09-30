@@ -327,6 +327,68 @@ describe('recordCheck and the alert lifecycle', () => {
   });
 });
 
+describe('deploy correlation for scopes with no env file (CLI 0.2.0+)', () => {
+  const bare = (name: string, optional = false) => ({ var_name: name, scope: '', defined_in: [], ...(optional ? { optional: true as const } : {}) });
+  const ROOT_BARE = [{ scope: '', env_files: [] }];
+
+  async function openAlert(endpointId: string) {
+    await recordCheck(db, endpointId, ok(minutes(-10)));
+    await recordCheck(db, endpointId, fail(minutes(0)));
+    return (await recordCheck(db, endpointId, fail(minutes(1)))).event;
+  }
+
+  it('names the variables the deploy newly references, since that scope has no MISSING rows', async () => {
+    const { endpoint, project } = await setup();
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [], variables: [bare('DATABASE_URL')], envScopes: ROOT_BARE });
+    const linked = await recordScan(db, {
+      projectId: project.id,
+      sha: 'b52952e8192c38c054e53b5447ea20de88f2e2e9',
+      branch: 'main',
+      deployedAt: minutes(-4),
+      findings: [],
+      variables: [bare('DATABASE_URL'), bare('STRIPE_KEY'), bare('REDIS_URL'), bare('CACHE_TTL', true)],
+      envScopes: ROOT_BARE,
+    });
+    const event = await openAlert(endpoint.id);
+    expect(event?.message).toBe('api.acme.com started failing 4m after deploy b52952e, which introduced 2 new env vars no env file declares: REDIS_URL, STRIPE_KEY');
+    expect((await db.select().from(alerts))[0]?.relatedDeployId).toBe(linked.deployId);
+  });
+
+  it('reads what an older previous scan referenced from its MISSING rows', async () => {
+    const { endpoint, project } = await setup();
+    // 0.1.0: no variable list, and every reference in a scope with no env file was a MISSING row.
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [missing('DATABASE_URL')] });
+    await recordScan(db, { projectId: project.id, sha: 'bbbbbbb', branch: 'main', deployedAt: minutes(-4), findings: [], variables: [bare('DATABASE_URL'), bare('REDIS_URL')], envScopes: ROOT_BARE });
+    expect((await openAlert(endpoint.id))?.message).toBe('api.acme.com started failing 4m after deploy bbbbbbb, which introduced 1 new env var no env file declares: REDIS_URL');
+  });
+
+  it('names both kinds when a deploy adds a MISSING var in one scope and an undeclared one in another', async () => {
+    const { endpoint, project } = await setup();
+    const scopes = [{ scope: '', env_files: [] }, { scope: 'apps/web', env_files: ['.env.example' as const] }];
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [], variables: [], envScopes: scopes });
+    await recordScan(db, {
+      projectId: project.id,
+      sha: 'bbbbbbb',
+      branch: 'main',
+      deployedAt: minutes(-4),
+      findings: [missing('WEB_SECRET')],
+      variables: [{ var_name: 'WEB_SECRET', scope: 'apps/web', defined_in: [] }, bare('ROOT_TOKEN')],
+      envScopes: scopes,
+    });
+    expect((await openAlert(endpoint.id))?.message).toBe(
+      'api.acme.com started failing 4m after deploy bbbbbbb, which introduced 1 missing env var: WEB_SECRET, plus 1 new env var no env file declares: ROOT_TOKEN',
+    );
+  });
+
+  it('correlates scans from CLIs before 0.2.0 (no env scopes) exactly as before', async () => {
+    const { endpoint, project } = await setup();
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [], variables: [] });
+    // A variable list with nothing defined but no env scopes: nothing to call "undeclared".
+    await recordScan(db, { projectId: project.id, sha: 'bbbbbbb', branch: 'main', deployedAt: minutes(-4), findings: [], variables: [bare('NEW_ONE')] });
+    expect((await openAlert(endpoint.id))?.message).toBe('api.acme.com started failing 4m after deploy bbbbbbb, which had no new config findings');
+  });
+});
+
 describe('rollupChecks', () => {
   it('writes one row per endpoint per complete UTC day, skips today, and is idempotent', async () => {
     const { endpoint, project } = await setup();
