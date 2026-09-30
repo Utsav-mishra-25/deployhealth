@@ -1,5 +1,4 @@
 import {
-  CHECK_RETENTION_DAYS,
   CHECK_TIMEOUT_MS,
   HOST_CHECK_SPACING_MS,
   MAX_ENDPOINTS_PER_PROJECT,
@@ -10,6 +9,9 @@ import {
 } from '@deployhealth/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { li, ProsePage, Section } from '@/components/prose-page';
+import { githubSignInReads } from '@/lib/auth-providers';
+import { CHECK_RETENTION_TEXT, REPO_URL } from '@/lib/legal';
 import { securityContact } from '@/lib/security';
 import { SHARE_LINK_DAYS } from '@/lib/share-link';
 
@@ -17,28 +19,17 @@ export const metadata: Metadata = { title: 'Security · deployhealth' };
 // Reads SECURITY_CONTACT_EMAIL at request time.
 export const dynamic = 'force-dynamic';
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="space-y-3 text-sm leading-relaxed text-gray-700">{children}</div>
-    </section>
-  );
-}
-
-const li = 'ml-5 list-disc';
-
 /** Public: what deployhealth stores and does, and how to report a vulnerability. */
 export default function SecurityPage() {
   const contact = securityContact();
   return (
-    <article className="mx-auto max-w-3xl space-y-10 rounded-lg border border-gray-200 bg-white p-8" data-testid="security">
+    <ProsePage testId="security">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">Security</h1>
         <p className="text-gray-700">
           deployhealth looks at your code&apos;s configuration and at your clients&apos; servers, so here is exactly what it
           stores, what it does, and how to reach us. The code is{' '}
-          <a className="text-emerald-700 underline" href="https://github.com/Utsav-mishra-25/deployhealth">
+          <a className="text-emerald-700 underline" href={REPO_URL}>
             public
           </a>
           , so you can check every claim below.
@@ -58,8 +49,7 @@ export default function SecurityPage() {
           </li>
           <li className={li}>
             <strong>Endpoint URLs</strong> you add, with their names and settings, and for each check its time, status
-            code, latency and a short error reason. Raw checks are deleted after {CHECK_RETENTION_DAYS} days; daily totals
-            are kept for monthly reports.
+            code, latency and a short error reason. <span data-testid="retention">{CHECK_RETENTION_TEXT}</span>
           </li>
           <li className={li}>
             <strong>Alerts</strong> (when they opened and resolved, and the message) and your alert webhook URL. Webhook
@@ -69,9 +59,9 @@ export default function SecurityPage() {
             <strong>Ingest tokens</strong> only as a SHA-256 hash. The token itself is shown once, when it&apos;s created.
           </li>
           <li className={li}>
-            <strong>Your account:</strong> your GitHub id, login, name, public email and avatar URL, from GitHub sign-in.
-            Sign-in asks GitHub for your profile only, not for access to your repositories (the optional GitHub App below
-            is separate). Clients, deploy notes and contact emails are what you type in.
+            <strong>Your account:</strong> your GitHub id, login, name, email address and avatar URL, from GitHub sign-in.{' '}
+            <span data-testid="signin-reads">{githubSignInReads()}</span> Sign-in gets no access to your repositories (the
+            optional GitHub App below is separate). Clients, deploy notes and contact emails are what you type in.
           </li>
         </ul>
       </Section>
@@ -146,6 +136,6 @@ export default function SecurityPage() {
           what we are doing about it.
         </p>
       </Section>
-    </article>
+    </ProsePage>
   );
 }

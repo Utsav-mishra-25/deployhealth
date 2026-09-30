@@ -5,8 +5,9 @@ var drift between code and env files), is it up (uptime checks), and did the las
 (alerts linked to the deploy that introduced new missing variables).
 
 Phase 1 (config health), Phase 2 (clients, uptime, alerts), Phase 3 (public demo, handoff
-export, monthly client reports) and Phase 4 (licensing, the npm CLI, hard caps, /security, and the
-GitHub App's env check on every pull request) are built.
+export, monthly client reports), Phase 4 (licensing, the npm CLI, hard caps, /security, and the
+GitHub App's env check on every pull request) and Phase 4.5 (launch polish: landing page, a demo
+that's fresh at any hour, phone layouts, /privacy and /terms, metadata, security headers) are built.
 
 ## Monorepo layout
 
@@ -17,22 +18,28 @@ apps/
     src/auth.ts       Auth.js v5: GitHub OAuth + dev-only dev login, JWT sessions, no adapter
     src/middleware.ts rate limit for /share/* (Node runtime, in memory)
     src/lib/          ingest handler, validation (zod), guard (read-only demo), demo owner, paths,
-                      handoff loader, share-link signing, rate limiter, auth providers, formatting,
-                      github-webhook.ts (signature, dedupe, per-installation limit, events), jobs.ts
-                      (send-only pg-boss client), read-body.ts (capped streaming body reader)
+                      handoff loader, share-link signing, rate limiter, auth providers (+ the OAuth
+                      scopes and what sign-in reads), formatting, github-webhook.ts (signature,
+                      dedupe, per-installation limit, events), jobs.ts (send-only pg-boss client),
+                      read-body.ts (capped streaming body reader), legal.ts (operator, hosting,
+                      subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
                       project, handoff, report (props: ownerId/data, paths, readOnly)
-    src/app/          /login, /clients (home), /clients/new, /clients/[slug](/edit, /report),
-                      /projects/new, /projects/[id] (+ endpoint actions, /settings, /handoff,
-                      /handoff.md), /demo/... (read-only mirror), /share/reports/[token],
-                      /api/demo/broken, /security and /.well-known/security.txt (public),
-                      /api/github/webhook (GitHub App), /github/installed (the App's setup URL)
+    src/app/          / (landing when signed out, else → /clients), /login, /clients, /clients/new,
+                      /clients/[slug](/edit, /report), /projects/new, /projects/[id] (+ endpoint
+                      actions, /settings, /handoff, /handoff.md), /demo/... (read-only mirror),
+                      /share/reports/[token], /api/demo/broken, /security, /privacy, /terms and
+                      /.well-known/security.txt (public), /api/github/webhook (GitHub App),
+                      /github/installed (the App's setup URL); icon.svg, opengraph-image.tsx (+
+                      twitter-image), sitemap.ts
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
-                      SafeMarkdown, demo banner, print/share buttons, report toolbar
+                      SafeMarkdown, demo banner, print/share buttons, report toolbar, alert card,
+                      landing, prose-page (layout of /security, /privacy, /terms)
     e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link)
     railway.json      documentation only: the Railway build/deploy fields set by hand in the dashboard
   worker/             plain Node process running pg-boss
-    src/index.ts      queues + schedules: check-endpoints, prune-checks, reseed-demo
+    src/index.ts      wires queues and real deps: check-endpoints, prune-checks, reseed-demo, pr-check
+    src/schedules.ts  every queue's options and cron (registerQueues: create, re-apply options, schedule)
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed)
     src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
@@ -114,8 +121,8 @@ Run the web app or worker alone with `pnpm --filter @deployhealth/web dev` or
 
 ## Seeding
 
-`pnpm db:seed` (`src/seed-cli.ts`) replaces the demo user (`github_id = -1`, so it can never
-match a real GitHub account) and everything it owns, in **one transaction**, with:
+`pnpm db:seed` (`src/seed-cli.ts`) replaces everything the demo user (`github_id = -1`, so it can
+never match a real GitHub account) owns, in **one transaction**, with:
 
 - clients **Acme Corp** (acme-storefront) and **Northwind Bakery** (northwind-site), plus
   **portfolio** with no client. The projects have **fixed ids** (`DEMO_PROJECT_IDS`), so
@@ -124,12 +131,24 @@ match a real GitHub account) and everything it owns, in **one transaction**, wit
   unnamed to show the host fallback), with 7 days of checks (deterministic PRNG);
 - every deploy's scan with **variables** consistent with its MISSING findings, and deploy notes for
   two projects (handoff demo);
-- the **scripted incident**: acme-storefront's last deploy (b52952e, 26 minutes ago) introduces
+- the **scripted incident**: acme-storefront's last deploy (b52952e, 12 minutes ago) introduces
   REDIS_URL and STRIPE_KEY; "Acme API" (`<DEMO_BASE_URL>/api/demo/broken`, always 503) fails from
   4 minutes later. Those failing checks are replayed through the real `recordCheck()`, so the open
   alert ("Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars:
   REDIS_URL, STRIPE_KEY") comes from production code and reads the same on every reseed. A past
   Northwind incident opens and resolves the same way.
+- **freshness**: the worker reseeds every 30 minutes, so the incident's deploy is always 12–42
+  minutes old and Acme API down for under an hour (`DEMO_FRESHNESS`; tested in the seed and
+  against `RESEED_INTERVAL_MINUTES` in the worker). Change one, check the other;
+- **sample pull request checks** on acme-storefront: Claude's #87 adds REDIS_URL and STRIPE_KEY
+  undeclared (neutral, merged a minute before b52952e), a clean rename (#86), and a committed
+  `apps/web/.env.local` with one secret-shaped string (#88, failure), plus a Devin PR on northwind.
+  The web app renders demo PR rows without GitHub links, marked "Sample";
+- **stable ids across reseeds**: the demo user row is kept (upserted; its clients and projects are
+  deleted and recreated), and projects and endpoints have fixed ids (`DEMO_PROJECT_IDS`,
+  `DEMO_ENDPOINT_IDS`). A /demo request that resolved the demo owner before a reseed committed
+  still finds the same data after it, and never renders empty or 404s. Deploy ids do change, so a
+  `?deploy=` that isn't the project's shows the latest deploy.
 
 `DEMO_BASE_URL` (packages/db `.env`, default `http://localhost:3000`) is the web app's public URL.
 Locally the worker's SSRF guard blocks localhost, so Acme API keeps failing either way. The seed
@@ -157,10 +176,13 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **db tests** use `TEST_DATABASE_URL` (default `.../deployhealth_test`). Global setup drops and
   re-migrates that database's schema on every run, so never point it at real data.
 - **e2e** re-seeds the database in `apps/web/.env.local`, starts `next dev` on :3100 with the dev
-  login and the demo on, and runs two tests: the public demo without a session (overview → project
-  → handoff page and `.md` download → monthly report), and the signed-in flow as the dev user
-  (client → project → scan with variables → named endpoint → SSRF rejection → untrusted deploy
-  notes in the handoff → share a report → open the link in a fresh context → tampered link 404s).
+  login and the demo on, and runs: the landing page (signed out, one click to the demo); the public
+  demo without a session (overview → project with its sample PR checks → handoff page and `.md`
+  download → monthly report); the signed-in flow as the dev user (`/` → /clients, client → project
+  → scan with variables → named endpoint → SSRF rejection → untrusted deploy notes in the handoff
+  → share a report → open the link in a fresh context → tampered link 404s); /privacy and /terms;
+  the security headers; and `mobile.spec.ts`, which checks at 375×812 that no public or signed-in
+  page (nor a shared report) scrolls sideways.
   First time:
   `pnpm --filter @deployhealth/web exec playwright install chromium` (or set
   `PLAYWRIGHT_CHROMIUM_PATH` to an existing Chromium).
@@ -226,11 +248,41 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   info `deployhealth-report-share`. Verify the signature (constant time) before parsing fields.
   Stateless, 90 days; rotating the key revokes every link. `/share/*` is rate-limited per IP in
   `middleware.ts` (Node runtime, 30/min, keyed on the last `X-Forwarded-For` hop).
+- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/security`, `/privacy`, `/terms`): no
+  external assets (fonts, scripts, images, analytics), server components unless interactivity is
+  unavoidable, and no sideways scroll at 375 px (`e2e/mobile.spec.ts`; wide tables go inside their
+  own `overflow-x-auto` box, or `.doc-scroll` on printable pages, which prints full width; long
+  names and paths get `break-all`/`break-words`). No new env vars for them without a decision.
+- **`/`** is the landing page for signed-out visitors (indexable) and redirects signed-in users to
+  /clients. Its example alert is built by `alertOpenedMessage()` with the demo incident's values
+  (`lib/landing.ts`, tested against the seed); the demo button shows only with `DEMO_PUBLIC=1`, and
+  "Sign in with GitHub" links to /login (no inline server action, so the guard test's list holds).
+  "Free while in beta", never prices. The bundle size it states is `CLI_BUNDLE_KB` (core), pinned to
+  the built CLI by `test/npm-package.test.ts`.
+- **Metadata:** the root layout sets `metadataBase` from `appUrl()` and generic Open Graph / Twitter
+  (`summary_large_image`) cards titled "deployhealth" on every page, so link previews never carry a
+  client's name. `app/opengraph-image.tsx` (next/og, its bundled font, rendered at build) is the
+  preview. Page titles come from `lib/titles.ts`: "<project> · deployhealth", "Handoff · <project>
+  · …", "<client> · …", "Report · <Month YYYY> · …", with "Live demo" before the site name on
+  /demo; `/share/*` stays "Monthly report · deployhealth" and noindex. `sitemap.ts` lists the
+  public pages; there is no robots route (Cloudflare manages robots.txt).
+- **Security headers** (`SECURITY_HEADERS` in `next.config.ts`, on `/:path*`, tested with Next's own
+  matcher): nosniff, `strict-origin-when-cross-origin`, `X-Frame-Options: DENY` + CSP
+  `frame-ancestors 'none'` (the only CSP directive for now: Next's inline scripts need nonces
+  first), and a Permissions-Policy denying camera, microphone and geolocation. No HSTS in code: it's
+  set at Cloudflare.
 - **/security** (public, linked from the footer) states what's stored and how checks and share
   links work, using the shared constants (`CHECK_TIMEOUT_MS`, caps, `SHARE_LINK_DAYS`) so it can't
   drift. Keep it true when behaviour changes (anything new that reads repositories goes there). The
   contact is `SECURITY_CONTACT_EMAIL`, else a private GitHub security advisory; the same contact
   goes into `/.well-known/security.txt` (RFC 9116, `Expires` 180 days out, rounded to the day).
+- **/privacy and /terms** are static pages whose facts live in `lib/legal.ts` (operator and
+  country, `LEGAL_LAST_UPDATED`, hosting region, subprocessors, deletion window,
+  `CHECK_RETENTION_TEXT`) and `lib/auth-providers.ts` (`GITHUB_OAUTH_SCOPES`, `githubSignInReads()`,
+  also shown on /login and /security). The contact is `securityContact()`. `test/legal.test.ts`
+  checks /privacy and /security render the same retention and scope text. Bump
+  `LEGAL_LAST_UPDATED` with any change to either page, and keep /privacy true to the code like
+  /security.
 - **Untrusted Markdown** (deploy notes) renders only through `SafeMarkdown`: react-markdown with
   `skipHtml`, images removed, external links `rel="noopener noreferrer"`. Never add rehype-raw.
 - **Printable pages** (handoff, report) use print CSS (`print:hidden`, `.doc-section`) and no
@@ -300,8 +352,13 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **prune-checks** (nightly, 03:17 UTC): first `rollupChecks()` writes one `endpoint_daily_stats`
   row per endpoint per complete UTC day (idempotent upsert), then `pruneChecks()` deletes raw checks
   from whole days more than 30 days back. A failed rollup deletes nothing.
-- **reseed-demo** (only with `DEMO_PUBLIC=1`, which also needs `DEMO_BASE_URL`): nightly at 04:41
-  UTC and once on start, runs the seed so production needs no manual seed step. Never logs the token.
+- **reseed-demo** (only with `DEMO_PUBLIC=1`, which also needs `DEMO_BASE_URL`): every 30 minutes
+  (`RESEED_CRON`) and once on start, runs the seed so production needs no manual seed step and the
+  incident stays recent. About a second; logs its duration, never the token. Retries up to 5 times,
+  1 → 16 minutes apart, so a start before web has applied a new migration heals itself.
+- **Queue options** live in `schedules.ts` (`QUEUES`). pg-boss's `createQueue` ignores an existing
+  queue, so `registerQueues()` re-applies every option with `updateQueue` (all but the policy, which
+  can't change) on each start.
   The demo also gets a GitHub App installation (`DEMO_INSTALLATION_ID = -1`) and four checked PRs.
 - **pr-check** (queued by the web app's GitHub webhook; worked only with the App configured): see
   "GitHub App: pull request checks" below. The nightly prune also deletes webhook delivery ids

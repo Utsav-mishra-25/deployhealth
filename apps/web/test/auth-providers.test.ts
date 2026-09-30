@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildProviders, isDemoLoginEnabled } from '@/lib/auth-providers';
+import { buildProviders, GITHUB_OAUTH_SCOPES, githubSignInReads, isDemoLoginEnabled } from '@/lib/auth-providers';
 
 const findDevUser = async () => ({ id: 'u1', name: 'Dev', email: null, image: null });
 const github = { AUTH_GITHUB_ID: 'gh-id', AUTH_GITHUB_SECRET: 'gh-secret' };
@@ -35,5 +35,21 @@ describe('GitHub provider', () => {
   it('is registered only when both OAuth credentials are set', () => {
     expect(providerIds({ AUTH_DEMO_LOGIN: '0', NODE_ENV: 'development' })).toEqual([]);
     expect(providerIds({ AUTH_GITHUB_ID: 'x', AUTH_DEMO_LOGIN: '1', NODE_ENV: 'development' })).toEqual(['dev']);
+  });
+});
+
+describe('GitHub OAuth scopes', () => {
+  it('asks for exactly the profile and email scopes, set on the provider', () => {
+    expect(GITHUB_OAUTH_SCOPES).toEqual(['read:user', 'user:email']);
+    const [entry] = buildProviders({ ...github, AUTH_DEMO_LOGIN: '0', NODE_ENV: 'production' }, findDevUser);
+    const provider = (typeof entry === 'function' ? entry() : entry) as { options?: { authorization?: { params?: { scope?: string } } } };
+    expect(provider.options?.authorization?.params?.scope).toBe('read:user user:email');
+  });
+
+  it('describes what sign-in reads from the configured scopes, including private emails, and no repositories', () => {
+    expect(githubSignInReads()).toBe(
+      'Sign-in reads your GitHub profile (id, login, name and avatar) and your email address, even if it is private on GitHub (GitHub scopes read:user, user:email).',
+    );
+    expect(githubSignInReads()).not.toMatch(/\brepo\b/);
   });
 });

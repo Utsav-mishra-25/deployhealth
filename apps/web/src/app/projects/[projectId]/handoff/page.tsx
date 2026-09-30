@@ -1,12 +1,17 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { requireUser } from '@/auth';
+import { auth, requireUser } from '@/auth';
 import { loadHandoff } from '@/lib/handoff';
 import { APP_PATHS } from '@/lib/paths';
+import { projectMetadata } from '@/lib/titles';
 import { HandoffView } from '@/views/handoff-view';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Handoff · deployhealth' };
+
+export async function generateMetadata({ params }: { params: Promise<{ projectId: string }> }): Promise<Metadata> {
+  const { projectId } = await params;
+  return projectMetadata('app', (await auth())?.user?.id ?? null, projectId, 'Handoff');
+}
 
 export default async function HandoffPage({ params }: { params: Promise<{ projectId: string }> }) {
   const user = await requireUser();

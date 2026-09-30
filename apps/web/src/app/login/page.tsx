@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth, signIn } from '@/auth';
 import { serverEnv } from '@/env';
 import Link from 'next/link';
-import { isDemoLoginEnabled } from '@/lib/auth-providers';
+import { githubSignInReads, isDemoLoginEnabled } from '@/lib/auth-providers';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const demo = isDemoLoginEnabled(env);
 
   return (
-    <div className="mx-auto mt-16 max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
+    <div className="mx-auto mt-8 max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:mt-16 sm:p-8">
       <h1 className="text-xl font-semibold">Sign in</h1>
       <p className="mt-1 text-sm text-gray-600">One page for every client project you maintain.</p>
 
@@ -40,6 +40,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <button className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">
               Sign in with GitHub
             </button>
+            <p className="mt-2 text-xs leading-relaxed text-gray-500" data-testid="signin-reads">
+              {githubSignInReads()} No repository access. The optional GitHub App is separate.
+            </p>
           </form>
         )}
         {demo && (

@@ -3,21 +3,33 @@ import { generateToken, hashToken, tokenHint, type EnvFileBasename, type Finding
 import { eq } from 'drizzle-orm';
 import { createClient } from './clients';
 import type { Db } from './client';
-import { DEMO_GITHUB_ID, DEMO_INSTALLATION_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
+import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_INSTALLATION_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
 import { recordCheck, type CheckOutcome } from './monitoring';
 import { createProject, recordScan, upsertGithubUser } from './queries';
-import { checks, endpoints, installationRepos, installations, prChecks, projects, users, type NewPrCheck, type Project } from './schema';
+import { checks, clients, endpoints, installationRepos, installations, prChecks, projects, type NewPrCheck, type Project } from './schema';
 
 export const DEMO_PROJECT = { name: 'acme-storefront', repoFullName: 'acme/storefront' } as const;
 export const DEMO_DEPLOY_COUNT = 10;
 export const HISTORY_DAYS = 7;
 
-/** The scripted incident: the last storefront deploy, then failures this many minutes later. */
+/**
+ * The scripted incident: the last storefront deploy, then failures this many minutes later. The
+ * worker reseeds every RESEED_INTERVAL_MINUTES (apps/worker/src/schedules.ts), so a visitor sees the
+ * deploy between deployMinutesAgo and deployMinutesAgo + that interval old: always inside
+ * DEMO_FRESHNESS.
+ */
 export const SCENARIO = {
-  deployMinutesAgo: 26,
+  deployMinutesAgo: 12,
   failureAfterDeployMinutes: 4,
   endpointName: 'Acme API',
 } as const;
+
+/**
+ * What "fresh" means for the demo at any moment: the incident's deploy is between these many
+ * minutes old, and Acme API has been down for less than `maxDownMinutes`. Tested against the seed
+ * and against the worker's reseed schedule.
+ */
+export const DEMO_FRESHNESS = { minDeployAgeMinutes: 10, maxDeployAgeMinutes: 45, maxDownMinutes: 60 } as const;
 
 /** Served by the web app when DEMO_PUBLIC=1: always 503, so the demo alert is real and stays open. */
 export const DEMO_BROKEN_PATH = '/api/demo/broken';
@@ -157,7 +169,7 @@ const NORTHWIND_DEPLOY_NOTES = `Static marketing site plus a small order API, bo
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const hoursAgo = (now: Date, hours: number) => new Date(now.getTime() - hours * 3_600_000);
 
-/** acme-storefront's ten deploys: roughly one a day, the last one 26 minutes before `now`. */
+/** acme-storefront's ten deploys: roughly one a day, the last one SCENARIO.deployMinutesAgo before `now`. */
 export function demoDeploys(now: Date): SeedDeploy[] {
   return Array.from({ length: DEMO_DEPLOY_COUNT }, (_, index): SeedDeploy => {
     const n = index + 1;
@@ -298,10 +310,15 @@ export interface SeedResult {
 }
 
 /**
- * Replace the demo user and everything it owns (clients, projects, endpoints, checks, alerts)
- * with two clients, three projects (one unassigned), endpoints with 7 days of checks, one past
- * incident and one open alert linked to the deploy that caused it. Safe to run repeatedly, and
- * atomic: it runs in one transaction, so a visitor to /demo never sees a half-built demo.
+ * Replace everything the demo user owns (clients, projects, endpoints, checks, alerts, pull
+ * request checks) with two clients, three projects (one unassigned), endpoints with 7 days of
+ * checks, one past incident and one open alert linked to the deploy that caused it. Safe to run
+ * repeatedly, and atomic: it runs in one transaction, so a visitor to /demo never sees a
+ * half-built demo.
+ *
+ * The demo user row itself is kept (upserted), and projects and endpoints have fixed ids, so a
+ * request that read ids before a reseed commits still finds the same user, projects and endpoints
+ * after it: /demo never renders empty or 404s because a reseed landed mid-request.
  *
  * Healthy endpoints point at example.com/.org, which really answer 200, so a running worker keeps
  * them up. "Acme API" points at the web app's /api/demo/broken, which always answers 503, so the
@@ -314,8 +331,10 @@ export async function seed(db: Db, now = new Date(), options: SeedOptions = {}):
 }
 
 async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResult> {
-  await db.delete(users).where(eq(users.githubId, DEMO_GITHUB_ID));
   const user = await upsertGithubUser(db, { githubId: DEMO_GITHUB_ID, login: DEMO_LOGIN, name: 'Demo User', email: 'demo@example.com' });
+  // Everything else the demo user owns hangs off its projects and clients (on delete cascade).
+  await db.delete(projects).where(eq(projects.ownerId, user.id));
+  await db.delete(clients).where(eq(clients.userId, user.id));
 
   const acme = await createClient(db, user.id, {
     name: 'Acme Corp',
@@ -355,11 +374,11 @@ async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResul
   const [api, homepage, bakery, folio] = await db
     .insert(endpoints)
     .values([
-      { projectId: storefront.id, name: SCENARIO.endpointName, url: brokenUrl, method: 'GET', intervalSeconds: 60 },
-      { projectId: storefront.id, name: 'Acme storefront', url: 'https://example.com/', method: 'HEAD', intervalSeconds: 300 },
-      { projectId: northwindSite.id, name: 'Northwind site', url: 'https://example.org/', method: 'GET', intervalSeconds: 300 },
+      { id: DEMO_ENDPOINT_IDS.acmeApi, projectId: storefront.id, name: SCENARIO.endpointName, url: brokenUrl, method: 'GET', intervalSeconds: 60 },
+      { id: DEMO_ENDPOINT_IDS.acmeStorefront, projectId: storefront.id, name: 'Acme storefront', url: 'https://example.com/', method: 'HEAD', intervalSeconds: 300 },
+      { id: DEMO_ENDPOINT_IDS.northwind, projectId: northwindSite.id, name: 'Northwind site', url: 'https://example.org/', method: 'GET', intervalSeconds: 300 },
       // Unnamed on purpose: shows the fallback to the host ("example.net").
-      { projectId: portfolio.id, url: 'https://example.net/', method: 'GET', intervalSeconds: 900 },
+      { id: DEMO_ENDPOINT_IDS.portfolio, projectId: portfolio.id, url: 'https://example.net/', method: 'GET', intervalSeconds: 900 },
     ])
     .returning();
 
@@ -396,16 +415,19 @@ async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResul
   await insertChecks(db, folio!.id, folioChecks);
   await finishEndpoint(db, folio!.id, folioChecks, 900);
 
-  await seedPullRequests(db, now, user.id, storefront, northwindSite);
+  await seedPullRequests(db, now, user.id, storefront, northwindSite, deployedAt);
 
   return { userId: user.id, projectId: storefront.id, token };
 }
 
 /**
  * The GitHub App side of the demo: an installation on the storefront and northwind repos, and a
- * few checked pull requests, two of them by coding agents that added undeclared env vars.
+ * few checked pull requests. On the storefront, the story behind the incident: Claude's PR #87 adds
+ * REDIS_URL and STRIPE_KEY without declaring them (flagged, merged anyway, deployed as b52952e a
+ * minute later), next to a clean rename and a strict-mode failure for a committed .env.local.
+ * Sample data: the web app renders these rows without links to GitHub.
  */
-async function seedPullRequests(db: Db, now: Date, userId: string, storefront: Project, northwind: Project): Promise<void> {
+async function seedPullRequests(db: Db, now: Date, userId: string, storefront: Project, northwind: Project, incidentDeployAt: Date): Promise<void> {
   // Installations aren't owned by the user row (it only links them), so clear the old one here.
   await db.delete(installations).where(eq(installations.githubInstallationId, DEMO_INSTALLATION_ID));
   const [installation] = await db
@@ -414,47 +436,49 @@ async function seedPullRequests(db: Db, now: Date, userId: string, storefront: P
     .returning();
   await db.insert(installationRepos).values([storefront, northwind].map((p) => ({ installationId: installation!.id, repoFullName: p.repoFullName })));
 
-  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
-  const common = (projectId: string, prNumber: number, hours: number) => ({
+  const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+  const common = (projectId: string, prNumber: number, checkedMinutesAgo: number) => ({
     projectId,
     installationId: installation!.id,
     prNumber,
     headSha: sha(`pr-${prNumber}-head`),
     baseSha: sha(`pr-${prNumber}-base`),
-    createdAt: hoursAgo(hours),
-    updatedAt: hoursAgo(hours),
+    createdAt: minutesAgo(checkedMinutesAgo),
+    updatedAt: minutesAgo(checkedMinutesAgo),
   });
   const rows: NewPrCheck[] = [
     {
-      ...common(storefront.id, 87, 3),
+      // (c) A committed apps/web/.env.local and one secret-shaped string: a failure, as strict mode reports it.
+      ...common(storefront.id, 88, 35),
+      authorLogin: 'sam-okafor',
+      committedEnvFiles: [{ path: 'apps/web/.env.local', added: true }],
+      secretHits: 1,
+      conclusion: 'failure',
+    },
+    {
+      // (a) The coding agent's PR: two new variables, neither declared in apps/api/.env.example.
+      ...common(storefront.id, 87, 150),
       authorLogin: 'claude[bot]',
       authorIsAgent: true,
       agentName: 'Claude',
       addedVars: [
-        { name: 'CACHE_TTL', refs: [{ file: 'src/lib/cache.ts', line: 12 }, { file: 'src/lib/cache.ts', line: 31 }], total: 2, declared: false },
-        { name: 'REDIS_URL', refs: [{ file: 'src/lib/cache.ts', line: 8 }], total: 1, declared: true },
+        { name: 'REDIS_URL', refs: [{ file: 'apps/api/src/lib/cache.ts', line: 6 }], total: 1, declared: false },
+        { name: 'STRIPE_KEY', refs: [{ file: 'apps/api/src/billing/stripe.ts', line: 3 }], total: 1, declared: false },
       ],
-      undeclaredVars: ['CACHE_TTL'],
+      undeclaredVars: ['REDIS_URL', 'STRIPE_KEY'],
       conclusion: 'neutral',
+      closedAt: new Date(incidentDeployAt.getTime() - 60_000),
     },
     {
-      ...common(storefront.id, 86, 26),
-      authorLogin: 'Copilot',
-      authorIsAgent: true,
-      agentName: 'Copilot',
-      renamedVars: [{ from: 'MAILER_KEY', to: 'MAIL_API_KEY', file: 'src/lib/mail.ts', line: 4, declared: true }],
-      conclusion: 'success',
-      closedAt: hoursAgo(20),
-    },
-    {
-      ...common(storefront.id, 85, 48),
+      // (b) A clean rename by a person, with .env.example updated in the same PR.
+      ...common(storefront.id, 86, 26 * 60),
       authorLogin: 'maya-lopez',
-      removedVars: [{ name: 'LEGACY_CHECKOUT', refs: [{ file: 'src/checkout/index.ts', line: 30 }], total: 1 }],
+      renamedVars: [{ from: 'SENDGRID_KEY', to: 'EMAIL_API_KEY', file: 'apps/api/src/lib/mail.ts', line: 4, declared: true }],
       conclusion: 'success',
-      closedAt: hoursAgo(40),
+      closedAt: minutesAgo(20 * 60),
     },
     {
-      ...common(northwind.id, 12, 5),
+      ...common(northwind.id, 12, 5 * 60),
       authorLogin: 'devin-ai-integration[bot]',
       authorIsAgent: true,
       agentName: 'Devin',

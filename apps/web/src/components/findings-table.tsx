@@ -26,7 +26,7 @@ export function FindingsByKind({ findings }: { findings: FindingRow[] }) {
         const s = KIND_STYLES[kind];
         return (
           <section key={kind} aria-labelledby={`findings-${kind}`}>
-            <h3 id={`findings-${kind}`} className="flex items-baseline gap-2">
+            <h3 id={`findings-${kind}`} className="flex flex-wrap items-baseline gap-x-2">
               <span className={`text-sm font-semibold uppercase tracking-wide ${s.text}`}>{s.label}</span>
               <span className="text-sm text-gray-500">
                 {rows.length} {rows.length === 1 ? 'finding' : 'findings'} · {DESCRIPTIONS[kind]}
@@ -35,24 +35,26 @@ export function FindingsByKind({ findings }: { findings: FindingRow[] }) {
             {rows.length === 0 ? (
               <p className="mt-2 text-sm text-gray-400">None</p>
             ) : (
-              <table className="mt-2 w-full overflow-hidden rounded-lg bg-white text-left text-sm ring-1 ring-gray-200">
-                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Variable</th>
-                    <th className="px-3 py-2 font-medium">Location</th>
-                    <th className="px-3 py-2 font-medium">Detail</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {rows.map((f, i) => (
-                    <tr key={`${f.var_name}-${f.file}-${f.line}-${i}`}>
-                      <td className="px-3 py-2 font-mono font-medium">{f.var_name}</td>
-                      <td className="px-3 py-2 font-mono text-gray-700">{location(f)}</td>
-                      <td className="px-3 py-2 text-gray-500">{detail(f)}</td>
+              <div className="mt-2 overflow-x-auto rounded-lg bg-white ring-1 ring-gray-200">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Variable</th>
+                      <th className="px-3 py-2 font-medium">Location</th>
+                      <th className="px-3 py-2 font-medium">Detail</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rows.map((f, i) => (
+                      <tr key={`${f.var_name}-${f.file}-${f.line}-${i}`}>
+                        <td className="px-3 py-2 font-mono font-medium">{f.var_name}</td>
+                        <td className="px-3 py-2 font-mono text-gray-700">{location(f)}</td>
+                        <td className="px-3 py-2 text-gray-500">{detail(f)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         );

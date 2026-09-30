@@ -7,10 +7,15 @@ import { ReportToolbar } from '@/components/report-toolbar';
 import { ShareReportButton } from '@/components/share-report-button';
 import { getDb } from '@/lib/db';
 import { APP_PATHS } from '@/lib/paths';
+import { reportMetadata } from '@/lib/titles';
 import { ReportView } from '@/views/report-view';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Monthly report · deployhealth' };
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ month?: string }> }): Promise<Metadata> {
+  const { month } = await searchParams;
+  return reportMetadata('app', month);
+}
 
 export default async function ClientReportPage({
   params,

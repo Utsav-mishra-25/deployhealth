@@ -10,6 +10,21 @@ export const CLI_BUNDLE_DEPRECATION = [
   { key: 'Link', value: '<https://github.com/Utsav-mishra-25/deployhealth#deprecated-downloading-the-cli-from-your-instance>; rel="deprecation"' },
 ];
 
+/**
+ * Sent on every route (pages, route handlers, /api/*, static files). No HSTS here: it's set at
+ * Cloudflare. No script/style CSP yet (Next's inline scripts need nonces); frame-ancestors only.
+ */
+export const SECURITY_HEADERS = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+];
+
+/** Next's pattern for every path, including `/`. */
+export const ALL_ROUTES = '/:path*';
+
 const config: NextConfig = {
   // The workspace packages ship TypeScript source.
   transpilePackages: ['@deployhealth/core', '@deployhealth/db'],
@@ -18,7 +33,10 @@ const config: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   poweredByHeader: false,
   async headers() {
-    return [{ source: '/deployhealth-scan.mjs', headers: CLI_BUNDLE_DEPRECATION }];
+    return [
+      { source: ALL_ROUTES, headers: SECURITY_HEADERS },
+      { source: '/deployhealth-scan.mjs', headers: CLI_BUNDLE_DEPRECATION },
+    ];
   },
 };
 

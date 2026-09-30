@@ -1,12 +1,25 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { auth, signOut } from '@/auth';
+import { appUrl } from '@/lib/app-url';
+import { SITE_DESCRIPTION } from '@/lib/brand';
+import { REPO_URL } from '@/lib/legal';
 import './globals.css';
 
-export const metadata: Metadata = {
-  title: 'deployhealth',
-  description: 'One page for every client project you maintain: is the config sane, is it up, and did the last deploy break it.',
-};
+/**
+ * Site-wide: absolute URLs for link previews (metadataBase, from the request like every other
+ * absolute URL here), and Open Graph / Twitter cards that stay generic on every page, so a shared
+ * link never unfurls a client's name. The image is app/opengraph-image.tsx.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    metadataBase: new URL(await appUrl()),
+    title: 'deployhealth',
+    description: SITE_DESCRIPTION,
+    openGraph: { title: 'deployhealth', description: SITE_DESCRIPTION, siteName: 'deployhealth', type: 'website' },
+    twitter: { card: 'summary_large_image', title: 'deployhealth', description: SITE_DESCRIPTION },
+  };
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -41,7 +54,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Link href="/security" className="hover:text-gray-900">
               Security
             </Link>
-            <a href="https://github.com/Utsav-mishra-25/deployhealth" className="hover:text-gray-900">
+            <Link href="/privacy" className="hover:text-gray-900">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-gray-900">
+              Terms
+            </Link>
+            <a href={REPO_URL} className="hover:text-gray-900">
               Source on GitHub
             </a>
           </nav>

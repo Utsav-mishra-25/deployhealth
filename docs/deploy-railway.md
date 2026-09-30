@@ -136,7 +136,7 @@ the build command builds the workspace packages it depends on first).
    | --- | --- | --- |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Reference to the Postgres service |
    | `NODE_ENV` | `production` | Literal |
-   | `DEMO_PUBLIC` | `1` | Same value as on web. Runs the `reseed-demo` job nightly and once on start, so the demo data exists without a manual seed step |
+   | `DEMO_PUBLIC` | `1` | Same value as on web. Runs the `reseed-demo` job every 30 minutes and once on start, so the demo data exists without a manual seed step and stays recent |
    | `DEMO_BASE_URL` | `https://<your-domain>` | web's public URL from step 2.6. Required when `DEMO_PUBLIC=1`: the demo's failing "Acme API" endpoint is `<DEMO_BASE_URL>/api/demo/broken` |
    | `GITHUB_APP_ID` | e.g. `1234567` | Optional: the GitHub App from step 8 (its numeric App ID). Set it with the key, or neither |
    | `GITHUB_APP_PRIVATE_KEY` | the App's `.pem`, base64 on one line | Optional: see step 8 for the one-line encoding. The worker refuses to start if it can't parse it |
@@ -173,13 +173,14 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 ## 6. Check it works
 
 - `https://<your-domain>/login` shows **Sign in with GitHub**, and signing in lands on `/clients`.
-- Worker logs show `[worker] ready: check-endpoints every minute, prune-checks nightly`, then one
+- Worker logs show `[worker] ready: check-endpoints every minute, prune-checks nightly` (plus
+  `reseed-demo every 30 minutes and now` with the demo on), then one
   `[check] {...}` line per minute once you have endpoints.
 - A project's settings page shows the GitHub Action, which runs `npx --yes deployhealth-scan@<version>`
   from npm. (`https://<your-domain>/deployhealth-scan.mjs` still serves the old CLI download for
   older workflows, with a `Deprecation` header.)
 - With the demo on: `https://<your-domain>/demo` shows Acme Corp and Northwind Bakery without
-  signing in, the worker log shows `[reseed-demo] demo data restored in …ms` after each start, and
+  signing in, the worker log shows `[reseed-demo] demo data restored in …ms` after each start and every 30 minutes, and
   within a couple of minutes "Acme API" is failing for real (its checks show `Expected 200, got 503`).
 
 ## 7. Verify the rate limiter

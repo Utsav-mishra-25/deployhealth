@@ -1,8 +1,15 @@
-import { requireUser } from '@/auth';
+import type { Metadata } from 'next';
+import { auth, requireUser } from '@/auth';
 import { APP_PATHS } from '@/lib/paths';
+import { projectMetadata } from '@/lib/titles';
 import { ProjectView } from '@/views/project-view';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ params }: { params: Promise<{ projectId: string }> }): Promise<Metadata> {
+  const { projectId } = await params;
+  return projectMetadata('app', (await auth())?.user?.id ?? null, projectId);
+}
 
 export default async function ProjectPage({
   params,

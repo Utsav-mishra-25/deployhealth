@@ -19,22 +19,36 @@ export function AgentBadge({ name }: { name: string }) {
 
 /**
  * Recent pull requests the GitHub App checked (the latest check of each): number, author,
- * result and undeclared env vars. Links go to GitHub.
+ * result and undeclared env vars. Links go to GitHub, except for `sample` rows (the demo's), which
+ * aren't real pull requests: those are plain text, marked "Sample".
  */
-export function PrChecksSection({ repoFullName, checks, readOnly }: { repoFullName: string; checks: PrCheckListItem[]; readOnly: boolean }) {
+export function PrChecksSection({
+  repoFullName,
+  checks,
+  readOnly,
+  sample = false,
+}: {
+  repoFullName: string;
+  checks: PrCheckListItem[];
+  readOnly: boolean;
+  sample?: boolean;
+}) {
   return (
     <section aria-labelledby="pull-requests-heading" id="pull-requests">
-      <h2 id="pull-requests-heading" className="mb-3 text-lg font-semibold">
-        Pull requests
-      </h2>
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 id="pull-requests-heading" className="text-lg font-semibold">
+          Pull requests
+        </h2>
+        {sample && checks.length > 0 && <span className="text-sm text-gray-500">Sample pull requests, not on GitHub.</span>}
+      </div>
       {checks.length === 0 ? (
         <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
           No pull requests checked yet.{' '}
           {!readOnly && 'Install the GitHub App from Settings to check env vars on every pull request.'}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <table className="w-full text-sm whitespace-nowrap">
             <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="py-2 pr-3 pl-4 font-medium">Pull request</th>
@@ -50,11 +64,22 @@ export function PrChecksSection({ repoFullName, checks, readOnly }: { repoFullNa
                 return (
                   <tr key={c.prNumber} data-testid="pr-check-row">
                     <td className="py-2 pr-3 pl-4">
-                      <a href={`https://github.com/${repoFullName}/pull/${c.prNumber}`} className="font-medium text-gray-900 hover:text-emerald-700">
-                        #{c.prNumber}
-                      </a>
-                      <span className="ml-2 font-mono text-xs text-gray-500">{shortSha(c.headSha)}</span>
-                      {c.closed && <span className="ml-2 text-xs text-gray-500">closed</span>}
+                      {sample ? (
+                        <>
+                          <span className="font-medium text-gray-900">#{c.prNumber}</span>
+                          <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600" data-testid="sample-marker">
+                            Sample
+                          </span>
+                        </>
+                      ) : (
+                        <a href={`https://github.com/${repoFullName}/pull/${c.prNumber}`} className="font-medium text-gray-900 hover:text-emerald-700">
+                          #{c.prNumber}
+                        </a>
+                      )}
+                      <div className="text-xs text-gray-500">
+                        <span className="font-mono">{shortSha(c.headSha)}</span>
+                        {c.closed && <span className="ml-2">closed</span>}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-1.5">

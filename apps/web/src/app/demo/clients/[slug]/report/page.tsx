@@ -6,10 +6,15 @@ import { ReportToolbar } from '@/components/report-toolbar';
 import { getDb } from '@/lib/db';
 import { demoOwner } from '@/lib/demo';
 import { DEMO_PATHS } from '@/lib/paths';
+import { reportMetadata } from '@/lib/titles';
 import { ReportView } from '@/views/report-view';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Monthly report · Live demo · deployhealth' };
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ month?: string }> }): Promise<Metadata> {
+  const { month } = await searchParams;
+  return reportMetadata('demo', month);
+}
 
 export default async function DemoClientReportPage({
   params,

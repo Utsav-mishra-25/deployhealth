@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { CLI_BUNDLE_KB } from '../src/constants';
 import { githubActionSnippet } from '../src/ingest';
 import { CLI_VERSION } from '../src/version';
 
@@ -50,6 +51,10 @@ describe('the deployhealth-scan npm package', () => {
       expect(readFileSync(BIN, 'utf8').startsWith('#!/usr/bin/env node\n')).toBe(true);
       expect(statSync(BIN).mode & 0o111).not.toBe(0);
       expect(execFileSync(BIN, ['--version'], { encoding: 'utf8' })).toBe(`${CLI_VERSION}\n`);
+    });
+
+    it('is as small as the landing page says (CLI_BUNDLE_KB, rounded)', () => {
+      expect(Math.round(statSync(BIN).size / 1024)).toBe(CLI_BUNDLE_KB);
     });
   });
 });

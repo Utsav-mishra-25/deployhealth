@@ -20,11 +20,22 @@ export const DEV_GITHUB_ID = -2;
 export const DEMO_INSTALLATION_ID = -1;
 export const DEV_LOGIN = 'dev';
 
-/** Fixed ids for the demo projects, so /demo/projects/<id> links survive the nightly reseed. */
+/** Fixed ids for the demo projects, so /demo/projects/<id> links survive every reseed. */
 export const DEMO_PROJECT_IDS = {
   storefront: '0d3e0000-0000-4000-8000-000000000001',
   northwind: '0d3e0000-0000-4000-8000-000000000002',
   portfolio: '0d3e0000-0000-4000-8000-000000000003',
+} as const;
+
+/**
+ * Fixed ids for the demo endpoints. A check the worker claimed just before a reseed then records
+ * against the reseeded endpoint instead of failing on a deleted one.
+ */
+export const DEMO_ENDPOINT_IDS = {
+  acmeApi: '0d3e0000-0000-4000-8000-0000000000e1',
+  acmeStorefront: '0d3e0000-0000-4000-8000-0000000000e2',
+  northwind: '0d3e0000-0000-4000-8000-0000000000e3',
+  portfolio: '0d3e0000-0000-4000-8000-0000000000e4',
 } as const;
 
 export async function getDemoUser(db: Db): Promise<User | null> {

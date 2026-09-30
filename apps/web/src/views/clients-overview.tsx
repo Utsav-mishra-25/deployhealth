@@ -32,12 +32,12 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
         </div>
       ) : (
         <div className="mt-6 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm max-sm:block">
             <ProjectTableHead />
             {clients.map((client) => (
-              <tbody key={client.id} className="divide-y divide-gray-100 border-t border-gray-200">
-                <tr className="bg-gray-50/60">
-                  <th colSpan={4} scope="rowgroup" className="py-2 pr-4 pl-4 text-left">
+              <tbody key={client.id} className="divide-y divide-gray-100 border-t border-gray-200 first-of-type:max-sm:border-t-0 max-sm:block">
+                <tr className="bg-gray-50/60 max-sm:block">
+                  <th colSpan={4} scope="rowgroup" className="py-2 pr-4 pl-4 text-left max-sm:block">
                     <Link href={paths.client(client.slug)} className="font-semibold text-gray-900 hover:text-emerald-700">
                       {client.name}
                     </Link>
@@ -48,8 +48,8 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
                   </th>
                 </tr>
                 {client.projects.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-3 pl-8 text-sm text-gray-400">
+                  <tr className="max-sm:block">
+                    <td colSpan={4} className="py-3 pl-8 text-sm text-gray-400 max-sm:block max-sm:pl-4">
                       No projects yet
                     </td>
                   </tr>
@@ -59,9 +59,9 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
               </tbody>
             ))}
             {unassigned.length > 0 && (
-              <tbody id="no-client" className="divide-y divide-gray-100 border-t border-gray-200">
-                <tr className="bg-gray-50/60">
-                  <th colSpan={4} scope="rowgroup" className="py-2 pr-4 pl-4 text-left font-semibold text-gray-500">
+              <tbody id="no-client" className="divide-y divide-gray-100 border-t border-gray-200 max-sm:block">
+                <tr className="bg-gray-50/60 max-sm:block">
+                  <th colSpan={4} scope="rowgroup" className="py-2 pr-4 pl-4 text-left font-semibold text-gray-500 max-sm:block">
                     No client
                   </th>
                 </tr>
