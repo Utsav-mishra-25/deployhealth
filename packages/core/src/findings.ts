@@ -1,10 +1,10 @@
 import type { EnvEntry } from './env-parser';
-import { ENV_FILE_BASENAMES, type FindingCounts, type FindingKind, type FindingRow, type Reference, type RequiredVariable } from './types';
+import { ENV_FILE_BASENAMES, type EnvScope, type FindingCounts, type FindingKind, type FindingRow, type Reference, type RequiredVariable } from './types';
 
 /** An env file that belongs to a scope. `path` is relative to the scan root. */
 export interface ScopeEnvFile {
   path: string;
-  /** Base name: `.env`, `.env.example` or `.env.local`. */
+  /** Base name, one of ENV_FILE_BASENAMES (`.env`, `.env.example`, `.env.production.local`, …). */
   name: string;
   entries: EnvEntry[];
 }
@@ -18,7 +18,9 @@ export interface ScopeInput {
 /**
  * Compare one scope's references against its env files.
  *
- * - missing:  referenced, but not defined in any of the scope's env files (one row per reference)
+ * - missing:  referenced without an inline default, and not defined in any of the scope's env
+ *             files (one row per reference). Never in a scope with no env file at all: nothing
+ *             there declares anything yet, so the scope is reported once (EnvScope) instead.
  * - unused:   defined in an env file, never referenced in the scope (one row per defining file)
  * - mismatch: in `.env` but not `.env.example`, or the reverse; only when both exist
  */
@@ -27,8 +29,8 @@ export function analyzeScope({ references, envFiles, isIgnored }: ScopeInput): F
   const defined = new Set(envFiles.flatMap((f) => f.entries.map((e) => e.key)));
   const referenced = new Set(references.map((r) => r.name));
 
-  for (const ref of references) {
-    if (isIgnored(ref.name) || defined.has(ref.name)) continue;
+  for (const ref of envFiles.length === 0 ? [] : references) {
+    if (isIgnored(ref.name) || ref.hasDefault || defined.has(ref.name)) continue;
     rows.push({ kind: 'missing', var_name: ref.name, file: ref.file, line: ref.line, env_file: null });
   }
 
@@ -66,18 +68,22 @@ const KIND_ORDER: Record<FindingKind, number> = { missing: 0, unused: 1, mismatc
 
 /**
  * Every variable the scope's code references (ignored names aside), sorted by name, with the
- * scope's env files that define it in ENV_FILE_BASENAMES order. Names only: env values are never
- * read into the result. An empty `defined_in` is a MISSING variable.
+ * scope's env files that define it in ENV_FILE_BASENAMES order, and `optional` when every
+ * reference has an inline default. Names only: env values are never read into the result.
  */
 export function requiredVariables({ scope, references, envFiles, isIgnored }: ScopeInput & { scope: string }): RequiredVariable[] {
   const names = [...new Set(references.map((r) => r.name))].filter((name) => !isIgnored(name)).sort();
-  return names.map((var_name) => ({
-    var_name,
-    scope,
-    defined_in: ENV_FILE_BASENAMES.filter((basename) =>
-      envFiles.some((f) => f.name === basename && f.entries.some((e) => e.key === var_name)),
-    ),
-  }));
+  return names.map((var_name) => {
+    const variable: RequiredVariable = {
+      var_name,
+      scope,
+      defined_in: ENV_FILE_BASENAMES.filter((basename) =>
+        envFiles.some((f) => f.name === basename && f.entries.some((e) => e.key === var_name)),
+      ),
+    };
+    if (references.every((r) => r.name !== var_name || r.hasDefault)) variable.optional = true;
+    return variable;
+  });
 }
 
 /** Deterministic order: kind, then variable name, then file, then line. */
@@ -108,6 +114,23 @@ export function newMissingVars(
   const before = new Set((previous ?? []).filter((f) => f.kind === 'missing').map((f) => f.var_name));
   const now = new Set(current.filter((f) => f.kind === 'missing').map((f) => f.var_name));
   return [...now].filter((name) => !before.has(name)).sort();
+}
+
+/**
+ * For deploy correlation in scopes with no env file (which have no MISSING rows): the variables
+ * those scopes reference, optional ones aside, that the previous scanned deploy didn't reference
+ * at all (sorted). `previousNames` is everything the previous scan referenced, or null when there
+ * is no previous scan, in which case every such variable counts as new. A scan from a CLI before
+ * 0.2.0 has no `envScopes` (null): nothing, so it correlates exactly as it always has.
+ */
+export function newUndeclaredVars(
+  current: { variables: readonly RequiredVariable[]; envScopes: readonly EnvScope[] | null },
+  previousNames: ReadonlySet<string> | null,
+): string[] {
+  if (!current.envScopes) return [];
+  const bare = new Set(current.envScopes.filter((s) => s.env_files.length === 0).map((s) => s.scope));
+  const names = current.variables.filter((v) => bare.has(v.scope) && !v.optional).map((v) => v.var_name);
+  return [...new Set(names)].filter((name) => !previousNames?.has(name)).sort();
 }
 
 function compareStrings(a: string, b: string): number {

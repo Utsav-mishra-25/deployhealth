@@ -6,6 +6,7 @@ import { EXIT, run, type CliIo } from '../src/cli';
 import { ingestPayloadSchema } from '../src/ingest';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/project/', import.meta.url));
+const DEFAULTS = fileURLToPath(new URL('./fixtures/defaults/', import.meta.url));
 const SHA = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0';
 
 function makeIo(overrides: Partial<CliIo> = {}) {
@@ -38,10 +39,31 @@ describe('--dry-run', () => {
     const { io, out } = makeIo();
     expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
     expect(out.stdout).toContain('scopes: (root), apps/admin');
-    expect(out.stdout).toContain('MISSING (9)');
+    expect(out.stdout).toContain('MISSING (8)');
     expect(out.stdout).toMatch(/AWS_REGION\s+src\/server\.ts:5/);
     expect(out.stdout).toContain('UNUSED (4)');
     expect(out.stdout).toMatch(/SENTRY_DSN\s+\.env\.example:4 \(missing from \.env\)/);
+    expect(out.stdout).toContain('Skipped (the platform or runtime provides them): NODE_ENV. --no-default-ignore includes them.');
+  });
+
+  it('checks platform and runtime names too with --no-default-ignore', async () => {
+    const { io, out } = makeIo();
+    expect(await run(['--dry-run', '--no-default-ignore'], io)).toBe(EXIT.ok);
+    expect(out.stdout).toContain('MISSING (9)');
+    expect(out.stdout).toMatch(/NODE_ENV\s+src\/server\.ts:6/);
+    expect(out.stdout).not.toContain('Skipped');
+  });
+
+  it('lists optional variables and a scope with no env file instead of MISSING rows', async () => {
+    const { io, out } = makeIo({ cwd: DEFAULTS });
+    expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+    expect(out.stdout).toContain('MISSING (5)');
+    expect(out.stdout).not.toMatch(/DEPLOY_KEY|RELEASE_TOKEN/);
+    expect(out.stdout).toContain('OPTIONAL (8): a default in code, not defined in an env file');
+    expect(out.stdout).toMatch(/DEPLOY_TARGET\s+\(root\)/);
+    expect(out.stdout).toMatch(/SMTP_PORT\s+services\/mailer/);
+    expect(out.stdout).toContain('No .env.example in the repository root: 5 variables referenced (--json lists them).');
+    expect(out.stdout).toContain('Skipped (the platform or runtime provides them): CI, GITHUB_SHA, NODE_ENV, VERCEL_URL, npm_package_version.');
   });
 
   it('prints JSON and honors --ignore, --exclude and --dir', async () => {
@@ -53,7 +75,9 @@ describe('--dry-run', () => {
     expect(code).toBe(EXIT.ok);
     const json = JSON.parse(out.stdout);
     expect(json.scopes).toEqual(['']);
-    expect(json.counts).toEqual({ missing: 7, unused: 3, mismatch: 3 });
+    expect(json.counts).toEqual({ missing: 6, unused: 3, mismatch: 3 });
+    expect(json.env_scopes).toEqual([{ scope: '', env_files: ['.env.example', '.env', '.env.local'] }]);
+    expect(json.default_ignored).toEqual(['NODE_ENV']);
   });
 });
 
@@ -99,10 +123,26 @@ describe('reporting', () => {
     expect(req.headers.authorization).toBe('Bearer dh_secret');
     const payload = ingestPayloadSchema.parse(JSON.parse(body));
     expect(payload).toMatchObject({ sha: SHA, branch: 'main', timestamp: '2026-09-28T12:00:00.000Z' });
-    expect(payload.findings).toHaveLength(17);
-    expect(payload.variables).toHaveLength(15);
+    expect(payload.findings).toHaveLength(15);
+    expect(payload.variables).toHaveLength(14);
     expect(payload.variables).toContainEqual({ var_name: 'API_KEY', scope: 'apps/admin', defined_in: [] });
+    expect(payload.env_scopes).toEqual([
+      { scope: '', env_files: ['.env.example', '.env', '.env.local'] },
+      { scope: 'apps/admin', env_files: ['.env.example'] },
+    ]);
     expect(out.stdout).toContain('reported a1b2c3d on main: 9 missing, 4 unused, 3 mismatch (deploy dep-1)');
+  });
+
+  it('sends optional variables and the scopes with no env file', async () => {
+    status = 201;
+    received.length = 0;
+    const { io } = makeIo({ cwd: DEFAULTS, fetch: globalThis.fetch });
+    expect(await run(['--url', baseUrl, '--token', 'dh_secret', '--sha', SHA, '--branch', 'main'], io)).toBe(EXIT.ok);
+    const payload = ingestPayloadSchema.parse(JSON.parse(received[0]!.body));
+    expect(payload.variables).toContainEqual({ var_name: 'DEPLOY_TARGET', scope: '', defined_in: [], optional: true });
+    expect(payload.variables).toContainEqual({ var_name: 'DEPLOY_KEY', scope: '', defined_in: [] });
+    expect(payload.env_scopes).toContainEqual({ scope: '', env_files: [] });
+    expect(payload.findings.some((f) => f.file?.startsWith('scripts/'))).toBe(false);
   });
 
   it('exits 1 with the server response when ingest is rejected', async () => {

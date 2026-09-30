@@ -1,19 +1,31 @@
 import { readFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
+import { DEFAULT_IGNORE } from './default-ignore';
 import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource } from './scanner';
-import { ENV_FILE_BASENAMES, type FindingCounts, type FindingRow, type Reference, type RequiredVariable, type Warning } from './types';
+import {
+  ENV_FILE_BASENAMES,
+  type EnvFileBasename,
+  type EnvScope,
+  type FindingCounts,
+  type FindingRow,
+  type Reference,
+  type RequiredVariable,
+  type Warning,
+} from './types';
 import { GitignoreMatcher } from './gitignore';
 import { DEFAULT_SKIP_DIRS, walk } from './walker';
 
-/** Env files read in every scope. Other names (e.g. `.env.production`) are ignored. */
+/** Env files read in every scope (ENV_FILE_BASENAMES). Other names (e.g. `.env.staging`) are ignored. */
 export const ENV_FILE_NAMES: ReadonlySet<string> = new Set(ENV_FILE_BASENAMES);
 
 export interface ScanOptions {
-  /** Variable-name globs to skip in every section, e.g. `NODE_ENV` or `NEXT_PUBLIC_*`. */
+  /** Variable-name globs to skip in every section, e.g. `NEXT_PUBLIC_*`. */
   ignore?: readonly string[];
+  /** Also skip DEFAULT_IGNORE, the names the platform or runtime provides. Default true. */
+  defaultIgnore?: boolean;
   /** Gitignore-style path patterns to leave out of the walk, e.g. `packages/core/test/**`. */
   exclude?: readonly string[];
 }
@@ -27,6 +39,10 @@ export interface ScanResult {
   counts: FindingCounts;
   /** Directories (relative, '' = root) that own env files, i.e. the scopes that were checked. */
   scopes: string[];
+  /** Every scope with the env files it has; one with none gets no MISSING rows. */
+  envScopes: EnvScope[];
+  /** Names found (in code or env files) that only DEFAULT_IGNORE skipped, sorted. */
+  defaultIgnored: string[];
   sourceFiles: number;
   envFiles: string[];
   warnings: Warning[];
@@ -54,7 +70,7 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
  * `scanProject` over files already in memory (e.g. blobs from a git tree), keyed by POSIX path
  * relative to the repo root. Pick the paths with `selectTreeFiles` so the rules are the same.
  */
-export async function scanFiles(files: ReadonlyMap<string, string>, options: Pick<ScanOptions, 'ignore'> = {}): Promise<ScanResult> {
+export async function scanFiles(files: ReadonlyMap<string, string>, options: Pick<ScanOptions, 'ignore' | 'defaultIgnore'> = {}): Promise<ScanResult> {
   const paths = [...files.keys()].filter((path) => isScannable(path, posix.basename(path))).sort();
   return analyzeFiles(paths, async (path) => files.get(path)!, [], options);
 }
@@ -94,8 +110,17 @@ async function analyzeFiles(
     referencesByScope.set(scope, [...(referencesByScope.get(scope) ?? []), ...refs]);
   }
 
-  const isIgnored = createNameFilter(options.ignore ?? []);
+  const byUser = createNameFilter(options.ignore ?? []);
+  const byDefault = createNameFilter(options.defaultIgnore === false ? [] : DEFAULT_IGNORE);
+  const isIgnored = (name: string) => byUser(name) || byDefault(name);
+  const seen = [...referencesByScope.values()].flat().map((r) => r.name).concat(envFiles.flatMap((f) => f.entries.map((e) => e.key)));
+  const defaultIgnored = [...new Set(seen.filter((name) => byDefault(name) && !byUser(name)))].sort();
+
   const scopes = [...new Set([...scopeDirs, ...referencesByScope.keys()])].sort();
+  const envScopes = scopes.map((scope) => ({
+    scope,
+    env_files: ENV_FILE_BASENAMES.filter((b) => envFiles.some((f) => dirOf(f.path) === scope && f.name === b)) as EnvFileBasename[],
+  }));
   const findings = scopes
     .flatMap((scope) =>
       analyzeScope({
@@ -123,6 +148,8 @@ async function analyzeFiles(
     variables,
     counts: summarize(findings),
     scopes,
+    envScopes,
+    defaultIgnored,
     sourceFiles: sourceFiles.length,
     envFiles: envFiles.map((f) => f.path),
     warnings,
