@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
+import { composeVariableNames, isComposeFileName } from './compose';
 import { DEFAULT_IGNORE } from './default-ignore';
 import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
@@ -99,9 +100,12 @@ export async function scanFiles(
   return analyzeFiles(paths, source, [], options, [...tests], []);
 }
 
-/** Env files (env-files.ts; other names such as `.env.staging` are ignored) and source files in a scanned language. */
+/**
+ * Env files (env-files.ts; other names such as `.env.staging` are ignored), source files in a
+ * scanned language, and Compose files (compose.ts).
+ */
 function isScannable(relPath: string, name: string): boolean {
-  return isEnvFileName(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
+  return isEnvFileName(name) || isComposeFileName(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
 }
 
 interface Source {
@@ -120,12 +124,13 @@ async function analyzeFiles(
 ): Promise<ScanResult> {
   const envFiles: ScopeEnvFile[] = [];
   const sourceFiles: string[] = [];
+  const composeFiles: string[] = [];
   const tooLargeSkipped: string[] = [];
   for (const file of files) {
     const name = posix.basename(file);
     if (!isEnvFileName(name)) {
       if ((await size(file)) > MAX_SOURCE_FILE_BYTES) tooLargeSkipped.push(file);
-      else sourceFiles.push(file);
+      else (isComposeFileName(name) ? composeFiles : sourceFiles).push(file);
       continue;
     }
     const { entries, invalid } = parseEnv(await read(file));
@@ -144,16 +149,19 @@ async function analyzeFiles(
     referencesByScope.set(scope, [...(referencesByScope.get(scope) ?? []), ...refs]);
   }
 
-  // Test files: read only for the names they use (UNUSED), never reported. Their env files are left out.
-  const usedByTestsByScope = new Map<string, Set<string>>();
+  // Names read outside the scanned code: by test files (never reported; their env files are left
+  // out) and by Compose interpolation (never MISSING). Both only keep a variable from being UNUSED.
+  const usedOutsideCode = new Map<string, Set<string>>();
+  const markUsed = (file: string, names: Iterable<string>) => {
+    const scope = nearestScope(dirOf(file), scopeDirs);
+    usedOutsideCode.set(scope, new Set([...(usedOutsideCode.get(scope) ?? []), ...names]));
+  };
   for (const file of testFiles) {
     const language = languageForFile(file);
     if (!language || (await size(file)) > MAX_SOURCE_FILE_BYTES) continue;
-    const scope = nearestScope(dirOf(file), scopeDirs);
-    const names = usedByTestsByScope.get(scope) ?? new Set<string>();
-    for (const ref of scanSource(await read(file), language, file)) names.add(ref.name);
-    usedByTestsByScope.set(scope, names);
+    markUsed(file, scanSource(await read(file), language, file).map((ref) => ref.name));
   }
+  for (const file of composeFiles) markUsed(file, composeVariableNames(await read(file)));
 
   const byUser = createNameFilter(options.ignore ?? []);
   const byDefault = createNameFilter(options.defaultIgnore === false ? [] : DEFAULT_IGNORE);
@@ -175,7 +183,7 @@ async function analyzeFiles(
         references: referencesByScope.get(scope) ?? [],
         envFiles: envFiles.filter((f) => dirOf(f.path) === scope),
         isIgnored,
-        usedByTests: usedByTestsByScope.get(scope),
+        usedOutsideCode: usedOutsideCode.get(scope),
       }),
     )
     .sort(compareFindings);

@@ -1,0 +1,11 @@
+services:
+  app:
+    image: "registry.example.com/app:${COMPOSE_ONLY}"
+    environment:
+      - LOG_LEVEL=${INTERP_DEFAULT:-info}
+      - TOKEN=${INTERP_REQUIRED:?set INTERP_REQUIRED}
+      - EXTRA=${INTERP_ALT:+enabled}
+      - DOLLAR=$PLAIN_DOLLAR
+      - FROM_SHELL=${SHELL_ONLY}
+    command: sh -c 'echo $$ESCAPED'
+    # healthcheck: ${COMMENTED}

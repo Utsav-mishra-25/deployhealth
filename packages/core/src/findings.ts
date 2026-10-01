@@ -14,8 +14,11 @@ export interface ScopeInput {
   references: Reference[];
   envFiles: ScopeEnvFile[];
   isIgnored: (name: string) => boolean;
-  /** Names test files in this scope read: they keep a variable from being UNUSED, nothing more. */
-  usedByTests?: ReadonlySet<string>;
+  /**
+   * Names read outside the scanned code (test files, Compose interpolation) in this scope: they
+   * keep a variable from being UNUSED, nothing more.
+   */
+  usedOutsideCode?: ReadonlySet<string>;
 }
 
 /**
@@ -25,13 +28,13 @@ export interface ScopeInput {
  *             files (one row per reference). Never in a scope with no env file at all: nothing
  *             there declares anything yet, so the scope is reported once (EnvScope) instead.
  * - unused:   defined in an env file, never referenced in the scope (one row per defining file);
- *             a read in a test file counts, so a test-only variable isn't unused
+ *             a read in a test file or a Compose file's interpolation counts, so neither is unused
  * - mismatch: in `.env` but not `.env.example`, or the reverse; only when both exist
  */
-export function analyzeScope({ references, envFiles, isIgnored, usedByTests }: ScopeInput): FindingRow[] {
+export function analyzeScope({ references, envFiles, isIgnored, usedOutsideCode }: ScopeInput): FindingRow[] {
   const rows: FindingRow[] = [];
   const defined = new Set(envFiles.flatMap((f) => f.entries.map((e) => e.key)));
-  const referenced = new Set([...references.map((r) => r.name), ...(usedByTests ?? [])]);
+  const referenced = new Set([...references.map((r) => r.name), ...(usedOutsideCode ?? [])]);
 
   for (const ref of envFiles.length === 0 ? [] : references) {
     if (isIgnored(ref.name) || ref.hasDefault || defined.has(ref.name)) continue;

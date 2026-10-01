@@ -1,0 +1,4 @@
+services:
+  api:
+    environment:
+      - KEY=${API_COMPOSE_VAR?}

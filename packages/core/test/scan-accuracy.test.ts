@@ -179,3 +179,30 @@ describe('pydantic-settings', () => {
     ]);
   });
 });
+
+describe('Compose interpolation', () => {
+  it('counts as a use in the Compose file’s scope, so those entries aren’t UNUSED, and never makes MISSING rows', async () => {
+    const result = await scanProject(`${FIXTURE}compose`);
+    expect(result.findings).toEqual([
+      unused('COMMENTED', '.env.example', 8),
+      unused('ESCAPED', '.env.example', 7),
+      unused('NOT_COMPOSE', '.env.example', 9), // composer.yml isn't a Compose file
+      unused('NOT_USED', '.env.example', 10),
+    ]);
+    // Interpolated names aren't references: nothing to list, nothing MISSING (SHELL_ONLY comes from the shell).
+    expect(result.variables).toEqual([]);
+    expect(result.envScopes).toEqual([
+      { scope: '', env_files: ['.env.example'] },
+      { scope: 'services/api', env_files: ['.env.example'] },
+    ]);
+  });
+
+  it('is read from a git tree too (the GitHub App fetches Compose files)', async () => {
+    const root = `${FIXTURE}compose`;
+    const paths = await allFiles(root);
+    const selected = await selectTreeFiles(paths, (p) => readFile(join(root, p), 'utf8'));
+    expect(selected).toEqual(['.env.example', 'compose.override.yaml', 'docker-compose.yml', 'services/api/.env.example', 'services/api/docker-compose.dev.yml']);
+    const fromTree = await scanFiles(new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const))));
+    expect(fromTree.findings).toEqual((await scanProject(root)).findings);
+  });
+});
