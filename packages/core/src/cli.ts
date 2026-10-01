@@ -151,6 +151,8 @@ function toJson(result: ScanResult) {
     variables: result.variables,
     default_ignored: result.defaultIgnored,
     test_files_skipped: result.testFilesSkipped,
+    vendored_skipped: result.vendoredSkipped,
+    too_large_skipped: result.tooLargeSkipped,
     warnings: result.warnings,
   };
 }
@@ -192,11 +194,28 @@ function renderText(result: ScanResult): string {
     out.push('');
   }
 
+  if (result.vendoredSkipped.length > 0) {
+    out.push(`Skipped vendored and generated code: ${listSome(result.vendoredSkipped)}.`);
+    out.push('');
+  }
+
+  if (result.tooLargeSkipped.length > 0) {
+    const count = result.tooLargeSkipped.length;
+    out.push(`Skipped ${count} file${count === 1 ? '' : 's'} over 512 KB (bundles, not code people wrote): ${listSome(result.tooLargeSkipped)}.`);
+    out.push('');
+  }
+
   if (result.defaultIgnored.length > 0) {
     out.push(`Skipped (the platform or runtime provides them): ${result.defaultIgnored.join(', ')}. --no-default-ignore includes them.`);
     out.push('');
   }
   return `${out.join('\n')}`;
+}
+
+/** The first few paths, then how many more `--json` lists. */
+function listSome(paths: readonly string[], shown = 5): string {
+  const more = paths.length - shown;
+  return more > 0 ? `${paths.slice(0, shown).join(', ')} and ${more} more (--json lists them)` : paths.join(', ');
 }
 
 /** Real process I/O, used by bin.ts. */

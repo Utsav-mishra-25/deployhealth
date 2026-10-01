@@ -1,5 +1,8 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT, run, type CliIo } from '../src/cli';
@@ -83,6 +86,37 @@ describe('--dry-run', () => {
     expect(out.stdout).toMatch(/SMTP_PORT\s+services\/mailer/);
     expect(out.stdout).toContain('No .env.example in the repository root: 5 variables referenced (--json lists them).');
     expect(out.stdout).toContain('Skipped (the platform or runtime provides them): CI, GITHUB_SHA, NODE_ENV, VERCEL_URL, npm_package_version.');
+  });
+
+  it('says which vendored code and which files over 512 KB it skipped', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-vendored-'));
+    const tree: Record<string, string> = {
+      '.env.example': 'APP_KEY=\n',
+      'src/app.ts': 'process.env.APP_KEY',
+      '.yarn/releases/yarn-4.0.0.cjs': 'process.env.FROM_YARN',
+      'src/bundle.js': `process.env.FROM_BUNDLE\n${'/'.repeat(600 * 1024)}`,
+      ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`public/chunk${i}.min.js`, 'process.env.FROM_MIN'])),
+    };
+    for (const [rel, content] of Object.entries(tree)) {
+      await mkdir(dirname(join(dir, rel)), { recursive: true });
+      await writeFile(join(dir, rel), content);
+    }
+    try {
+      const { io, out } = makeIo({ cwd: dir });
+      expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+      expect(out.stdout).toContain('MISSING (0)');
+      expect(out.stdout).toContain(
+        'Skipped vendored and generated code: .yarn/, public/chunk0.min.js, public/chunk1.min.js, public/chunk2.min.js, public/chunk3.min.js and 2 more (--json lists them).',
+      );
+      expect(out.stdout).toContain('Skipped 1 file over 512 KB (bundles, not code people wrote): src/bundle.js.');
+      const { io: io2, out: out2 } = makeIo({ cwd: dir });
+      expect(await run(['--dry-run', '--json'], io2)).toBe(EXIT.ok);
+      const json = JSON.parse(out2.stdout);
+      expect(json.vendored_skipped).toEqual(['.yarn/', ...Array.from({ length: 6 }, (_, i) => `public/chunk${i}.min.js`)]);
+      expect(json.too_large_skipped).toEqual(['src/bundle.js']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('prints JSON and honors --ignore, --exclude and --dir', async () => {
