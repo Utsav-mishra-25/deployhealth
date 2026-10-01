@@ -44,7 +44,6 @@ describe('scanSource: JavaScript / TypeScript', () => {
       'process.env[`TEMPLATE_${x}`]',
       'myprocess.env.NOPE',
       'process.environment.NOPE',
-      'const { DESTRUCTURED } = process.env',
     ].join('\n');
     expect(names(src, 'javascript')).toEqual([]);
   });
@@ -263,5 +262,46 @@ describe('scanSource: a quoted reference is a string, not a read', () => {
     ].join('\n');
     expect(names(source, 'javascript')).toEqual(['EMBED_URL', 'IN_A_TEMPLATE']);
     expect(scanSource(source, 'javascript', 'f')[0]).toMatchObject({ name: 'EMBED_URL', column: 51 });
+  });
+});
+
+describe('scanSource: same-line destructuring', () => {
+  it('reads each key of { … } = process.env or import.meta.env, renamed or not, with its column', () => {
+    const source = [
+      'const { API_KEY, SITE_NAME: siteName } = process.env;',
+      "let { 'QUOTED_KEY': q } = process.env",
+      'const { VITE_API_URL }: ImportMetaEnv = import.meta.env;',
+      'function start({ PORT } = process.env) {}',
+    ].join('\n');
+    expect(scanSource(source, 'javascript', 'f')).toEqual([
+      { name: 'API_KEY', file: 'f', line: 1, column: 9, syntax: 'process.env' },
+      { name: 'SITE_NAME', file: 'f', line: 1, column: 18, syntax: 'process.env' },
+      { name: 'QUOTED_KEY', file: 'f', line: 2, column: 8, syntax: 'process.env' },
+      { name: 'VITE_API_URL', file: 'f', line: 3, column: 9, syntax: 'import.meta.env' },
+      { name: 'PORT', file: 'f', line: 4, column: 18, syntax: 'process.env' },
+    ]);
+  });
+
+  it('counts a key with a default as optional; undefined and null are no default', () => {
+    const refs = scanSource('const { A: a, B = "x", C: c = 3, D = undefined, E = null, F = f(1, 2) } = process.env;', 'javascript', 'f');
+    expect(refs.map((r) => `${r.name}${r.hasDefault ? '?' : ''}`)).toEqual(['A', 'B?', 'C?', 'D', 'E', 'F?']);
+  });
+
+  it('skips rest elements, nested patterns, destructuring of one variable, and multi-line patterns', () => {
+    const source = [
+      'const { ONE, ...rest } = process.env;',
+      'const { length } = process.env.SOME_VALUE;',
+      'const { a: { b } } = process.env;',
+      'const {',
+      '  SPLIT_ACROSS_LINES,',
+      '} = process.env;',
+    ].join('\n');
+    expect(names(source, 'javascript')).toEqual(['ONE', 'SOME_VALUE']);
+  });
+
+  it('merges with a direct read of the same variable on the line', () => {
+    expect(scanSource('const { DUP } = process.env, again = process.env.DUP ?? "x";', 'javascript', 'f')).toEqual([
+      { name: 'DUP', file: 'f', line: 1, column: 9, syntax: 'process.env' },
+    ]);
   });
 });
