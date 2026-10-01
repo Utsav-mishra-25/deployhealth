@@ -105,7 +105,8 @@ export function languageForFile(file: string): Language | undefined {
  * Find env var references in one file's source. `file` is only copied into the results. Python
  * files also get pydantic-settings fields (pydantic.ts). A line that reads a variable more than
  * once (`process.env.<NAME> ? process.env.<NAME> : x`) gives one reference, at the first read; it
- * has a default only if every read on the line has one.
+ * has a default only if every read on the line has one. A match that is a whole string literal
+ * (`'process.env.<NAME>'`, a bundler `define` key or a message) isn't a read.
  */
 export function scanSource(source: string, language: Language, file: string): Reference[] {
   const found: Reference[] = [];
@@ -117,7 +118,7 @@ export function scanSource(source: string, language: Language, file: string): Re
       regex.lastIndex = 0;
       for (let match = regex.exec(line); match; match = regex.exec(line)) {
         const name = match.groups?.name;
-        if (!name) continue;
+        if (!name || isWholeString(line, match.index, match.index + match[0].length)) continue;
         const reference: Reference = { name, file, line: index + 1, column: match.index + 1, syntax };
         if (defaultAfter?.test(line.slice(match.index + match[0].length))) reference.hasDefault = true;
         found.push(reference);
@@ -127,6 +128,14 @@ export function scanSource(source: string, language: Language, file: string): Re
   if (language === 'python') found.push(...scanPydanticSettings(source, file));
 
   return onePerNameAndLine(found).sort((a, b) => a.line - b.line || a.column - b.column);
+}
+
+const QUOTE_CHARS = new Set(['"', "'", '`']);
+
+/** `line[start, end)` is exactly the content of a quoted string: the same quote right before and right after. */
+function isWholeString(line: string, start: number, end: number): boolean {
+  const before = line[start - 1];
+  return before !== undefined && QUOTE_CHARS.has(before) && line[end] === before;
 }
 
 /** One reference per name and line (the leftmost), with a default only if every one of them has one. */
