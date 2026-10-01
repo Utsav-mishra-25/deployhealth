@@ -148,3 +148,18 @@ describe('test tooling counts as tests', () => {
     expect(await selectTreeFiles(paths, (p) => readFile(join(ROOT, p), 'utf8'))).toEqual(['.env.e2e.example', '.env.example', 'src/app.ts', 'src/testing-utils.ts']);
   });
 });
+
+describe('one row per variable per file:line', () => {
+  it('reports a line that reads a variable twice once, in findings, references and variables', async () => {
+    const result = await scanProject(`${FIXTURE}duplicates`);
+    expect(result.findings).toEqual([
+      { kind: 'missing', var_name: 'DUP_REGION', file: 'config.ts', line: 1, env_file: null },
+      { kind: 'missing', var_name: 'DUP_REGION', file: 'config.ts', line: 3, env_file: null },
+    ]);
+    expect(result.references.map((r) => `${r.name} ${r.file}:${r.line}`)).toEqual([
+      'DUP_REGION config.ts:1',
+      'DECLARED_TWICE config.ts:2',
+      'DUP_REGION config.ts:3',
+    ]);
+  });
+});

@@ -100,13 +100,18 @@ export function languageForFile(file: string): Language | undefined {
   return LANGUAGE_BY_EXTENSION[extname(file).toLowerCase()];
 }
 
-/** Find env var references in one file's source. `file` is only copied into the results. */
+/**
+ * Find env var references in one file's source. `file` is only copied into the results. A line
+ * that reads a variable more than once (`process.env.<NAME> ? process.env.<NAME> : x`) gives one
+ * reference, at the first read; it has a default only if every read on the line has one.
+ */
 export function scanSource(source: string, language: Language, file: string): Reference[] {
   const references: Reference[] = [];
   const lines = source.split(/\r?\n/);
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] as string;
+    const found: Reference[] = [];
     for (const { syntax, regex, defaultAfter } of PATTERNS[language]) {
       regex.lastIndex = 0;
       for (let match = regex.exec(line); match; match = regex.exec(line)) {
@@ -114,10 +119,22 @@ export function scanSource(source: string, language: Language, file: string): Re
         if (!name) continue;
         const reference: Reference = { name, file, line: index + 1, column: match.index + 1, syntax };
         if (defaultAfter?.test(line.slice(match.index + match[0].length))) reference.hasDefault = true;
-        references.push(reference);
+        found.push(reference);
       }
     }
+    references.push(...onePerName(found));
   }
 
   return references.sort((a, b) => a.line - b.line || a.column - b.column);
+}
+
+/** One reference per name (the leftmost), with a default only if every one of them has one. */
+function onePerName(references: Reference[]): Reference[] {
+  const byName = new Map<string, Reference>();
+  for (const ref of references.sort((a, b) => a.column - b.column)) {
+    const first = byName.get(ref.name);
+    if (!first) byName.set(ref.name, { ...ref });
+    else if (!ref.hasDefault) delete first.hasDefault;
+  }
+  return [...byName.values()];
 }

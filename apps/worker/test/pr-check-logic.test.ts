@@ -83,6 +83,11 @@ describe('diffEnvVars on fixture trees', () => {
     expect(diff.undeclared).toEqual(['QUEUE_NAME']);
   });
 
+  it('lists a line that reads a variable twice once in the comment', async () => {
+    const diff = diffEnvVars(await scan({ 'a.ts': '' }), await scan({ 'a.ts': `const r = ${ENV}.TWICE ? ${ENV}.TWICE : 'eu';` }));
+    expect(diff.added).toEqual([{ name: 'TWICE', refs: [{ file: 'a.ts', line: 1 }], total: 1, declared: false }]);
+  });
+
   it('stores at most 20 references per variable but keeps the total', async () => {
     const many = Array.from({ length: 30 }, (_, i) => `${ENV}.BUSY_VAR // ${i}`).join('\n');
     const diff = diffEnvVars(await scan({ 'a.ts': '' }), await scan({ 'a.ts': many }));
