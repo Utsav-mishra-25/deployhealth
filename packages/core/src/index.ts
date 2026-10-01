@@ -1,10 +1,11 @@
 export * from './types';
+export * from './env-files';
 export * from './constants';
 export { parseEnv, type EnvEntry, type EnvParseResult } from './env-parser';
 export { languageForFile, scanSource, SCANNED_EXTENSIONS, type Language } from './scanner';
 export { analyzeScope, compareFindings, newMissingVars, newUndeclaredVars, summarize } from './findings';
 export { DEFAULT_IGNORE } from './default-ignore';
-export { ENV_FILE_NAMES, scanFiles, scanProject, selectTreeFiles, type ScanOptions, type ScanResult } from './scan';
+export { scanFiles, scanProject, selectTreeFiles, type ScanOptions, type ScanResult } from './scan';
 export { DEFAULT_SKIP_DIRS } from './walker';
 export { isTestPath, TEST_DIRS } from './test-paths';
 export * from './ingest';

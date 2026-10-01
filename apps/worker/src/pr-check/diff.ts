@@ -1,4 +1,4 @@
-import type { ScanResult } from '@deployhealth/core';
+import { isDeclarationFile, type ScanResult } from '@deployhealth/core';
 import type { PrAddedVar, PrEnvFile, PrRemovedVar, PrRenamedVar, PrVarRef } from '@deployhealth/db';
 
 /** References stored and shown per variable; `total` keeps the real count. */
@@ -8,7 +8,7 @@ export interface EnvVarDiff {
   added: PrAddedVar[];
   removed: PrRemovedVar[];
   renamed: PrRenamedVar[];
-  /** Added (or renamed-to) variables missing from the .env.example of a scope that reads them. */
+  /** Added (or renamed-to) variables missing from the declaration files of a scope that reads them. */
   undeclared: string[];
 }
 
@@ -26,8 +26,9 @@ const toStored = (refs: readonly Ref[]): PrVarRef[] => refs.slice(0, PR_REFS_PER
  * What a pull request does to env var references, by variable: a variable is **added** when head
  * reads it and base doesn't anywhere, **removed** the other way round. A removed and an added
  * variable read in the same file are paired as a **rename** (in order of first appearance in that
- * file). A variable is **declared** when every scope that reads it in head lists it in its
- * `.env.example`, or the code supplies a default wherever it reads it (optional). Names the
+ * file). A variable is **declared** when every scope that reads it in head lists it in a
+ * declaration file (`.env.example`, `.env.sample`, `.env.<name>.example`, …), or the code supplies
+ * a default wherever it reads it (optional). Names the
  * platform or runtime provides (DEFAULT_IGNORE) never appear: the scans skip them.
  */
 export function diffEnvVars(base: ScanResult, head: ScanResult): EnvVarDiff {
@@ -38,7 +39,7 @@ export function diffEnvVars(base: ScanResult, head: ScanResult): EnvVarDiff {
 
   const declared = (name: string) => {
     const scopes = head.variables.filter((v) => v.var_name === name);
-    return scopes.length > 0 && scopes.every((v) => v.optional || v.defined_in.includes('.env.example'));
+    return scopes.length > 0 && scopes.every((v) => v.optional || v.defined_in.some(isDeclarationFile));
   };
   const firstLineIn = (refs: readonly Ref[], file: string) => Math.min(...refs.filter((r) => r.file === file).map((r) => r.line));
 

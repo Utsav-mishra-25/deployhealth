@@ -53,6 +53,22 @@ describe('diffEnvVars on fixture trees', () => {
     expect(diffEnvVars(await scan(BASE), await scan(BASE))).toEqual({ added: [], removed: [], renamed: [], undeclared: [] });
   });
 
+  it('counts any declaration file as declaring (.env.sample, .env.<name>.example), but not .env or .env.local', async () => {
+    const head = {
+      ...BASE,
+      'src/store.ts': `${ENV}.APP_STORE_KEY;\n${ENV}.SAMPLE_KEY;\n${ENV}.LOCAL_ONLY;`,
+      '.env.appStore.example': 'APP_STORE_KEY=\n',
+      '.env.sample': 'SAMPLE_KEY=\n',
+      '.env.local': 'LOCAL_ONLY=x\n',
+    };
+    const diff = diffEnvVars(await scan(BASE), await scan(head));
+    expect(diff.added.map((a) => [a.name, a.declared])).toEqual([
+      ['APP_STORE_KEY', true],
+      ['LOCAL_ONLY', false],
+      ['SAMPLE_KEY', true],
+    ]);
+  });
+
   it('treats a variable with a default wherever it is read as declared, and skips platform names', async () => {
     const head = {
       ...BASE,

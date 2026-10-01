@@ -1,6 +1,7 @@
 import { formatDuration } from './alerts';
 import { formatInterval, formatPercent, formatUtc, plural } from './format';
-import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, type EnvFileBasename, type EnvScope, type FindingRow, type RequiredVariable } from './types';
+import { isEnvFileName, sortEnvFileNames } from './env-files';
+import { ENV_NAME_PATTERN, type EnvScope, type FindingRow, type RequiredVariable } from './types';
 
 // The handoff export: what a freelancer gives a client when a contract ends. Built from names only
 // (the scanner never reads env values, and the ingest contract can't carry them), rendered as
@@ -302,7 +303,7 @@ export function parseHandoffVariables(markdown: string): RequiredVariable[] {
     const variable: RequiredVariable = {
       var_name: row[1]!,
       scope: scope!,
-      defined_in: ENV_FILE_BASENAMES.filter((b) => definedIn.includes(b)) as EnvFileBasename[],
+      defined_in: sortEnvFileNames(definedIn.filter(isEnvFileName)),
     };
     if (row[3] === VARIABLE_STATUS_LABELS.optional) variable.optional = true;
     out.push(variable);

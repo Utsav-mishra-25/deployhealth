@@ -92,9 +92,32 @@ describe('ingestPayloadSchema', () => {
     expect(parsed.variables![0]).toEqual({ var_name: 'A', scope: '', defined_in: [] });
   });
 
+  it('accepts 0.3.0 payloads: declaration files such as .env.sample, example.env and .env.<name>.example', () => {
+    const variables = [
+      { var_name: 'APP_STORE_KEY', scope: '', defined_in: ['.env.example', '.env.sample', 'example.env', '.env.appStore.example'] },
+      { var_name: 'CI_TOKEN', scope: 'apps/api', defined_in: ['.env.ci-runner.template', '.env.dist', '.env.defaults', 'sample.env', 'env.example'] },
+    ];
+    const env_scopes = [{ scope: '', env_files: ['.env.example', '.env.sample', 'example.env', '.env.appStore.example', '.env.template'] }];
+    const parsed = ingestPayloadSchema.parse({ ...valid, variables, env_scopes });
+    expect(parsed.variables).toEqual(variables);
+    expect(parsed.env_scopes).toEqual(env_scopes);
+  });
+
+  it('takes up to 64 env files per variable or scope', () => {
+    const names = Array.from({ length: 64 }, (_, i) => `.env.n${i}.example`);
+    expect(ingestPayloadSchema.safeParse({ ...valid, env_scopes: [{ scope: '', env_files: names }] }).success).toBe(true);
+    expect(ingestPayloadSchema.safeParse({ ...valid, env_scopes: [{ scope: '', env_files: [...names, '.env'] }] }).success).toBe(false);
+    expect(ingestPayloadSchema.safeParse({ ...valid, variables: [{ var_name: 'A', scope: '', defined_in: [...names, '.env'] }] }).success).toBe(false);
+  });
+
   it.each([
     ['an unknown env file', [{ scope: '', env_files: ['.env.staging'] }]],
     ['a value instead of an env file', [{ scope: '', env_files: ['sk_live_123'] }]],
+    ['a value dressed as a named declaration file', [{ scope: '', env_files: ['.env.sk_live=123.example'] }]],
+    ['a dotted name segment', [{ scope: '', env_files: ['.env.a.b.example'] }]],
+    ['an over-long name segment', [{ scope: '', env_files: [`.env.${'a'.repeat(65)}.example`] }]],
+    ['a path instead of a base name', [{ scope: '', env_files: ['apps/.env.example'] }]],
+    ['a non-string', [{ scope: '', env_files: [42] }]],
     ['too many scopes', Array.from({ length: 1001 }, (_, i) => ({ scope: `s${i}`, env_files: [] }))],
   ])('rejects env scopes with %s', (_label, env_scopes) => {
     expect(ingestPayloadSchema.safeParse({ ...valid, env_scopes }).success).toBe(false);
