@@ -5,9 +5,8 @@ import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource } from './scanner';
+import { isEnvFileName, MAX_ENV_FILES_PER_SCOPE, sortEnvFileNames } from './env-files';
 import {
-  ENV_FILE_BASENAMES,
-  type EnvFileBasename,
   type EnvScope,
   type FindingCounts,
   type FindingRow,
@@ -18,9 +17,6 @@ import {
 import { GitignoreMatcher } from './gitignore';
 import { isTestPath } from './test-paths';
 import { DEFAULT_SKIP_DIRS, walk } from './walker';
-
-/** Env files read in every scope (ENV_FILE_BASENAMES). Other names (e.g. `.env.staging`) are ignored. */
-export const ENV_FILE_NAMES: ReadonlySet<string> = new Set(ENV_FILE_BASENAMES);
 
 export interface ScanOptions {
   /** Variable-name globs to skip in every section, e.g. `NEXT_PUBLIC_*`. */
@@ -69,7 +65,7 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
   const { files, warnings, testFiles } = await walk(root, {
     include: isScannable,
     exclude: options.exclude,
-    keepIgnored: (name) => ENV_FILE_NAMES.has(name),
+    keepIgnored: isEnvFileName,
     skipTests: !options.includeTests,
   });
   return analyzeFiles(files, (file) => readFile(join(root, file), 'utf8'), warnings, options, testFiles);
@@ -89,9 +85,9 @@ export async function scanFiles(
   return analyzeFiles(paths, async (path) => files.get(path)!, [], options, [...tests]);
 }
 
-/** Env files and source files in a scanned language. */
+/** Env files (env-files.ts; other names such as `.env.staging` are ignored) and source files in a scanned language. */
 function isScannable(relPath: string, name: string): boolean {
-  return ENV_FILE_NAMES.has(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
+  return isEnvFileName(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
 }
 
 async function analyzeFiles(
@@ -105,7 +101,7 @@ async function analyzeFiles(
   const sourceFiles: string[] = [];
   for (const file of files) {
     const name = posix.basename(file);
-    if (!ENV_FILE_NAMES.has(name)) {
+    if (!isEnvFileName(name)) {
       sourceFiles.push(file);
       continue;
     }
@@ -143,10 +139,13 @@ async function analyzeFiles(
   const defaultIgnored = [...new Set(seen.filter((name) => byDefault(name) && !byUser(name)))].sort();
 
   const scopes = [...new Set([...scopeDirs, ...referencesByScope.keys()])].sort();
-  const envScopes = scopes.map((scope) => ({
-    scope,
-    env_files: ENV_FILE_BASENAMES.filter((b) => envFiles.some((f) => dirOf(f.path) === scope && f.name === b)) as EnvFileBasename[],
-  }));
+  const envScopes = scopes.map((scope) => {
+    const names = sortEnvFileNames(envFiles.filter((f) => dirOf(f.path) === scope).map((f) => f.name));
+    if (names.length > MAX_ENV_FILES_PER_SCOPE) {
+      warnings.push({ file: scope || '.', message: `${names.length} env files; only the first ${MAX_ENV_FILES_PER_SCOPE} are reported` });
+    }
+    return { scope, env_files: names.slice(0, MAX_ENV_FILES_PER_SCOPE) };
+  });
   const findings = scopes
     .flatMap((scope) =>
       analyzeScope({
@@ -163,7 +162,7 @@ async function analyzeFiles(
       references: referencesByScope.get(scope) ?? [],
       envFiles: envFiles.filter((f) => dirOf(f.path) === scope),
       isIgnored,
-    }),
+    }).map((v) => ({ ...v, defined_in: v.defined_in.slice(0, MAX_ENV_FILES_PER_SCOPE) })),
   );
   const references = scopes
     .flatMap((scope) => (referencesByScope.get(scope) ?? []).filter((r) => !isIgnored(r.name)).map((r) => ({ ...r, scope })))
@@ -221,7 +220,7 @@ export async function selectTreeFiles(
     if (!isScannable(path, name) || (!includeTests && isTestPath(path))) continue;
     const matcher = await matcherFor(dirOf(path));
     if (!matcher) continue;
-    if (matcher.ignores(path, false) && !ENV_FILE_NAMES.has(name)) continue;
+    if (matcher.ignores(path, false) && !isEnvFileName(name)) continue;
     selected.push(path);
   }
   return selected;

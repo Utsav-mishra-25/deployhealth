@@ -1,10 +1,10 @@
 import {
   endpointLabel,
-  ENV_FILE_BASENAMES,
+  sortEnvFileNames,
   summarize,
   uptimeStatus,
   type EndpointRef,
-  type EnvFileBasename,
+  type EnvFileName,
   type EnvScope,
   type FindingCounts,
   type FindingRow,
@@ -346,17 +346,17 @@ export async function recordScan(db: Db, input: RecordScanInput): Promise<Record
 
 /** One row per (scope, name); a repeated one merges its env files, and stays optional only if every copy is. */
 function mergeVariables(variables: readonly RequiredVariable[]): RequiredVariable[] {
-  const byKey = new Map<string, { files: Set<EnvFileBasename>; optional: boolean }>();
+  const byKey = new Map<string, { files: Set<EnvFileName>; optional: boolean }>();
   for (const v of variables) {
     const key = `${v.scope}\0${v.var_name}`;
-    const merged = byKey.get(key) ?? { files: new Set<EnvFileBasename>(), optional: true };
+    const merged = byKey.get(key) ?? { files: new Set<EnvFileName>(), optional: true };
     for (const f of v.defined_in) merged.files.add(f);
     merged.optional &&= v.optional === true;
     byKey.set(key, merged);
   }
   return [...byKey].map(([key, { files, optional }]) => {
     const [scope, var_name] = key.split('\0') as [string, string];
-    const variable: RequiredVariable = { scope, var_name, defined_in: ENV_FILE_BASENAMES.filter((b) => files.has(b)) };
+    const variable: RequiredVariable = { scope, var_name, defined_in: sortEnvFileNames(files) };
     if (optional) variable.optional = true;
     return variable;
   });
@@ -369,7 +369,7 @@ export async function getScanVariables(db: Db, scanId: string): Promise<Required
     .from(scanVariables)
     .where(eq(scanVariables.scanId, scanId))
     .orderBy(asc(scanVariables.scope), asc(scanVariables.varName));
-  return rows.map((r) => ({ scope: r.scope, var_name: r.var_name, defined_in: r.defined_in as EnvFileBasename[], ...(r.optional ? { optional: true as const } : {}) }));
+  return rows.map((r) => ({ scope: r.scope, var_name: r.var_name, defined_in: r.defined_in as EnvFileName[], ...(r.optional ? { optional: true as const } : {}) }));
 }
 
 export interface DeployListItem {

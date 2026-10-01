@@ -1,3 +1,5 @@
+import type { EnvFileName } from './env-files';
+
 /** The access pattern a reference was found with. */
 export type Syntax =
   | 'process.env'
@@ -23,20 +25,6 @@ export interface Reference {
   hasDefault?: true;
 }
 
-/** The env files read in every scope, in the order handoffs and reports list them. */
-export const ENV_FILE_BASENAMES = [
-  '.env.example',
-  '.env',
-  '.env.local',
-  '.env.development',
-  '.env.development.local',
-  '.env.production',
-  '.env.production.local',
-  '.env.test',
-  '.env.test.local',
-] as const;
-export type EnvFileBasename = (typeof ENV_FILE_BASENAMES)[number];
-
 /**
  * A scope and the env files it has. A scope with none (in practice the root, holding code outside
  * every other scope) gets no MISSING rows: nothing there declares anything yet, so the UI shows
@@ -44,7 +32,7 @@ export type EnvFileBasename = (typeof ENV_FILE_BASENAMES)[number];
  */
 export interface EnvScope {
   scope: string;
-  env_files: EnvFileBasename[];
+  env_files: EnvFileName[];
 }
 
 /** How the scanner matches a variable name; the ingest schema enforces the same shape. */
@@ -59,7 +47,7 @@ export interface RequiredVariable {
   var_name: string;
   /** Directory that owns the env files, relative to the repo root; '' is the root. */
   scope: string;
-  defined_in: EnvFileBasename[];
+  defined_in: EnvFileName[];
   /** Every reference in the scope has an inline default, so it needn't be defined. Only set when true. */
   optional?: true;
 }

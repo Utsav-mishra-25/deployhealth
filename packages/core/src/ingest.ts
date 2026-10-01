@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { CLI_NPM_PACKAGE, PUBLISHED_CLI_VERSION, TOKEN_PREFIX, TOKEN_SECRET_NAME } from './constants';
-import { ENV_FILE_BASENAMES, ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
+import { isEnvFileName, MAX_ENV_FILES_PER_SCOPE, type EnvFileName } from './env-files';
+import { ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
 
 /** Upper bound on findings per scan; protects the ingest endpoint from runaway payloads. */
 export const MAX_FINDINGS = 10_000;
@@ -19,21 +20,30 @@ export const findingRowSchema = z.object({
 });
 
 /**
+ * An env file's base name: only the names the scanner reads (`isEnvFileName`: the fixed names,
+ * plus `.env.<name>.example` / `.sample` / `.template` from 0.3.0), never an arbitrary string.
+ */
+export const envFileNameSchema = z.custom<EnvFileName>(
+  (value) => typeof value === 'string' && value.length <= 80 && isEnvFileName(value),
+  'must be an env file name',
+);
+
+/**
  * A referenced variable. The shape only admits names: `var_name` must look like an env var name
- * and `defined_in` can only list known env file names, so no value can ride along. `optional`
+ * and `defined_in` can only list env file names, so no value can ride along. `optional`
  * (0.2.0+): every reference has an inline default.
  */
 export const requiredVariableSchema = z.object({
   var_name: z.string().max(200).regex(ENV_NAME_PATTERN, 'var_name must be an env var name'),
   scope: z.string().max(1000),
-  defined_in: z.array(z.enum(ENV_FILE_BASENAMES)).max(ENV_FILE_BASENAMES.length),
+  defined_in: z.array(envFileNameSchema).max(MAX_ENV_FILES_PER_SCOPE),
   optional: z.boolean().optional(),
 });
 
 /** A scope and the env files it has (0.2.0+). One with none gets a notice instead of MISSING rows. */
 export const envScopeSchema = z.object({
   scope: z.string().max(1000),
-  env_files: z.array(z.enum(ENV_FILE_BASENAMES)).max(ENV_FILE_BASENAMES.length),
+  env_files: z.array(envFileNameSchema).max(MAX_ENV_FILES_PER_SCOPE),
 });
 
 /** Body of `POST /api/ingest/scan`. Shared by the CLI (sender) and the web app (receiver). */

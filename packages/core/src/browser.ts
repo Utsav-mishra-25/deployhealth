@@ -3,6 +3,7 @@
  * The main entry pulls in node:fs / node:crypto via the scanner and token helpers.
  */
 export * from './types';
+export * from './env-files';
 export * from './constants';
 export * from './limits';
 export * from './alerts';

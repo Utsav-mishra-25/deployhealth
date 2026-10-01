@@ -1,11 +1,12 @@
 import type { EnvEntry } from './env-parser';
-import { ENV_FILE_BASENAMES, type EnvScope, type FindingCounts, type FindingKind, type FindingRow, type Reference, type RequiredVariable } from './types';
+import { sortEnvFileNames, type EnvFileName } from './env-files';
+import { type EnvScope, type FindingCounts, type FindingKind, type FindingRow, type Reference, type RequiredVariable } from './types';
 
 /** An env file that belongs to a scope. `path` is relative to the scan root. */
 export interface ScopeEnvFile {
   path: string;
-  /** Base name, one of ENV_FILE_BASENAMES (`.env`, `.env.example`, `.env.production.local`, …). */
-  name: string;
+  /** Base name (`.env`, `.env.example`, `.env.appStore.example`, …; see env-files.ts). */
+  name: EnvFileName;
   entries: EnvEntry[];
 }
 
@@ -71,7 +72,7 @@ const KIND_ORDER: Record<FindingKind, number> = { missing: 0, unused: 1, mismatc
 
 /**
  * Every variable the scope's code references (ignored names aside), sorted by name, with the
- * scope's env files that define it in ENV_FILE_BASENAMES order, and `optional` when every
+ * scope's env files that define it in display order (env-files.ts), and `optional` when every
  * reference has an inline default. Names only: env values are never read into the result.
  */
 export function requiredVariables({ scope, references, envFiles, isIgnored }: ScopeInput & { scope: string }): RequiredVariable[] {
@@ -80,9 +81,7 @@ export function requiredVariables({ scope, references, envFiles, isIgnored }: Sc
     const variable: RequiredVariable = {
       var_name,
       scope,
-      defined_in: ENV_FILE_BASENAMES.filter((basename) =>
-        envFiles.some((f) => f.name === basename && f.entries.some((e) => e.key === var_name)),
-      ),
+      defined_in: sortEnvFileNames(envFiles.filter((f) => f.entries.some((e) => e.key === var_name)).map((f) => f.name)),
     };
     if (references.every((r) => r.name !== var_name || r.hasDefault)) variable.optional = true;
     return variable;

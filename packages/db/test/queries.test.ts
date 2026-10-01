@@ -133,6 +133,19 @@ describe('recordScan', () => {
     ]);
     expect((await getLatestScan(db, project.id, withVariables.deployId))?.scan.variablesReported).toBe(true);
 
+    // 0.3.0 declaration files merge in display order: the fixed names first, then the rest by name.
+    const declared = await recordScan(db, {
+      ...base,
+      sha: 'abc9999',
+      variables: [
+        { var_name: 'APP_STORE_KEY', scope: '', defined_in: ['.env.zeta.example', '.env'] },
+        { var_name: 'APP_STORE_KEY', scope: '', defined_in: ['.env.appStore.example', '.env.sample', '.env.example'] },
+      ],
+    });
+    expect(await getScanVariables(db, declared.scanId)).toEqual([
+      { scope: '', var_name: 'APP_STORE_KEY', defined_in: ['.env.example', '.env', '.env.sample', '.env.appStore.example', '.env.zeta.example'] },
+    ]);
+
     // An older CLI sends no variables: nothing stored, and the scan says so.
     const older = await recordScan(db, { ...base, sha: 'def5678' });
     expect(await getScanVariables(db, older.scanId)).toEqual([]);

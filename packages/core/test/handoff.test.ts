@@ -107,6 +107,16 @@ describe('renderHandoffMarkdown', () => {
     expect(parseHandoffVariables(sneaky)).toEqual(expected);
   });
 
+  it('round-trips the declaration file names 0.3.0 reads, in display order, and drops anything else', () => {
+    const variables: RequiredVariable[] = [
+      { var_name: 'APP_STORE_KEY', scope: '', defined_in: ['.env.example', '.env.sample', 'example.env', '.env.appStore.example'] },
+    ];
+    const rendered = renderHandoffMarkdown(data({ variables }));
+    expect(parseHandoffVariables(rendered)).toEqual(variables);
+    const tampered = rendered.replace('`.env.appStore.example`', '`.env.appStore.example`, `.env.staging`, `sk_live_1`');
+    expect(parseHandoffVariables(tampered)).toEqual(variables);
+  });
+
   it('explains scans from older CLIs, projects without variables and projects without scans', () => {
     const older = renderHandoffMarkdown(data({ scan: { ...data().scan!, variablesReported: false }, variables: [] }));
     expect(older).toContain('came from an older scan CLI');
