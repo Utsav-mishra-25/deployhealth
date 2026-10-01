@@ -17,6 +17,7 @@ const ALLOWLIST: Record<string, string> = {
   'packages/core/src/cli.ts':
     "the deployhealth-scan CLI runs in the user's CI, not on our servers, and posts only to the --url it is given (io.fetch)",
   'packages/core/src/scanner.ts': "matches Ruby's ENV.fetch in the code it scans; makes no requests",
+  'scripts/load-demo.mjs': 'manual load check run on a developer machine against a local `next start` (or the --url it is given)',
 };
 
 const FORBIDDEN: Array<[label: string, pattern: RegExp]> = [
