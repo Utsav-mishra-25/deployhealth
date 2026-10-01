@@ -263,7 +263,8 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
   info `deployhealth-report-share`. Verify the signature (constant time) before parsing fields.
   Stateless, 90 days; rotating the key revokes every link. `/share/*` is rate-limited per IP in
   `middleware.ts` (Node runtime, 30/min, keyed on the last `X-Forwarded-For` hop).
-- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/security`, `/privacy`, `/terms`): no
+- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/security`, `/privacy`, `/terms`, and
+  `/github/installed` signed out): no
   external assets (fonts, scripts, images, analytics), server components unless interactivity is
   unavoidable, and no sideways scroll at 375 px (`e2e/mobile.spec.ts`; wide tables go inside their
   own `overflow-x-auto` box, or `.doc-scroll` on printable pages, which prints full width; long
@@ -441,6 +442,12 @@ pull_requests: write; events: pull_request; installation events arrive regardles
   (`linkInstallationsForUser` in the Auth.js `jwt` callback). Never link from the setup URL's query
   string. `findPrCheckTarget` returns only the linked user's project for the repo (case-insensitive,
   oldest if several, installation not suspended); no match → nothing stored, one log line.
+- **Next steps.** `listInstallationsForUser` gives each repo the user's own project (or null) and
+  `reposWithoutProject` the repos of non-suspended installations with none. `/github/installed`
+  (public: signed out it says to sign in and come back via `/login?next=`) and `/clients` show
+  "Add a project for owner/repo to start pull request checks", linking to `/projects/new?repo=`,
+  which pre-fills the form (`lib/github-app.ts`: `projectPrefill`; `safeReturnPath` admits only
+  paths on this site, never another origin or a query string).
 - **Queue.** `pr-check` is `stately` with singletonKey `installation:repo#pr`: one running, at most
   one waiting. The job data is only `{ installationId, repoFullName, prNumber }`; the job reads the
   pull request's current head and its **merge base** (compare API) when it runs.

@@ -19,6 +19,7 @@ import { MAX_DEPLOY_NOTES } from '@/lib/validation';
 import { appUrl } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
+import { REPO_FULL_NAME_PATTERN } from '@/lib/github-app';
 
 /** Returned once, right after a token is created. The plaintext token is never stored. */
 export type TokenReveal = { projectId: string; projectName: string; token: string; snippet: string };
@@ -33,7 +34,7 @@ const newProject = z.object({
   repoFullName: z
     .string()
     .trim()
-    .regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/, 'Use the owner/repo form, e.g. acme/storefront'),
+    .regex(REPO_FULL_NAME_PATTERN, 'Use the owner/repo form, e.g. acme/storefront'),
 });
 
 /** Select value meaning "create a new client with the typed name". */

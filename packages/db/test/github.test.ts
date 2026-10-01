@@ -10,6 +10,7 @@ import {
   getGithubAppStatus,
   linkInstallationsForUser,
   listInstallationsForUser,
+  reposWithoutProject,
   listPrChecksForOwner,
   markPullRequestClosed,
   pruneDeliveries,
@@ -233,8 +234,40 @@ describe('project settings: App status and mode (owner-scoped)', () => {
     await install(1, 101, ['acme/shop', 'acme/api'], 'acme');
     await install(2, 999, ['other/repo'], 'other');
     expect(await listInstallationsForUser(db, alice.id)).toEqual([
-      { accountLogin: 'acme', accountType: 'Organization', suspended: false, repos: ['acme/api', 'acme/shop'] },
+      {
+        accountLogin: 'acme',
+        accountType: 'Organization',
+        suspended: false,
+        repos: [
+          { fullName: 'acme/api', projectId: null },
+          { fullName: 'acme/shop', projectId: null },
+        ],
+      },
     ]);
+  });
+
+  it("matches each repo to the user's own project (case-insensitive, oldest first), and lists the repos with none", async () => {
+    const alice = await userWithGithubId(101);
+    const bob = await userWithGithubId(202);
+    await install(1, 101, ['acme/shop', 'acme/api', 'acme/docs'], 'acme');
+    await install(2, 101, ['alice/blog', 'acme/api'], 'alice');
+    const shop = await makeProject(db, alice.id, 'shop', 'Acme/Shop'); // repo names match case-insensitively
+    await makeProject(db, alice.id, 'shop-again', 'acme/shop'); // a newer second project for the same repo
+    await makeProject(db, bob.id, 'bobs-api', 'acme/api'); // another user's project never counts for alice
+
+    const summaries = await listInstallationsForUser(db, alice.id);
+    expect(summaries.flatMap((s) => s.repos)).toEqual([
+      { fullName: 'acme/api', projectId: null },
+      { fullName: 'acme/docs', projectId: null },
+      { fullName: 'acme/shop', projectId: shop.id },
+      { fullName: 'acme/api', projectId: null },
+      { fullName: 'alice/blog', projectId: null },
+    ]);
+    expect(reposWithoutProject(summaries)).toEqual(['acme/api', 'acme/docs', 'alice/blog']);
+
+    // A suspended installation checks nothing, so its repos need no next step.
+    await setInstallationSuspended(db, 2, T0);
+    expect(reposWithoutProject(await listInstallationsForUser(db, alice.id))).toEqual(['acme/api', 'acme/docs']);
   });
 
   it("changes the mode only on the owner's project", async () => {

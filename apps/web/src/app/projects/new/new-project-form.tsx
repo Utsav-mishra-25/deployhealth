@@ -8,7 +8,17 @@ import { createProjectAction, type CreateProjectState } from '../actions';
 const input =
   'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500';
 
-export function NewProjectForm({ clients, defaultClientId }: { clients: Array<{ id: string; name: string }>; defaultClientId: string }) {
+export function NewProjectForm({
+  clients,
+  defaultClientId,
+  defaultName = '',
+  defaultRepoFullName = '',
+}: {
+  clients: Array<{ id: string; name: string }>;
+  defaultClientId: string;
+  defaultName?: string;
+  defaultRepoFullName?: string;
+}) {
   const [state, action, pending] = useActionState<CreateProjectState, FormData>(createProjectAction, { status: 'idle' });
   const [clientChoice, setClientChoice] = useState(defaultClientId);
 
@@ -39,12 +49,12 @@ export function NewProjectForm({ clients, defaultClientId }: { clients: Array<{ 
       )}
       <label className="block">
         <span className="text-sm font-medium">Project name</span>
-        <input name="name" required maxLength={64} placeholder="storefront" className={input} />
+        <input name="name" required maxLength={64} placeholder="storefront" defaultValue={defaultName} className={input} />
         {fields?.name && <span className="mt-1 block text-sm text-red-600">{fields.name}</span>}
       </label>
       <label className="block">
         <span className="text-sm font-medium">GitHub repository</span>
-        <input name="repoFullName" required placeholder="acme/storefront" className={input} />
+        <input name="repoFullName" required placeholder="acme/storefront" defaultValue={defaultRepoFullName} className={input} />
         {fields?.repoFullName && <span className="mt-1 block text-sm text-red-600">{fields.repoFullName}</span>}
       </label>
       <label className="block">
