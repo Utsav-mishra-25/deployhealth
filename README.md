@@ -213,7 +213,8 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    `.mts`, `.cts`: `process.env.X`, `process.env["X"]`, `import.meta.env.X`), Python
    (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`, and pydantic-settings fields), Go
    (`os.Getenv("X")`, `os.LookupEnv("X")`) and Ruby (`ENV["X"]`, `ENV.fetch("X")`), one row per
-   variable per line. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
+   variable per line. Same-line destructuring counts too: `const { X, Y: y, Z = "a" } = process.env`
+   reads all three, `Z` with a default. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
    `.env.test` and their `.local` variants, and **declaration files**: `.env.example`,
    `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`,
    `env.example` and `.env.<name>.example` / `.sample` / `.template` (CLI 0.3.0). In a declaration
@@ -411,8 +412,9 @@ request checks read at most **2,000 files and 20 MB** per pull request.
 - **Handoffs list the variables of the latest scan.** Scans from CLI versions before variable
   listing only show findings until the Action runs again.
 - **Regex scanning.** References inside comments count, and so do strings that contain more than
-  the reference (a quoted `'process.env.X'` on its own, a bundler `define` key, doesn't); aliased,
-  destructured or dynamic access (`const { X } = process.env`, `process.env[name]`) is missed; a
+  the reference (a quoted `'process.env.X'` on its own, a bundler `define` key, doesn't); aliased or
+  dynamic access (`const env = process.env; env.X`, `process.env[name]`) and destructuring split
+  across lines are missed (same-line `const { X, Y = "a" } = process.env` is read, `Y` as optional); a
   default counts only on the same line as the read; other env file names (`.env.staging`, say)
   aren't read. Also missed: pydantic-settings bases defined in another file, prefixes or aliases
   held in variables, `AliasPath` and `env_nested_delimiter`; Compose's `env_file:` (it passes a

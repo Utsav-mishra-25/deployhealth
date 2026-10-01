@@ -65,7 +65,7 @@ packages/
                       newUndeclaredVars() for deploy correlation
     src/default-ignore.ts  DEFAULT_IGNORE: names the platform or runtime provides, skipped by default
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 23 KB file, served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 24 KB file, served by web)
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
     npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
                       `build:npm` adds dist/ and LICENSE (gitignored)
@@ -341,8 +341,9 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
   never fetches them); the walk lists committed ones in `vendoredSkipped`/`tooLargeSkipped`.
   **Test tooling** joins `test-paths.ts` (`*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, runner configs and
   setup files, `playwright/`, `cypress/`, `mocks/`, `__mocks__/`, `testing/`). `scanSource` merges
-  repeated reads on a line into one reference (a default only if every read has one), and skips a
-  match that is a whole quoted string (a bundler `define` key). **pydantic-settings**
+  repeated reads on a line into one reference (a default only if every read has one), skips a
+  match that is a whole quoted string (a bundler `define` key), and reads same-line destructuring
+  (`{ <NAME>, <OTHER>: alias, <THIRD> = "x" } = process.env`; a non-nullish default is optional). **pydantic-settings**
   (`pydantic.ts`) fields are references (a `None` default counts only for a type that allows
   None). **Compose interpolation** (`compose.ts`) only marks names used in the file's scope, like
   test files (`usedOutsideCode`): never a reference, a variable or MISSING. Measure changes with
