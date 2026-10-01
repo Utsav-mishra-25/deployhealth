@@ -27,7 +27,7 @@ describe('clientIp', () => {
 describe('middleware on /share', () => {
   it('answers 429 with Retry-After after 30 requests a minute from one IP', async () => {
     const { middleware, SHARED_REPORT_LIMIT, config } = await import('@/middleware');
-    expect(config.matcher).toEqual(['/share/:path*']);
+    expect(config.matcher).toEqual(['/share/:path*', '/api/health/worker']);
     const request = (ip: string) => new NextRequest('http://localhost/share/reports/abc.def', { headers: { 'x-forwarded-for': ip } });
     for (let i = 0; i < SHARED_REPORT_LIMIT.limit; i++) expect(middleware(request('198.51.100.1')).status).toBe(200);
     const limited = middleware(request('198.51.100.1'));
@@ -53,5 +53,20 @@ describe('GET /api/health?ip=1', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('middleware on /api/health/worker', () => {
+  it('limits the deep health check per IP, in a window of its own', async () => {
+    const { middleware, WORKER_HEALTH_LIMIT, config } = await import('@/middleware');
+    const { WORKER_HEALTH_PATH } = await import('@/lib/worker-health');
+    expect(config.matcher).toContain(WORKER_HEALTH_PATH);
+    const health = (ip: string) => new NextRequest(`http://localhost${WORKER_HEALTH_PATH}`, { headers: { 'x-forwarded-for': ip } });
+    const share = (ip: string) => new NextRequest('http://localhost/share/reports/abc.def', { headers: { 'x-forwarded-for': ip } });
+    for (let i = 0; i < WORKER_HEALTH_LIMIT.limit; i++) expect(middleware(health('192.0.2.7')).status).toBe(200);
+    expect(middleware(health('192.0.2.7')).status).toBe(429);
+    // Share links from the same IP still have their own 30.
+    expect(middleware(share('192.0.2.7')).status).toBe(200);
+    expect(middleware(health('192.0.2.8')).status).toBe(200);
   });
 });
