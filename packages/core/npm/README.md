@@ -45,7 +45,8 @@ A first scan stays quiet:
   in `docker-compose*.yml` / `compose*.yaml` keep an env entry Compose consumes from being UNUSED.
   They never make MISSING rows (Compose often gets values from the shell or CI).
 - **One row per variable per line**, even when a line reads it twice, and a quoted
-  `'process.env.X'` (a bundler `define` key) isn't a read.
+  `'process.env.X'` (a bundler `define` key) isn't a read. Same-line destructuring counts:
+  `const { X, Y: y, Z = "a" } = process.env` reads all three, `Z` as optional.
 - **A folder with no env file at all gets one line**, "No .env.example …: N variables referenced",
   instead of a MISSING row per reference; deployhealth's handoff offers them as a starting
   `.env.example`.
@@ -64,7 +65,8 @@ fields typed as a model from the same file are skipped.
 
 Same-line, regex-based scanning misses some things on purpose:
 
-- reads split across lines, and dynamic keys (`process.env[name]`, `os.environ[key]`);
+- reads split across lines (including a destructuring pattern spread over several lines), and
+  dynamic keys (`process.env[name]`, `os.environ[key]`);
 - pydantic-settings bases defined in another file, prefixes or aliases held in variables,
   `AliasPath`, and `env_nested_delimiter`'s nested names;
 - Compose's `env_file:` (it passes a whole file into a container) and `environment:` keys;
