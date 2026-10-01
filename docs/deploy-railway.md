@@ -152,9 +152,11 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 - **Migrations** run automatically in web's pre-deploy step, before the new version takes
   traffic. There is nothing to run by hand. If that step fails, the deploy stops and the previous
   version keeps serving.
-- The **worker** creates its own `pgboss` schema on start. If it starts before web's first
-  migration, its first check cycle logs a missing-table error and the next cycle (a minute later)
-  succeeds.
+- The **worker** waits for them: before it starts pg-boss or works any queue, it checks that the
+  database has every migration it was built with. Until web's pre-deploy step has applied them it
+  logs `[worker] waiting for migrations: 1 of 8 not applied, next try in 5s` (or `waiting for the
+  database (ECONNREFUSED)`) every 5 seconds. After 10 minutes it exits non-zero and Railway
+  restarts it. Then it creates its own `pgboss` schema and starts.
 - **What to expect before step 5:** `https://<your-domain>/api/health` returns `{"ok":true}`, so
   the deploy passes its health check, but every page returns a 500 whose log says
   `AUTH_GITHUB_ID and AUTH_GITHUB_SECRET are required in production`. That is the deliberate
@@ -176,6 +178,9 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 - Worker logs show `[worker] ready: check-endpoints every minute, prune-checks nightly` (plus
   `reseed-demo every 30 minutes and now` with the demo on), then one
   `[check] {...}` line per minute once you have endpoints.
+- `https://<your-domain>/api/health/worker` returns `{"ok":true}` within a minute or two of the
+  worker's start (it reads the heartbeat `check-endpoints` writes every minute), and
+  `{"ok":false}` with a 503 if the worker hasn't finished a run in the last 3 minutes.
 - A project's settings page shows the GitHub Action, which runs `npx --yes deployhealth-scan@<version>`
   from npm. (`https://<your-domain>/deployhealth-scan.mjs` still serves the old CLI download for
   older workflows, with a `Deprecation` header.)
@@ -238,6 +243,31 @@ matches), and adds a `deployhealth / env` check run. Its settings are recorded i
    time; revoke the old one there).
 6. Check: the App's **Advanced → Recent Deliveries** shows the `ping` answered with **202**.
 
+## 9. External monitors
+
+Railway's healthcheck only gates a web deploy. Two free external monitors tell you within minutes
+when the site or the worker goes down. Use [Better Stack](https://betterstack.com/uptime) (free:
+3-minute checks) or [UptimeRobot](https://uptimerobot.com) (free: 5-minute checks):
+
+| Monitor | URL | Alert when | Interval |
+| --- | --- | --- | --- |
+| deployhealth web | `https://<your-domain>/api/health` | status isn't 200 | 3 min (Better Stack) / 5 min (UptimeRobot) |
+| deployhealth worker | `https://<your-domain>/api/health/worker` | status isn't 200 | 3 min / 5 min |
+
+- `/api/health` never touches the database: it's down only when web is. `/api/health/worker` is
+  200 when the worker finished a `check-endpoints` run in the last 3 minutes, else 503 (also when
+  web can't read the database). Its body is only `{"ok":true}` or `{"ok":false}`.
+- With a 3-minute monitor a dead worker alerts within about 6 minutes (3 for the heartbeat to go
+  stale, up to 3 for the next check); with a 5-minute one, within about 8.
+- Both routes are `no-store`, and the deep check is rate-limited to 30 requests a minute per IP,
+  far above any monitor. A plain status check (GET or HEAD) is enough; a keyword check for
+  `"ok":true` works too.
+- Expect the worker monitor to go red for a few minutes during a deploy that adds a migration
+  (the worker waits for it, step 4). Set the monitor's confirmation period (Better Stack) or
+  "alert after" (UptimeRobot) to a few minutes if that's noisy.
+- If Cloudflare's **Bot Fight Mode** is on, monitors may get a challenge page (403) instead of the
+  app. Add a WAF custom rule that skips it for `URI Path starts with /api/health`.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -249,7 +279,8 @@ matches), and adds a `deployhealth / env` check run. Its settings are recorded i
 | Every page 500s; the log mentions `AUTH_GITHUB_*` | Step 5 isn't done, or a value is empty. |
 | Every page 500s; the log mentions `AUTH_SECRET` | It is shorter than 32 characters. Regenerate it with `openssl rand -base64 32`. |
 | GitHub says the redirect URI is not associated | The callback URL doesn't exactly match `https://<your-domain>/api/auth/callback/github`. |
-| Worker logs `relation "endpoints" does not exist` repeatedly | web hasn't deployed successfully yet, so migrations haven't run. Fix web first. |
+| Worker logs `waiting for migrations` and restarts every 10 minutes | web hasn't deployed successfully yet, so migrations haven't run. Fix web first. |
+| `/api/health/worker` answers 503 | The worker isn't running, is waiting for migrations, or its `check-endpoints` runs fail (its log says why). |
 | Worker exits with `DEMO_PUBLIC=1 needs DEMO_BASE_URL` | Set `DEMO_BASE_URL` on the worker to web's public URL, or set `DEMO_PUBLIC=0`. |
 | GitHub App deliveries answer 401 | `GITHUB_APP_WEBHOOK_SECRET` on web doesn't match the App's webhook secret. |
 | GitHub App deliveries answer 404 | `GITHUB_APP_WEBHOOK_SECRET` isn't set on web. |

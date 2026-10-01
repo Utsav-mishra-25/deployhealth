@@ -148,6 +148,8 @@ self-host, not to offer as a competing hosted service; converts to MIT two years
 | 3. Demo, handoff and reports | Done | Public read-only demo, endpoint names, handoff export, monthly client reports with share links |
 | 4. Security and pull requests | Done | CLI on npm, hard caps, /security, GitHub App env checks on every pull request |
 | 4.5 Launch polish | Done | Landing page, a demo that's fresh at any hour with sample PR checks, phone layouts, /privacy and /terms, link previews, security headers |
+| 4.6 Scanner accuracy | Done | CLI 0.3.0: skips vendored code and test tooling, reads more declaration files, pydantic-settings and Compose interpolation |
+| 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -182,6 +184,7 @@ minutes later, and an open alert links the two. Acme API points at `<DEMO_BASE_U
 
 Tests: `pnpm test` (unit; needs the Postgres from docker compose) and `pnpm e2e` (Playwright
 smoke tests). See [CLAUDE.md](CLAUDE.md) for details.
+The prompts the phases were built from, and the review loop they follow, are in [docs/prompts/](docs/prompts/).
 
 ## Deploy to Railway
 
@@ -286,11 +289,19 @@ contents: read` to the job and `package-manager-cache: false` to `actions/setup-
 
 ### Uptime: the worker
 
+- **On start** the worker waits until the database has every migration it was built with (web
+  applies them before each deploy), polling every 5 s for up to 10 minutes, then exits so the
+  platform restarts it. Pull request checks retry for about 20 minutes, so one opened during a
+  deploy isn't dropped.
 - **`check-endpoints`** runs every minute on pg-boss (singleton, so runs never overlap). It claims
   the enabled endpoints whose `next_check_at` has passed and gives each a start time, so that **no
   hostname is checked more than once every 10 seconds**, whoever's endpoints point at it. Claimed
   endpoints are checked in waves by start time, up to 10 at a time; one that didn't get a slot this
   minute goes first the next.
+  Every run ends with a heartbeat, so **`/api/health/worker`** answers 200 `{"ok":true}` while the
+  worker has finished a run in the last 3 minutes and 503 `{"ok":false}` otherwise (point an
+  external monitor at it; [docs/deploy-railway.md](docs/deploy-railway.md#9-external-monitors)).
+  `/api/health` stays the database-free check Railway deploys on.
 - **A check** is one request (GET or HEAD) with a 10 s budget that follows up to 5 redirects. It's
   ok when the final status equals the expected status (default 200). Timeouts, DNS failures, TLS
   errors, refused connections and wrong statuses are recorded as failures with a short reason.
@@ -326,6 +337,10 @@ deploy:
   newly references; scans from CLIs before 0.2.0 don't report scopes and correlate as before)
 - `Acme API started failing 4m after deploy b52952e, which had no new config findings`
 - `Acme API started failing; no deploy in the 30 minutes before the first failure`
+
+A message names up to 6 variables of each kind; above that it names 5 and "and N more" (`40
+missing env vars: A, B, C, D, E and 35 more`), so a first deploy with no previous scan, where every
+variable is new, doesn't produce a wall of names. The counts are always exact.
 
 If the project has an **alert webhook URL** (Slack incoming webhook, or Discord's with `/slack`
 appended), deployhealth POSTs `{"text": "…"}` when the alert opens and again when it resolves. A
