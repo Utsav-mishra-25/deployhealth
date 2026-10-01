@@ -208,13 +208,16 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    (`npx --yes deployhealth-scan@0.2.0`: one 16 KB file, no dependencies), on the checkout with the
    commit sha and branch. The job's token is read-only (`permissions: contents: read`), and the
    workflow runs on pushes only, never on pull requests from forks, since it reads a secret.
-3. **The scanner** walks the repo, respecting `.gitignore` and skipping `node_modules`, `dist`,
-   `.git`, `.next` and virtualenvs. It finds references in JS/TS (`.js`, `.jsx`, `.mjs`, `.cjs`,
-   `.ts`, `.tsx`, `.mts`, `.cts`: `process.env.X`, `process.env["X"]`, `import.meta.env.X`),
-   Python (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`), Go (`os.Getenv("X")`,
-   `os.LookupEnv("X")`) and Ruby (`ENV["X"]`, `ENV.fetch("X")`), and reads `.env.example`,
-   `.env`, `.env.local`, `.env.development`, `.env.production`, `.env.test` and their `.local`
-   variants.
+3. **The scanner** walks the repo, respecting `.gitignore` and skipping `.git` and vendored or
+   generated code. It finds references in JS/TS (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`,
+   `.mts`, `.cts`: `process.env.X`, `process.env["X"]`, `import.meta.env.X`), Python
+   (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`, and pydantic-settings fields), Go
+   (`os.Getenv("X")`, `os.LookupEnv("X")`) and Ruby (`ENV["X"]`, `ENV.fetch("X")`), one row per
+   variable per line. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
+   `.env.test` and their `.local` variants, and **declaration files**: `.env.example`,
+   `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`,
+   `env.example` and `.env.<name>.example` / `.sample` / `.template` (CLI 0.3.0). In a declaration
+   file, a commented-out `# KEY=` line declares `KEY` too.
    - **Env scopes (monorepos).** Every directory with an env file is a scope, and each source file
      is checked against its nearest one. So `apps/web/src/x.ts` is compared with
      `apps/web/.env.example`, not with another package's.
@@ -231,12 +234,28 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
        `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`,
        `ENV.fetch("X", "a")`, `ENV.fetch("X") { … }`, `ENV["X"] || "a"`. (`undefined`, `null`,
        `None` and `nil` aren't defaults.) Variables read only that way are listed as optional.
-     - Tests and fixtures are skipped: `test/`, `tests/`, `__tests__/`, `spec/`, `e2e/`,
-       `fixtures/`, `__fixtures__/` and `testdata/` directories (env files inside them make no
-       scope) and `*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`, `*_test.py`, `conftest.py`,
-       `*_spec.rb` files. The CLI reads them only to see which variables they use, so a
-       test-only variable isn't UNUSED; the GitHub App never fetches them. `--include-tests`
-       scans them.
+     - Tests, fixtures and test tooling are skipped: `test/`, `tests/`, `__tests__/`, `spec/`,
+       `e2e/`, `fixtures/`, `__fixtures__/`, `testdata/`, `playwright/`, `cypress/`, `mocks/`,
+       `__mocks__/` and `testing/` directories (env files inside them make no scope), and
+       `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, `*_test.go`, `test_*.py`,
+       `*_test.py`, `conftest.py`, `*_spec.rb`, test runner configs (`playwright`, `vitest`,
+       `jest`, `cypress`), `vitest.workspace.*` and `vitest`/`jest` setup files. The CLI reads
+       them only to see which variables they use, so a test-only variable isn't UNUSED; the
+       GitHub App never fetches them. `--include-tests` scans them.
+     - Vendored and generated code is never read (CLI 0.3.0): `node_modules`, `dist`, `.next`,
+       virtualenvs, `.yarn`, `vendor`, `third_party`, `bower_components`, `out`, `coverage`,
+       `.turbo`, `.vercel`, `.output`, `.svelte-kit`, `.nuxt`, `.cache`, `.pnpm-store`,
+       `__pycache__` and `site-packages` directories, `.pnp.cjs`, `.pnp.loader.mjs`, `*.min.js`,
+       and any source file over 512 KB. A committed `build/` is still read: it's as often build
+       scripts as output. `--dry-run` lists what it skipped; the GitHub App never fetches it.
+     - pydantic-settings (CLI 0.3.0): in a class whose bases include `BaseSettings`, each
+       annotated field is the env var `NAME` uppercased, after a literal `env_prefix`, or a string
+       `alias` / `validation_alias` (each `AliasChoices` string, optional). A field with a default
+       is optional; `= None` counts only when the type allows `None`. `ClassVar`, `_private`,
+       `model_config` and fields typed as a model from the same file are skipped.
+     - Docker Compose interpolation (CLI 0.3.0): `${VAR}`, `${VAR:-x}`, `${VAR:?x}`, `$VAR` and the
+       other forms in `docker-compose*.yml` / `compose*.yaml` mark `VAR` as used in that file's
+       scope, so an entry Compose consumes isn't UNUSED. They never make MISSING rows.
      - A scope with no env file at all (in practice the root, for code outside every other scope)
        gets no MISSING rows. The project page says "No .env.example here: N variables referenced"
        once, and the handoff offers the list as a starting `.env.example`.
@@ -391,9 +410,14 @@ request checks read at most **2,000 files and 20 MB** per pull request.
 - **The share-link rate limit is per web instance**, in memory, and resets on restart.
 - **Handoffs list the variables of the latest scan.** Scans from CLI versions before variable
   listing only show findings until the Action runs again.
-- **Regex scanning.** References inside comments and strings count; aliased or destructured access
-  (`const { X } = process.env`) is missed; a default counts only on the same line as the read; other
-  env file names (`.env.staging`, say) aren't read.
+- **Regex scanning.** References inside comments count, and so do strings that contain more than
+  the reference (a quoted `'process.env.X'` on its own, a bundler `define` key, doesn't); aliased,
+  destructured or dynamic access (`const { X } = process.env`, `process.env[name]`) is missed; a
+  default counts only on the same line as the read; other env file names (`.env.staging`, say)
+  aren't read. Also missed: pydantic-settings bases defined in another file, prefixes or aliases
+  held in variables, `AliasPath` and `env_nested_delimiter`; Compose's `env_file:` (it passes a
+  whole file into a container) and `environment:` keys; env reads in Rails' ERB `config/*.yml`,
+  `.rake` files, shell scripts, Dockerfiles and CI workflows; and `turbo.json`'s `env` lists.
 - **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team
   sharing).
 - **Pull request checks follow the installer.** An App installed by an org admin checks pull

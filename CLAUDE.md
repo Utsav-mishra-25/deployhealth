@@ -6,8 +6,9 @@ var drift between code and env files), is it up (uptime checks), and did the las
 
 Phase 1 (config health), Phase 2 (clients, uptime, alerts), Phase 3 (public demo, handoff
 export, monthly client reports), Phase 4 (licensing, the npm CLI, hard caps, /security, and the
-GitHub App's env check on every pull request) and Phase 4.5 (launch polish: landing page, a demo
-that's fresh at any hour, phone layouts, /privacy and /terms, metadata, security headers) are built.
+GitHub App's env check on every pull request), Phase 4.5 (launch polish: landing page, a demo
+that's fresh at any hour, phone layouts, /privacy and /terms, metadata, security headers) and
+Phase 4.6 (scanner accuracy on real repos, CLI 0.3.0) are built.
 
 ## Monorepo layout
 
@@ -54,13 +55,17 @@ apps/
 packages/
   core/               scanner + shared contract, no framework deps
     src/scan.ts       scanProject(): walks the repo, env scopes (+ envScopes, defaultIgnored), findings rows
-    src/scanner.ts    per-language regexes (JS/TS incl. .mjs/.cjs/.mts/.cts, Python, Go, Ruby) and
-                      same-line inline defaults (Reference.hasDefault)
+    src/scanner.ts    per-language regexes (JS/TS incl. .mjs/.cjs/.mts/.cts, Python, Go, Ruby),
+                      same-line inline defaults (Reference.hasDefault), one reference per name per line
+    src/pydantic.ts   pydantic-settings fields as references (Python logical lines, env_prefix, aliases)
+    src/compose.ts    Docker Compose files and the names they interpolate (used, never MISSING)
+    src/env-files.ts  which file names are env files / declaration files; display order (browser-safe)
+    src/vendored.ts   VENDORED_DIRS, generated file names, MAX_SOURCE_FILE_BYTES (512 KB)
     src/findings.ts   analyzeScope() / summarize(): MISSING, UNUSED, MISMATCH; newMissingVars() /
                       newUndeclaredVars() for deploy correlation
     src/default-ignore.ts  DEFAULT_IGNORE: names the platform or runtime provides, skipped by default
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 16 KB file, served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 23 KB file, served by web)
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
     npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
                       `build:npm` adds dist/ and LICENSE (gitignored)
@@ -92,6 +97,7 @@ LICENSE               FSL-1.1-MIT (everything except packages/core, which has it
 .github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main
 .github/workflows/publish-cli.yml    manual: publish deployhealth-scan to npm with provenance
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
+scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
 ```
 
 Workspace packages ship TypeScript source (`exports` → `src/*.ts`). Next transpiles them
@@ -174,6 +180,7 @@ pnpm lint
 pnpm build
 pnpm e2e             # Playwright smoke test (see below)
 pnpm scan:self       # run deployhealth's own scanner on this repo; must report nothing
+pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "npx --yes deployhealth-scan@x.y.z" to compare)
 ```
 
 - One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
@@ -308,8 +315,10 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   re-reported sha adds a scan to the existing deploy. Every field a CLI release adds is optional
   (`variables` in 0.1.0; `variables[].optional` and `env_scopes` in 0.2.0), so older payloads keep
   working and are stored as before (`scans.env_scopes` null, nothing optional); zod drops fields it
-  doesn't know. Deploy the server before publishing a CLI that sends new values (0.2.0's env file
-  names would fail an older server's enum). `test/ingest-handler.test.ts` pins a 0.1.0 payload.
+  doesn't know. Env file names (`defined_in`, `env_files`) must pass `isEnvFileName()` (the fixed
+  names plus `.env.<name>.example|sample|template`, 0.3.0), at most 64 per array. Deploy the server
+  before publishing a CLI that sends new values (an older server rejects 0.2.0's and 0.3.0's new
+  env file names). `test/ingest-handler.test.ts` pins a 0.1.0 payload.
 - **The quieter first scan** (core, so the CLI and the GitHub App's PR checks share it):
   `DEFAULT_IGNORE` (exact GitHub Actions names, never a `GITHUB_*` prefix: apps own GITHUB_ names;
   `--no-default-ignore` / `defaultIgnore: false`); a reference with a same-line default (JS `??`/`||`,
@@ -322,6 +331,22 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
   env files never count as test files) are skipped by `walk`, `selectTreeFiles` (so the App never
   fetches them) and `scanFiles`: no findings, variables or scopes from them; the CLI still reads
   their source so a test-only variable isn't UNUSED. `--include-tests` / `includeTests: true`.
+- **Scanner accuracy (0.3.0)**, also in core: **declaration files** (`env-files.ts`: `.env.example`,
+  `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`,
+  `env.example`, `.env.<name>.example|sample|template`) define variables and can be UNUSED; a
+  commented `# KEY=` in one declares KEY (never UNUSED); MISMATCH stays `.env` vs `.env.example`;
+  PR checks count any declaration file as declaring. **Vendored code** (`vendored.ts`) is never
+  read: `VENDORED_DIRS` (not `build`: often build scripts), `.pnp.cjs`/`.pnp.loader.mjs`/`*.min.*`,
+  and source files over 512 KB (`stat` in the CLI, blob sizes in `selectTreeFiles`, so the App
+  never fetches them); the walk lists committed ones in `vendoredSkipped`/`tooLargeSkipped`.
+  **Test tooling** joins `test-paths.ts` (`*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, runner configs and
+  setup files, `playwright/`, `cypress/`, `mocks/`, `__mocks__/`, `testing/`). `scanSource` merges
+  repeated reads on a line into one reference (a default only if every read has one), and skips a
+  match that is a whole quoted string (a bundler `define` key). **pydantic-settings**
+  (`pydantic.ts`) fields are references (a `None` default counts only for a type that allows
+  None). **Compose interpolation** (`compose.ts`) only marks names used in the file's scope, like
+  test files (`usedOutsideCode`): never a reference, a variable or MISSING. Measure changes with
+  `pnpm eval:repos` against the published CLI; never commit other projects' variable names.
 - **Client components** import only from `@deployhealth/core/browser` (the main entry pulls in
   `node:fs` / `node:crypto`). Type-only imports from the main entry are fine.
 - **The dev login** ("Continue as dev user", provider `dev`, signs in as the writable `dev` user,
@@ -337,7 +362,10 @@ pnpm scan:self       # run deployhealth's own scanner on this repo; must report 
 - **Scanner fixtures:** `packages/core/test/fixtures/project` is deliberately broken and must stay
   in sync with the expectations in `test/scan.test.ts`; `fixtures/defaults` covers the quieter
   scan (every default form, the ignore list, the newer extensions and env file names, a scope with
-  no env file) for `test/scan-defaults.test.ts`. Their `.env`, `.env.local` and `.env.*.local`
+  no env file) for `test/scan-defaults.test.ts`; `fixtures/accuracy` covers 0.3.0 (each declaration
+  file name, commented declarations, test tooling, duplicate reads, pydantic-settings, Compose) for
+  `test/scan-accuracy.test.ts`, whose vendored directories and >512 KB file are written at test
+  time. Their `.env`, `.env.local` and `.env.*.local`
   files are committed through negations in the root `.gitignore`. Decoys (node_modules, dist,
   .git, …) are written into a temp copy at test time rather than committed. The scanner reads
   comments too, so write example code in comments as `process.env.<NAME>`. The fixtures sit under
