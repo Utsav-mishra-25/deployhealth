@@ -20,7 +20,7 @@ export const CLI_BUNDLE_PATH = '/deployhealth-scan.mjs';
  * The bundled CLI's size, rounded to whole KB, as the landing page states it ("16 KB, zero
  * dependencies"). test/npm-package.test.ts fails when the build no longer rounds to it.
  */
-export const CLI_BUNDLE_KB = 17;
+export const CLI_BUNDLE_KB = 18;
 
 /** Allowed check intervals, in seconds (mirrored by a CHECK constraint on endpoints). */
 export const ENDPOINT_INTERVALS = [60, 300, 900] as const;

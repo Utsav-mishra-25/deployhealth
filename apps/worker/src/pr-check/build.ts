@@ -40,11 +40,16 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, budget = 
   // Choose the files each side would scan (reading .gitignore files as needed, top-down).
   const select = async (blobs: readonly TreeBlob[]) => {
     const byPath = new Map(blobs.map((b) => [b.path, b]));
-    const paths = await selectTreeFiles([...byPath.keys()], (path) => {
-      const blob = byPath.get(path)!;
-      reserve(blob);
-      return download(blob);
-    });
+    const sizes = new Map(blobs.map((b) => [b.path, b.size]));
+    const paths = await selectTreeFiles(
+      [...byPath.keys()],
+      (path) => {
+        const blob = byPath.get(path)!;
+        reserve(blob);
+        return download(blob);
+      },
+      { sizes },
+    );
     return paths.map((path) => byPath.get(path)!);
   };
   const baseFiles = await select(baseTree.blobs);

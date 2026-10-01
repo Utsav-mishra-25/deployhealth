@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { DEFAULT_IGNORE } from './default-ignore';
 import { parseEnv } from './env-parser';
@@ -16,6 +16,7 @@ import {
 } from './types';
 import { GitignoreMatcher } from './gitignore';
 import { isTestPath } from './test-paths';
+import { isVendoredFileName, MAX_SOURCE_FILE_BYTES } from './vendored';
 import { DEFAULT_SKIP_DIRS, walk } from './walker';
 
 export interface ScanOptions {
@@ -47,6 +48,14 @@ export interface ScanResult {
    * files never make scopes. Their source is read only so a variable only tests use isn't UNUSED.
    */
   testFilesSkipped: number;
+  /**
+   * Vendored and generated code skipped though nothing ignores it (vendored.ts): directories once
+   * each, with a trailing slash, and files such as `.pnp.cjs` or `app.min.js`. Directory scans
+   * only; `scanFiles` gets paths `selectTreeFiles` already chose, so its list is empty.
+   */
+  vendoredSkipped: string[];
+  /** Source files over MAX_SOURCE_FILE_BYTES (bundles, not code people wrote), never read. */
+  tooLargeSkipped: string[];
   sourceFiles: number;
   envFiles: string[];
   warnings: Warning[];
@@ -62,13 +71,17 @@ export interface ScanResult {
  * has none, so everything they reference is MISSING.
  */
 export async function scanProject(root: string, options: ScanOptions = {}): Promise<ScanResult> {
-  const { files, warnings, testFiles } = await walk(root, {
+  const { files, warnings, testFiles, vendored } = await walk(root, {
     include: isScannable,
     exclude: options.exclude,
     keepIgnored: isEnvFileName,
     skipTests: !options.includeTests,
   });
-  return analyzeFiles(files, (file) => readFile(join(root, file), 'utf8'), warnings, options, testFiles);
+  const source = {
+    read: (file: string) => readFile(join(root, file), 'utf8'),
+    size: async (file: string) => (await stat(join(root, file))).size,
+  };
+  return analyzeFiles(files, source, warnings, options, testFiles, vendored);
 }
 
 /**
@@ -82,7 +95,8 @@ export async function scanFiles(
   const scannable = [...files.keys()].filter((path) => isScannable(path, posix.basename(path))).sort();
   const tests = new Set(options.includeTests ? [] : scannable.filter((path) => isTestPath(path)));
   const paths = scannable.filter((path) => !tests.has(path));
-  return analyzeFiles(paths, async (path) => files.get(path)!, [], options, [...tests]);
+  const source = { read: async (path: string) => files.get(path)!, size: async (path: string) => Buffer.byteLength(files.get(path)!) };
+  return analyzeFiles(paths, source, [], options, [...tests], []);
 }
 
 /** Env files (env-files.ts; other names such as `.env.staging` are ignored) and source files in a scanned language. */
@@ -90,19 +104,28 @@ function isScannable(relPath: string, name: string): boolean {
   return isEnvFileName(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
 }
 
+interface Source {
+  read: (file: string) => Promise<string>;
+  /** Size in bytes, checked before a source file is read. */
+  size: (file: string) => Promise<number>;
+}
+
 async function analyzeFiles(
   files: readonly string[],
-  read: (file: string) => Promise<string>,
+  { read, size }: Source,
   warnings: Warning[],
   options: ScanOptions,
   testFiles: readonly string[],
+  vendoredSkipped: string[],
 ): Promise<ScanResult> {
   const envFiles: ScopeEnvFile[] = [];
   const sourceFiles: string[] = [];
+  const tooLargeSkipped: string[] = [];
   for (const file of files) {
     const name = posix.basename(file);
     if (!isEnvFileName(name)) {
-      sourceFiles.push(file);
+      if ((await size(file)) > MAX_SOURCE_FILE_BYTES) tooLargeSkipped.push(file);
+      else sourceFiles.push(file);
       continue;
     }
     const { entries, invalid } = parseEnv(await read(file));
@@ -125,7 +148,7 @@ async function analyzeFiles(
   const usedByTestsByScope = new Map<string, Set<string>>();
   for (const file of testFiles) {
     const language = languageForFile(file);
-    if (!language) continue;
+    if (!language || (await size(file)) > MAX_SOURCE_FILE_BYTES) continue;
     const scope = nearestScope(dirOf(file), scopeDirs);
     const names = usedByTestsByScope.get(scope) ?? new Set<string>();
     for (const ref of scanSource(await read(file), language, file)) names.add(ref.name);
@@ -177,6 +200,8 @@ async function analyzeFiles(
     envScopes,
     defaultIgnored,
     testFilesSkipped: testFiles.length,
+    vendoredSkipped,
+    tooLargeSkipped,
     sourceFiles: sourceFiles.length,
     envFiles: envFiles.map((f) => f.path),
     warnings,
@@ -187,13 +212,18 @@ async function analyzeFiles(
  * The files `scanProject` would read, chosen from a git tree's blob paths instead of a directory:
  * the same skipped directories, nested `.gitignore` files (read top-down through `readGitignore`,
  * so ones inside ignored directories are never read), env files kept even when ignored, and test
- * files and test/fixture directories left out unless `includeTests` (so they're never fetched).
- * Returns the paths to fetch, sorted.
+ * files and test/fixture directories left out unless `includeTests`, and vendored code (vendored.ts:
+ * its directories, generated file names, and, given `sizes`, source files over
+ * MAX_SOURCE_FILE_BYTES), so none of those are ever fetched. Returns the paths to fetch, sorted.
  */
 export async function selectTreeFiles(
   paths: readonly string[],
   readGitignore: (path: string) => Promise<string>,
-  { skipDirs = DEFAULT_SKIP_DIRS, includeTests = false }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean } = {},
+  {
+    skipDirs = DEFAULT_SKIP_DIRS,
+    includeTests = false,
+    sizes,
+  }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean; sizes?: ReadonlyMap<string, number> } = {},
 ): Promise<string[]> {
   const gitignores = new Set(paths.filter((p) => posix.basename(p) === '.gitignore'));
   const matchers = new Map<string, GitignoreMatcher | null>(); // null: the directory is skipped or ignored
@@ -217,7 +247,8 @@ export async function selectTreeFiles(
   const selected: string[] = [];
   for (const path of [...paths].sort()) {
     const name = posix.basename(path);
-    if (!isScannable(path, name) || (!includeTests && isTestPath(path))) continue;
+    if (!isScannable(path, name) || isVendoredFileName(name) || (!includeTests && isTestPath(path))) continue;
+    if (!isEnvFileName(name) && (sizes?.get(path) ?? 0) > MAX_SOURCE_FILE_BYTES) continue;
     const matcher = await matcherFor(dirOf(path));
     if (!matcher) continue;
     if (matcher.ignores(path, false) && !isEnvFileName(name)) continue;

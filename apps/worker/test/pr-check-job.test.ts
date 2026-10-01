@@ -100,6 +100,24 @@ describe('prCheck against a mocked Octokit', () => {
     expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toHaveLength(5);
   });
 
+  it('never fetches vendored code (.yarn/, .pnp.cjs, *.min.js) or a source file over 512 KB', async () => {
+    const withVendored = {
+      ...HEAD,
+      '.yarn/releases/yarn-4.0.0.cjs': `${ENV}.FROM_YARN_RELEASE`,
+      '.pnp.cjs': `${ENV}.FROM_PNP`,
+      'public/app.min.js': `${ENV}.FROM_MIN_JS`,
+      'src/bundle.js': `${ENV}.FROM_BIG_BUNDLE;\n${'/'.repeat(512 * 1024)}`,
+    };
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: withVendored } }));
+    const { deps, rows } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]!.addedVars.map((v) => v.name)).toEqual(['REDIS_URL']);
+    const comment = [...mock.state.comments.values()][0]!.body;
+    for (const name of ['FROM_YARN_RELEASE', 'FROM_PNP', 'FROM_MIN_JS', 'FROM_BIG_BUNDLE']) expect(comment).not.toContain(name);
+    // The same downloads as without them: none of the four is fetched or counted against the budget.
+    expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toHaveLength(4);
+  });
+
   it('fails the check in strict mode, and succeeds once the variable is declared', async () => {
     const mock = mockOctokit(repo());
     expect(await prCheck(JOB, harness(mock, { mode: 'strict' }).deps)).toBe('failure');
@@ -210,8 +228,9 @@ describe('hard caps on what a check fetches', () => {
   });
 
   it('refuses more than 20 MB, counting the real size when a tree entry understates it', async () => {
-    const chunk = 'x'.repeat(4 * 1024 * 1024);
-    const heavy = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`data/blob${i}.ts`, `// ${i}\n${chunk}`]));
+    // 45 files just under the 512 KB source limit: 22.5 MB, all of which would be fetched.
+    const chunk = 'x'.repeat(500 * 1024);
+    const heavy = Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`data/blob${i}.ts`, `// ${i}\n${chunk}`]));
     const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, ...heavy } } }));
     expect(await prCheck(JOB, harness(mock).deps)).toBe('neutral');
     expect([...mock.state.comments.values()][0]!.body).toContain('more than 20 MB');

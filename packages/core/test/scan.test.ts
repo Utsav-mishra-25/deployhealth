@@ -98,7 +98,10 @@ describe('scanFiles + selectTreeFiles (git trees)', () => {
     expect(selected).not.toEqual(expect.arrayContaining(['node_modules/lib/index.js']));
     expect(selected).toEqual(expect.arrayContaining(['.env', '.env.local', 'src/server.ts'])); // env files kept though gitignored
     const files = new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const)));
-    expect(await scanFiles(files)).toEqual(await scanProject(root));
+    // Only the directory walk lists the vendored directories it skipped; the tree selection already left them out.
+    const fromDir = await scanProject(root);
+    expect(fromDir.vendoredSkipped).toEqual(['.next/', 'dist/', 'node_modules/', 'venv/']);
+    expect(await scanFiles(files)).toEqual({ ...fromDir, vendoredSkipped: [] });
   });
 
   it("never reads a .gitignore inside a skipped or ignored directory, and applies nested ones", async () => {
