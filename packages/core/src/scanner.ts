@@ -102,8 +102,9 @@ export function languageForFile(file: string): Language | undefined {
 }
 
 /**
- * Find env var references in one file's source. `file` is only copied into the results. Python
- * files also get pydantic-settings fields (pydantic.ts). A line that reads a variable more than
+ * Find env var references in one file's source. `file` is only copied into the results. JS/TS
+ * also reads same-line destructuring (`const { <NAME>, <OTHER> = "x" } = process.env`), Python
+ * files pydantic-settings fields (pydantic.ts). A line that reads a variable more than
  * once (`process.env.<NAME> ? process.env.<NAME> : x`) gives one reference, at the first read; it
  * has a default only if every read on the line has one. A match that is a whole string literal
  * (`'process.env.<NAME>'`, a bundler `define` key or a message) isn't a read.
@@ -124,10 +125,39 @@ export function scanSource(source: string, language: Language, file: string): Re
         found.push(reference);
       }
     }
+    if (language === 'javascript') found.push(...destructuredReads(line, index + 1, file));
   }
   if (language === 'python') found.push(...scanPydanticSettings(source, file));
 
   return onePerNameAndLine(found).sort((a, b) => a.line - b.line || a.column - b.column);
+}
+
+// `const { <NAME>, <OTHER>: alias, <THIRD> = "x" } = process.env` (or `import.meta.env`), on one line. No nested braces,
+// so `{ a: { b } }` patterns aren't read; neither is a destructuring split across lines.
+const DESTRUCTURING = /\{([^{}]*)\}\s*(?::[^=;{}]+)?=\s*(process\.env|import\.meta\.env)\b(?!\s*\.|\s*\[|\s*\?\.)/g;
+const DESTRUCTURED_KEY = /^\s*(?:(['"])([A-Za-z_][A-Za-z0-9_]*)\1|([A-Za-z_][A-Za-z0-9_]*))\s*(?::\s*[A-Za-z_$][\w$]*\s*)?(=\s*(.*))?$/s;
+/** A destructuring default of undefined/null is no default, as for `??` and `||`. */
+const DESTRUCTURED_DEFAULT = /^(?!(?:undefined|null)\b)\S/;
+
+/** Each key of a same-line `{ … } = process.env` destructuring; a key with `= default` has a default. */
+function destructuredReads(line: string, lineNumber: number, file: string): Reference[] {
+  const references: Reference[] = [];
+  DESTRUCTURING.lastIndex = 0;
+  for (let match = DESTRUCTURING.exec(line); match; match = DESTRUCTURING.exec(line)) {
+    const syntax: Syntax = match[2] === 'process.env' ? 'process.env' : 'import.meta.env';
+    let offset = match.index + 1;
+    for (const part of match[1]!.split(',')) {
+      const key = DESTRUCTURED_KEY.exec(part);
+      const name = key?.[2] ?? key?.[3];
+      if (key && name) {
+        const reference: Reference = { name, file, line: lineNumber, column: offset + part.indexOf(name) + 1, syntax };
+        if (key[4] && DESTRUCTURED_DEFAULT.test(key[5]!.trim())) reference.hasDefault = true;
+        references.push(reference);
+      }
+      offset += part.length + 1;
+    }
+  }
+  return references;
 }
 
 const QUOTE_CHARS = new Set(['"', "'", '`']);
