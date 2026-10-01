@@ -207,6 +207,8 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
 - **Small conventional commits**, one per logical unit, made as you go: `feat:`, `fix:`, `test:`,
   `docs:`, `chore:`, `ci:` (optionally scoped, e.g. `feat(web):`).
 - **No attribution trailers** in commit messages (no `Co-Authored-By:`, no `Claude-Session:`).
+- **Commits are authored by the maintainer:** set git `user.name`/`user.email` to
+  `Utsav Mishra <utsav.mishra25@gmail.com>` at the start of a session; no attribution trailers.
 - **Push only when asked.** The maintainer reviews; pushes happen at the end of a phase, after the
   full suite is green, when the maintainer says so.
 - **Test as you go.** Run the relevant test file after each change; run the full suite
