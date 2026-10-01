@@ -1,9 +1,11 @@
 import type { PrCheckJobData } from '@deployhealth/core';
 import {
+  BUNDLED_MIGRATIONS,
   claimDueEndpoints,
   createDb,
   findPrCheckTarget,
   findPrCommentId,
+  pendingMigrations,
   pruneChecks,
   pruneDeliveries,
   recordCheck,
@@ -18,6 +20,7 @@ import { workerEnv } from './env';
 import { githubApi } from './github/api';
 import { createGithubApp } from './github/app';
 import { CHECK_QUEUE, checkEndpoints, PR_CHECK_QUEUE, prCheck, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
+import { waitForMigrations } from './readiness';
 import { registerQueues, RESEED_INTERVAL_MINUTES } from './schedules';
 import { sendWebhook } from './webhook';
 
@@ -37,6 +40,9 @@ async function main(): Promise<void> {
   const { DATABASE_URL, DEMO_PUBLIC, DEMO_BASE_URL, GITHUB_APP } = workerEnv();
   const handle = createDb(DATABASE_URL);
   const { db } = handle;
+  // Web's pre-deploy step migrates the database, and this process can start first: work no queue
+  // (and don't start pg-boss) until every migration this build ships is applied.
+  await waitForMigrations({ pending: () => pendingMigrations(db), total: BUNDLED_MIGRATIONS.length, log });
   const boss = new PgBoss(DATABASE_URL);
   boss.on('error', (error) => console.error('[worker] pg-boss error', error));
 
