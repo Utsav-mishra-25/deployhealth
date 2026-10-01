@@ -6,7 +6,7 @@ import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource } from './scanner';
-import { isEnvFileName, MAX_ENV_FILES_PER_SCOPE, sortEnvFileNames } from './env-files';
+import { isDeclarationFile, isEnvFileName, MAX_ENV_FILES_PER_SCOPE, sortEnvFileNames } from './env-files';
 import {
   type EnvScope,
   type FindingCounts,
@@ -133,9 +133,9 @@ async function analyzeFiles(
       else (isComposeFileName(name) ? composeFiles : sourceFiles).push(file);
       continue;
     }
-    const { entries, invalid } = parseEnv(await read(file));
+    const { entries, commented, invalid } = parseEnv(await read(file));
     for (const { line } of invalid) warnings.push({ file, line, message: 'ignored a line that is not KEY=value' });
-    envFiles.push({ path: file, name, entries });
+    envFiles.push({ path: file, name, entries, commented: isDeclarationFile(name) ? commented : [] });
   }
 
   const scopeDirs = new Set(envFiles.map((f) => dirOf(f.path)));

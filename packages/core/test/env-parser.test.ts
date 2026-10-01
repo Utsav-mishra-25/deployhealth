@@ -101,3 +101,15 @@ describe('parseEnv', () => {
     ]);
   });
 });
+
+describe('parseEnv: commented-out assignments', () => {
+  it('lists the keys of commented-out KEY= lines, never prose', () => {
+    const { entries, commented } = parseEnv('A=1\n# B=\n##  export C=x\n  # D = 2\n# Note: set A=1 first\n# e.g. F=1\n#G-H=1\n');
+    expect(entries.map((e) => e.key)).toEqual(['A']);
+    expect(commented).toEqual([
+      { key: 'B', line: 2 },
+      { key: 'C', line: 3 },
+      { key: 'D', line: 4 },
+    ]);
+  });
+});

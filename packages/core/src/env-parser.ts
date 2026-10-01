@@ -9,12 +9,19 @@ export interface EnvEntry {
 
 export interface EnvParseResult {
   entries: EnvEntry[];
+  /**
+   * Keys of commented-out assignments (`# KEY=value`, `## export KEY=`), with their lines. A
+   * template such as `.env.example` documents optional variables this way.
+   */
+  commented: Array<{ key: string; line: number }>;
   /** Non-blank, non-comment lines that are not `KEY=value` assignments. */
   invalid: Array<{ line: number; text: string }>;
 }
 
 // Keys follow dotenv: letters, digits, underscore, dot and dash, not starting with a digit.
 const ASSIGNMENT = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=(.*)$/;
+// A commented-out assignment: only env var names, so prose such as `# Note: a=b` isn't one.
+const COMMENTED_ASSIGNMENT = /^\s*#+\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/;
 const QUOTES = new Set(['"', "'", '`']);
 
 /**
@@ -28,12 +35,18 @@ const QUOTES = new Set(['"', "'", '`']);
 export function parseEnv(source: string): EnvParseResult {
   const lines = source.replace(/^\uFEFF/, '').split(/\r?\n/);
   const entries: EnvEntry[] = [];
+  const commented: EnvParseResult['commented'] = [];
   const invalid: EnvParseResult['invalid'] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i] ?? '';
     const trimmed = text.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    if (trimmed.startsWith('#')) {
+      const key = COMMENTED_ASSIGNMENT.exec(text)?.[1];
+      if (key) commented.push({ key, line: i + 1 });
+      continue;
+    }
+    if (trimmed === '') continue;
 
     const match = ASSIGNMENT.exec(text);
     if (!match) {
@@ -59,7 +72,7 @@ export function parseEnv(source: string): EnvParseResult {
     entries.push({ key, value: stripInlineComment(rest).trim(), line: startLine });
   }
 
-  return { entries, invalid };
+  return { entries, commented, invalid };
 }
 
 export async function readEnvFile(path: string): Promise<EnvParseResult> {
