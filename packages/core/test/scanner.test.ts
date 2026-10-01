@@ -252,3 +252,16 @@ describe('scanSource: one reference per variable per line', () => {
     expect(scanSource('const a = process.env.DUP ?? "x"; const b = process.env.DUP', 'javascript', 'f')[0]).not.toHaveProperty('hasDefault');
   });
 });
+
+describe('scanSource: a quoted reference is a string, not a read', () => {
+  it('skips bundler define keys and messages, but still reads the value side and template literals', () => {
+    const source = [
+      "define: { 'process.env.EMBED_URL': JSON.stringify(process.env.EMBED_URL), \"process.env.ONLY_A_KEY\": '1' },",
+      'throw new Error(`process.env.IN_A_MESSAGE`);',
+      'const url = `${process.env.IN_A_TEMPLATE}/api`;',
+      'const k = "import.meta.env.VITE_KEY_ONLY";',
+    ].join('\n');
+    expect(names(source, 'javascript')).toEqual(['EMBED_URL', 'IN_A_TEMPLATE']);
+    expect(scanSource(source, 'javascript', 'f')[0]).toMatchObject({ name: 'EMBED_URL', column: 51 });
+  });
+});
