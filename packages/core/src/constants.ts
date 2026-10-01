@@ -8,7 +8,7 @@ export const TOKEN_SECRET_NAME = 'DEPLOYHEALTH_TOKEN';
 /** The CLI's npm package, and the exact version snippets and docs pin. */
 export const CLI_NPM_PACKAGE = 'deployhealth-scan';
 /** Bump only after that version is on npm (it can trail src/version.ts while a release is pending). */
-export const PUBLISHED_CLI_VERSION = '0.2.0';
+export const PUBLISHED_CLI_VERSION = '0.3.0';
 
 /**
  * Deprecated: the single-file CLI bundle the web app still serves at this path, for workflows
@@ -17,7 +17,7 @@ export const PUBLISHED_CLI_VERSION = '0.2.0';
 export const CLI_BUNDLE_PATH = '/deployhealth-scan.mjs';
 
 /**
- * The bundled CLI's size, rounded to whole KB, as the landing page states it ("16 KB, zero
+ * The bundled CLI's size, rounded to whole KB, as the landing page states it ("24 KB, zero
  * dependencies"). test/npm-package.test.ts fails when the build no longer rounds to it.
  */
 export const CLI_BUNDLE_KB = 24;

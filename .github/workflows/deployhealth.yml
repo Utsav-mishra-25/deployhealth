@@ -31,7 +31,7 @@ jobs:
         # No --exclude or --ignore, like `pnpm scan:self`: the CLI skips NODE_ENV and the scanner's
         # test fixtures by default.
         run: |
-          npx --yes deployhealth-scan@0.2.0 \
+          npx --yes deployhealth-scan@0.3.0 \
             --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
