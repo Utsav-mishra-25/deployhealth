@@ -127,3 +127,24 @@ describe('vendored and generated code', () => {
     expect(fromUnsized.findings).toEqual(fromDir.findings);
   });
 });
+
+describe('test tooling counts as tests', () => {
+  const ROOT = `${FIXTURE}test-tooling`;
+
+  it('skips *.e2e.*, *.cy.*, test runner configs and setup files, and playwright/, cypress/, mocks/, __mocks__/ and testing/', async () => {
+    const result = await scanProject(ROOT);
+    expect(result.variables).toEqual([
+      { var_name: 'APP_KEY', scope: '', defined_in: ['.env.example'] },
+      { var_name: 'UTILS_VAR', scope: '', defined_in: [] }, // src/testing-utils.ts isn't in a testing/ directory
+    ]);
+    expect(result.testFilesSkipped).toBe(14);
+    // Variables only test tooling reads are used, not UNUSED; .env.e2e.example is an env file, not a test.
+    expect(result.envScopes).toEqual([{ scope: '', env_files: ['.env.example', '.env.e2e.example'] }]);
+    expect(result.findings).toEqual([{ kind: 'missing', var_name: 'UTILS_VAR', file: 'src/testing-utils.ts', line: 1, env_file: null }]);
+  });
+
+  it('the GitHub App never fetches them', async () => {
+    const paths = await allFiles(ROOT);
+    expect(await selectTreeFiles(paths, (p) => readFile(join(ROOT, p), 'utf8'))).toEqual(['.env.e2e.example', '.env.example', 'src/app.ts', 'src/testing-utils.ts']);
+  });
+});
