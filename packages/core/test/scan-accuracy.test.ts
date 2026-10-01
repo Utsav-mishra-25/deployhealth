@@ -163,3 +163,19 @@ describe('one row per variable per file:line', () => {
     ]);
   });
 });
+
+describe('pydantic-settings', () => {
+  it('reads settings fields as env vars: declared ones are used, a required one missing from .env.example is MISSING', async () => {
+    const result = await scanProject(`${FIXTURE}pydantic`);
+    expect(result.variables).toEqual([
+      { var_name: 'APP_DATABASE_URL', scope: '', defined_in: ['.env.example'] },
+      { var_name: 'APP_PORT', scope: '', defined_in: ['.env.example'], optional: true },
+      { var_name: 'APP_SECRET_KEY', scope: '', defined_in: [] },
+      { var_name: 'APP_SENTRY_DSN', scope: '', defined_in: [], optional: true },
+    ]);
+    expect(result.findings).toEqual([
+      { kind: 'missing', var_name: 'APP_SECRET_KEY', file: 'app/settings.py', line: 10, env_file: null },
+      unused('APP_UNUSED_ONE', '.env.example', 3),
+    ]);
+  });
+});

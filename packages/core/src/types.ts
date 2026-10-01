@@ -8,7 +8,9 @@ export type Syntax =
   | 'os.getenv'
   | 'os.Getenv'
   | 'os.LookupEnv'
-  | 'ENV';
+  | 'ENV'
+  /** A field of a pydantic-settings class (pydantic.ts). */
+  | 'BaseSettings';
 
 /** A single use of an env var in code. Paths are POSIX and relative to the scan root; 1-based. */
 export interface Reference {
