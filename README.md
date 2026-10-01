@@ -205,7 +205,7 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    only its SHA-256 is stored) and a workflow snippet. Save the token as the repo secret
    `DEPLOYHEALTH_TOKEN` and commit the snippet as `.github/workflows/deployhealth.yml`.
 2. **On every push**, the Action runs the CLI from npm, pinned to an exact version
-   (`npx --yes deployhealth-scan@0.2.0`: one 16 KB file, no dependencies), on the checkout with the
+   (`npx --yes deployhealth-scan@0.3.0`: one 24 KB file, no dependencies), on the checkout with the
    commit sha and branch. The job's token is read-only (`permissions: contents: read`), and the
    workflow runs on pushes only, never on pull requests from forks, since it reads a secret.
 3. **The scanner** walks the repo, respecting `.gitignore` and skipping `.git` and vendored or
@@ -271,7 +271,7 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    - stores a **scan** with counts it computes itself;
    - stores every **finding** and **variable**.
 
-Try the scanner locally: `npx deployhealth-scan@0.2.0 --dry-run` (add `--json`, `--ignore NAME_*`,
+Try the scanner locally: `npx deployhealth-scan@0.3.0 --dry-run` (add `--json`, `--ignore NAME_*`,
 `--exclude path/`). This repository scans itself the same way on every push to `main`
 ([`.github/workflows/deployhealth.yml`](.github/workflows/deployhealth.yml)).
 
@@ -281,7 +281,7 @@ Workflows created before the npm package download `/deployhealth-scan.mjs` from 
 instance with `curl` and run it with `node`. That file is still served, now with a `Deprecation`
 header, and will be removed in a later release. To migrate, copy the new workflow from the
 project's settings page, or replace the `curl …` and `node "$RUNNER_TEMP/deployhealth-scan.mjs"`
-lines with `npx --yes deployhealth-scan@0.2.0` and the same flags, then add `permissions:
+lines with `npx --yes deployhealth-scan@0.3.0` and the same flags, then add `permissions:
 contents: read` to the job and `package-manager-cache: false` to `actions/setup-node`.
 
 ### Uptime: the worker
