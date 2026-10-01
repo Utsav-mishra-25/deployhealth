@@ -26,13 +26,13 @@ export async function makeUser(db: Db, login = `user${++counter}`) {
   return user!;
 }
 
-export async function makeProject(db: Db, ownerId: string, name = `project${++counter}`) {
+export async function makeProject(db: Db, ownerId: string, name = `project${++counter}`, repoFullName = `acme/${name}`) {
   const [project] = await db
     .insert(projects)
     .values({
       ownerId,
       name,
-      repoFullName: `acme/${name}`,
+      repoFullName,
       apiTokenHash: `hash-${name}-${++counter}`,
       apiTokenHint: 'dh_…test',
     })

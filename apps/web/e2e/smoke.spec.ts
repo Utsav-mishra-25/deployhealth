@@ -119,6 +119,31 @@ test('a project with no env file: one notice instead of MISSING rows, and a star
   expect(markdown).toContain('```dotenv\nCONTACT_FORM_ENDPOINT=\nNEXT_PUBLIC_SITE_URL=\n```');
 });
 
+test('GitHub App setup page: signed out, sign in and come back; a repo link pre-fills the new project', async ({ page }) => {
+  await page.goto('/github/installed');
+  await expect(page.getByTestId('installed-signed-out')).toContainText('Sign in to deployhealth with the GitHub account you installed it with');
+  await page.getByRole('link', { name: 'Sign in and come back' }).click();
+  await expect(page).toHaveURL(/\/login\?next=%2Fgithub%2Finstalled$/);
+  await page.getByRole('button', { name: 'Continue as dev user' }).click();
+  await expect(page).toHaveURL(/\/github\/installed$/);
+  // The dev user has no installation linked: the page says what to check, and offers no next steps.
+  await expect(page.getByTestId('installations-empty')).toBeVisible();
+  await expect(page.getByTestId('app-next-steps')).toHaveCount(0);
+
+  // The next steps link to the new project form, pre-filled; anything that isn't owner/repo is ignored.
+  await page.goto('/projects/new?repo=acme%2Fnext-steps');
+  await expect(page.getByLabel('GitHub repository')).toHaveValue('acme/next-steps');
+  await expect(page.getByLabel('Project name')).toHaveValue('next-steps');
+  await page.goto('/projects/new?repo=%3Cscript%3E');
+  await expect(page.getByLabel('GitHub repository')).toHaveValue('');
+
+  // Signed in, /login goes to ?next= only when it's a path on this site.
+  await page.goto('/login?next=%2Fgithub%2Finstalled');
+  await expect(page).toHaveURL(/\/github\/installed$/);
+  await page.goto('/login?next=%2F%2Fevil.example');
+  await expect(page).toHaveURL(/\/clients$/);
+});
+
 test('signed in: client and project, a named endpoint, deploy notes, handoff and a shared report', async ({ page, browser }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Continue as dev user' }).click();

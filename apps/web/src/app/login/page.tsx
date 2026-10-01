@@ -3,6 +3,7 @@ import { auth, signIn } from '@/auth';
 import { serverEnv } from '@/env';
 import Link from 'next/link';
 import { githubSignInReads, isDemoLoginEnabled } from '@/lib/auth-providers';
+import { safeReturnPath } from '@/lib/github-app';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,9 +12,11 @@ const ERRORS: Record<string, string> = {
   OAuthCallbackError: 'GitHub sign-in was cancelled or failed. Please try again.',
 };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  if (await auth()) redirect('/clients');
-  const { error } = await searchParams;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
+  const { error, next } = await searchParams;
+  // ?next= brings people back where they started (e.g. the GitHub App's setup page); only paths on this site.
+  const redirectTo = safeReturnPath(next) ?? '/clients';
+  if (await auth()) redirect(redirectTo);
   const env = serverEnv();
   const github = Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET);
   const demo = isDemoLoginEnabled(env);
@@ -34,7 +37,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <form
             action={async () => {
               'use server';
-              await signIn('github', { redirectTo: '/clients' });
+              await signIn('github', { redirectTo });
             }}
           >
             <button className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">
@@ -49,7 +52,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <form
             action={async () => {
               'use server';
-              await signIn('dev', { redirectTo: '/clients' });
+              await signIn('dev', { redirectTo });
             }}
           >
             <button className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">

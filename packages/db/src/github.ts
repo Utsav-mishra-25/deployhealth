@@ -339,14 +339,23 @@ export async function agentPrStats(db: Db, ownerId: string, clientId: string, fr
   return result.rows[0] ?? { total: 0, undeclared: 0 };
 }
 
+export interface InstallationRepo {
+  fullName: string;
+  /** This user's project for the repo (case-insensitive; the oldest if several), or null: none yet. */
+  projectId: string | null;
+}
+
 export interface InstallationSummary {
   accountLogin: string;
   accountType: string;
   suspended: boolean;
-  repos: string[];
+  repos: InstallationRepo[];
 }
 
-/** The installations linked to this user, with the repositories each can see. */
+/**
+ * The installations linked to this user, with the repositories each can see and the user's own
+ * project for each (never another user's, even for the same repository).
+ */
 export async function listInstallationsForUser(db: Db, userId: string): Promise<InstallationSummary[]> {
   const rows = await db
     .select({ id: installations.id, accountLogin: installations.accountLogin, accountType: installations.accountType, suspendedAt: installations.suspendedAt, repo: installationRepos.repoFullName })
@@ -354,11 +363,32 @@ export async function listInstallationsForUser(db: Db, userId: string): Promise<
     .leftJoin(installationRepos, eq(installationRepos.installationId, installations.id))
     .where(eq(installations.userId, userId))
     .orderBy(installations.accountLogin, installationRepos.repoFullName);
+  const owned = await db
+    .select({ id: projects.id, repoFullName: projects.repoFullName })
+    .from(projects)
+    .where(eq(projects.ownerId, userId))
+    .orderBy(projects.createdAt);
+  const projectByRepo = new Map<string, string>();
+  for (const p of owned) if (!projectByRepo.has(p.repoFullName.toLowerCase())) projectByRepo.set(p.repoFullName.toLowerCase(), p.id);
+
   const byId = new Map<string, InstallationSummary>();
   for (const r of rows) {
     const summary = byId.get(r.id) ?? { accountLogin: r.accountLogin, accountType: r.accountType, suspended: r.suspendedAt !== null, repos: [] };
-    if (r.repo) summary.repos.push(r.repo);
+    if (r.repo) summary.repos.push({ fullName: r.repo, projectId: projectByRepo.get(r.repo.toLowerCase()) ?? null });
     byId.set(r.id, summary);
   }
   return [...byId.values()];
+}
+
+/**
+ * Repositories the App can check for this user but that have no project yet, so no pull request
+ * is checked: distinct, sorted. Suspended installations check nothing, so they're left out.
+ */
+export function reposWithoutProject(summaries: readonly InstallationSummary[]): string[] {
+  const repos = new Map<string, string>();
+  for (const s of summaries) {
+    if (s.suspended) continue;
+    for (const r of s.repos) if (r.projectId === null && !repos.has(r.fullName.toLowerCase())) repos.set(r.fullName.toLowerCase(), r.fullName);
+  }
+  return [...repos.values()].sort((a, b) => a.localeCompare(b));
 }

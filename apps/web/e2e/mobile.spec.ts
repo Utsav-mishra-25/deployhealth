@@ -28,6 +28,7 @@ test('public pages fit a 375 px phone, signed out', async ({ page }) => {
     '/security',
     '/privacy',
     '/terms',
+    '/github/installed',
   ]) {
     await expectNoSidewaysScroll(page, path);
   }
