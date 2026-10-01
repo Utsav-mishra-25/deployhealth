@@ -206,3 +206,16 @@ describe('Compose interpolation', () => {
     expect(fromTree.findings).toEqual((await scanProject(root)).findings);
   });
 });
+
+describe('commented-out declarations', () => {
+  it('a commented-out KEY= in a declaration file declares the variable, but is never UNUSED; elsewhere it counts for nothing', async () => {
+    const result = await scanProject(`${FIXTURE}commented`);
+    expect(result.findings).toEqual([{ kind: 'missing', var_name: 'LOCAL_COMMENTED', file: 'index.ts', line: 1, env_file: null }]);
+    expect(result.variables).toEqual([
+      { var_name: 'ACTIVE', scope: '', defined_in: ['.env.example'] },
+      { var_name: 'DISABLED_EXPORT', scope: '', defined_in: ['.env.example'] },
+      { var_name: 'LOCAL_COMMENTED', scope: '', defined_in: [] },
+      { var_name: 'OPTIONAL_FEATURE', scope: '', defined_in: ['.env.example'] },
+    ]);
+  });
+});

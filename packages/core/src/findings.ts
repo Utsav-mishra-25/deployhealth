@@ -8,6 +8,11 @@ export interface ScopeEnvFile {
   /** Base name (`.env`, `.env.example`, `.env.appStore.example`, …; see env-files.ts). */
   name: EnvFileName;
   entries: EnvEntry[];
+  /**
+   * Commented-out keys (`# KEY=`) of a declaration file (env-files.ts): they declare the variable
+   * (so it isn't MISSING) but are never UNUSED and take no part in MISMATCH. Empty for other files.
+   */
+  commented?: ReadonlyArray<{ key: string }>;
 }
 
 export interface ScopeInput {
@@ -25,7 +30,7 @@ export interface ScopeInput {
  * Compare one scope's references against its env files.
  *
  * - missing:  referenced without an inline default, and not defined in any of the scope's env
- *             files (one row per reference). Never in a scope with no env file at all: nothing
+ *             files, nor commented out in one of its declaration files (one row per reference). Never in a scope with no env file at all: nothing
  *             there declares anything yet, so the scope is reported once (EnvScope) instead.
  * - unused:   defined in an env file, never referenced in the scope (one row per defining file);
  *             a read in a test file or a Compose file's interpolation counts, so neither is unused
@@ -33,7 +38,7 @@ export interface ScopeInput {
  */
 export function analyzeScope({ references, envFiles, isIgnored, usedOutsideCode }: ScopeInput): FindingRow[] {
   const rows: FindingRow[] = [];
-  const defined = new Set(envFiles.flatMap((f) => f.entries.map((e) => e.key)));
+  const defined = new Set(envFiles.flatMap((f) => [...f.entries, ...(f.commented ?? [])].map((e) => e.key)));
   const referenced = new Set([...references.map((r) => r.name), ...(usedOutsideCode ?? [])]);
 
   for (const ref of envFiles.length === 0 ? [] : references) {
@@ -84,7 +89,9 @@ export function requiredVariables({ scope, references, envFiles, isIgnored }: Sc
     const variable: RequiredVariable = {
       var_name,
       scope,
-      defined_in: sortEnvFileNames(envFiles.filter((f) => f.entries.some((e) => e.key === var_name)).map((f) => f.name)),
+      defined_in: sortEnvFileNames(
+        envFiles.filter((f) => [...f.entries, ...(f.commented ?? [])].some((e) => e.key === var_name)).map((f) => f.name),
+      ),
     };
     if (references.every((r) => r.name !== var_name || r.hasDefault)) variable.optional = true;
     return variable;
