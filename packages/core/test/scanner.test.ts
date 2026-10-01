@@ -230,3 +230,25 @@ describe('scanSource: inline defaults (the reference is optional, never MISSING)
     expect(scanSource('process.env.A', 'javascript', 'f')[0]).not.toHaveProperty('hasDefault');
   });
 });
+
+describe('scanSource: one reference per variable per line', () => {
+  it('merges repeated reads on a line into the leftmost one, in every language', () => {
+    const js = scanSource('const a = process.env.DUP ? process.env.DUP : process.env["DUP"];\nprocess.env.DUP', 'javascript', 'f');
+    expect(js).toEqual([
+      { name: 'DUP', file: 'f', line: 1, column: 11, syntax: 'process.env' },
+      { name: 'DUP', file: 'f', line: 2, column: 1, syntax: 'process.env' },
+    ]);
+    expect(scanSource('x = os.environ.get("DUP") or os.environ["DUP"]', 'python', 'f')).toHaveLength(1);
+    expect(scanSource('v := os.Getenv("DUP") + os.Getenv("DUP")', 'go', 'f')).toHaveLength(1);
+    expect(scanSource('ENV["DUP"] + ENV.fetch("DUP")', 'ruby', 'f')).toHaveLength(1);
+    // Different variables on one line stay separate.
+    expect(names('f(process.env.A, process.env.B, process.env.A)', 'javascript')).toEqual(['A', 'B']);
+  });
+
+  it('keeps a default only when every read on the line has one', () => {
+    expect(scanSource('const a = process.env.DUP ?? process.env.DUP ?? "x"', 'javascript', 'f')[0]).toMatchObject({ hasDefault: true });
+    // The first read has no default of its own: the line can still fail without it.
+    expect(scanSource('const a = process.env.DUP; const b = process.env.DUP ?? "x"', 'javascript', 'f')[0]).not.toHaveProperty('hasDefault');
+    expect(scanSource('const a = process.env.DUP ?? "x"; const b = process.env.DUP', 'javascript', 'f')[0]).not.toHaveProperty('hasDefault');
+  });
+});
