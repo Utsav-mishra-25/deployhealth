@@ -16,6 +16,8 @@ export interface CheckEndpointsDeps {
   check: (target: CheckTarget) => Promise<CheckResult>;
   record: (endpointId: string, outcome: CheckOutcome) => Promise<RecordCheckResult>;
   notify: (webhookUrl: string, payload: { text: string }) => Promise<boolean>;
+  /** Marks the worker alive (worker_heartbeats), at the end of every run, even with nothing due. */
+  heartbeat: () => Promise<void>;
   log: (message: string) => void;
   /** Checks run in parallel, up to this many at a time. */
   concurrency?: number;
@@ -41,6 +43,7 @@ export interface CheckEndpointsSummary {
  * Each claimed endpoint has a start time (`runAt`) that keeps checks of one hostname at least
  * 10 seconds apart across all users. Endpoints sharing a start time form a wave; waves run in
  * order, each no earlier than its start time (never early, so the spacing only ever grows).
+ * Then it records the heartbeat /api/health/worker reads.
  */
 export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEndpointsSummary> {
   const due = await deps.claimDue();
@@ -52,6 +55,13 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   for (const at of [...waves.keys()].sort((a, b) => a - b)) {
     await sleepUntil(new Date(at));
     await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary));
+  }
+  // A claim that throws skips this, so the deep health check sees a worker that can't do its job.
+  // A failed write is logged, not thrown: the run itself succeeded.
+  try {
+    await deps.heartbeat();
+  } catch (error) {
+    deps.log(`[check] heartbeat not recorded: ${(error as Error).name}`);
   }
   return summary;
 }

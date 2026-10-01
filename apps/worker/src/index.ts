@@ -9,6 +9,7 @@ import {
   pruneChecks,
   pruneDeliveries,
   recordCheck,
+  recordHeartbeat,
   rollupChecks,
   setPrCheckGithubIds,
   upsertPrCheck,
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
       check: (target) => runCheck(target),
       record: (endpointId, outcome) => recordCheck(db, endpointId, outcome),
       notify: (url, payload) => sendWebhook(url, payload, { log }),
+      heartbeat: () => recordHeartbeat(db),
       log,
     });
     if (summary.checked || summary.errors) log(`[check] ${JSON.stringify(summary)}`);

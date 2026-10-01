@@ -37,6 +37,7 @@ describe('checkEndpoints job', () => {
     const recorded: string[] = [];
     const notified: Array<[string, { text: string }]> = [];
     const summary = await checkEndpoints({
+      heartbeat: async () => {},
       claimDue: async () => [due('a'), due('b'), due('c')],
       check: async (t) => result(!t.url.includes('a.')),
       record: async (id, outcome) => {
@@ -62,6 +63,7 @@ describe('checkEndpoints job', () => {
     let running = 0;
     let peak = 0;
     const summary = await checkEndpoints({
+      heartbeat: async () => {},
       claimDue: async () => Array.from({ length: 7 }, (_, i) => due(`e${i}`)),
       check: async () => {
         running++;
@@ -87,6 +89,7 @@ describe('checkEndpoints job', () => {
     let clock = T0.getTime();
     const at = (s: number) => new Date(T0.getTime() + s * 1000);
     await checkEndpoints({
+      heartbeat: async () => {},
       // Two checks of shared.example (10s apart) and one of other.example, claimed out of order.
       claimDue: async () => [due('s2', 'https://shared.example/2', at(10)), due('o', 'https://other.example/', at(0)), due('s1', 'https://shared.example/1', at(0))],
       check: async (t) => {
@@ -114,6 +117,7 @@ describe('checkEndpoints job', () => {
 
   it('does nothing when nothing is due', async () => {
     const summary = await checkEndpoints({
+      heartbeat: async () => {},
       claimDue: async () => [],
       check: async () => {
         throw new Error('should not run');
@@ -123,6 +127,46 @@ describe('checkEndpoints job', () => {
       log: () => {},
     });
     expect(summary).toEqual({ checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0 });
+  });
+});
+
+describe('checkEndpoints heartbeat', () => {
+  const base = {
+    check: async () => result(true),
+    record: async () => ({ consecutiveFailures: 0, event: null }),
+    notify: async () => true,
+  };
+
+  it('records a heartbeat after every run, also when nothing is due', async () => {
+    const order: string[] = [];
+    await checkEndpoints({ ...base, claimDue: async () => [], heartbeat: async () => void order.push('heartbeat'), log: () => {} });
+    await checkEndpoints({
+      ...base,
+      claimDue: async () => [due('a')],
+      record: async () => {
+        order.push('record');
+        return { consecutiveFailures: 0, event: null };
+      },
+      heartbeat: async () => void order.push('heartbeat'),
+      log: () => {},
+    });
+    expect(order).toEqual(['heartbeat', 'record', 'heartbeat']);
+  });
+
+  it('records it even when an endpoint errors, but not when the claim fails', async () => {
+    let beats = 0;
+    const heartbeat = async () => void beats++;
+    await checkEndpoints({ ...base, claimDue: async () => [due('a')], check: async () => Promise.reject(new Error('boom')), heartbeat, log: () => {} });
+    expect(beats).toBe(1);
+    await expect(checkEndpoints({ ...base, claimDue: async () => Promise.reject(new Error('db down')), heartbeat, log: () => {} })).rejects.toThrow('db down');
+    expect(beats).toBe(1);
+  });
+
+  it('logs a failed heartbeat write without failing the run', async () => {
+    const logs: string[] = [];
+    const summary = await checkEndpoints({ ...base, claimDue: async () => [due('a')], heartbeat: async () => Promise.reject(new TypeError('x')), log: (m) => logs.push(m) });
+    expect(summary.checked).toBe(1);
+    expect(logs).toEqual(['[check] heartbeat not recorded: TypeError']);
   });
 });
 
