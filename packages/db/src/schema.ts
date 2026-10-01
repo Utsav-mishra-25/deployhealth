@@ -349,6 +349,16 @@ export const checkHosts = pgTable('check_hosts', {
 });
 
 /**
+ * One row per worker job that reports liveness: `check-endpoints` writes its row at the end of
+ * every run (even with nothing due), and /api/health/worker reads it. Set with the database's
+ * now(), so web and worker clocks are never compared.
+ */
+export const workerHeartbeats = pgTable('worker_heartbeats', {
+  name: text('name').primaryKey(),
+  lastRunAt: ts('last_run_at').notNull(),
+});
+
+/**
  * Per-endpoint daily check totals (UTC days), written by the nightly prune job before raw checks
  * older than 30 days are deleted. Monthly reports read these, so they outlive the raw checks.
  */

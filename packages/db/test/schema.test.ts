@@ -44,6 +44,7 @@ describe('schema', () => {
       'scans',
       'users',
       'webhook_deliveries',
+      'worker_heartbeats',
     ]);
   });
 

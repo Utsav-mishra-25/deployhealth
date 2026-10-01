@@ -50,6 +50,13 @@
       "when": 1790787366882,
       "tag": "0006_quieter_scan",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790889940727,
+      "tag": "0007_worker_heartbeats",
+      "breakpoints": true
     }
   ]
 }

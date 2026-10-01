@@ -7,3 +7,5 @@ export * from './handoff';
 export * from './reports';
 export * from './demo';
 export * from './github';
+export * from './heartbeat';
+export * from './migrations-status';
