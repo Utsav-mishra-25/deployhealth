@@ -7,13 +7,13 @@ import { isTestFileName, isTestPath, TEST_DIRS } from '../src/test-paths';
 
 describe('isTestPath', () => {
   it('matches the test file names', () => {
-    for (const name of ['app.test.ts', 'app.test.tsx', 'App.spec.js', 'util.spec.mjs', 'client_test.go', 'test_views.py', 'views_test.py', 'conftest.py', 'user_spec.rb', 'login.e2e.ts', 'widget.cy.tsx', 'playwright.config.ts', 'vitest.config.mts', 'vitest.workspace.ts', 'vitest.setup.ts', 'jest.config.js', 'jest.setup.cjs', 'cypress.config.ts']) {
+    for (const name of ['app.test.ts', 'app.test.tsx', 'App.spec.js', 'util.spec.mjs', 'client_test.go', 'test_views.py', 'views_test.py', 'conftest.py', 'user_spec.rb', 'login.e2e.ts', 'app.e2e-spec.ts', 'widget.cy.tsx', 'playwright.config.ts', 'vitest.config.mts', 'vitest.workspace.ts', 'vitest.setup.ts', 'jest.config.js', 'jest.setup.cjs', 'cypress.config.ts']) {
       expect(isTestFileName(name), name).toBe(true);
     }
   });
 
   it('leaves look-alikes alone: contest.ts, latest.py, a file called test.ts, spec.rb, and env files', () => {
-    for (const name of ['contest.ts', 'latest.py', 'test.ts', 'testing.ts', 'testing-utils.ts', 'spec.rb', 'inspect.go', 'attest_x.py', '.env.test', '.env.test.local', 'protest_test.rs', 'e2e.ts', 'vite.config.ts', 'playwright.ts', '.env.e2e.example', '.env.cy.sample']) {
+    for (const name of ['contest.ts', 'latest.py', 'test.ts', 'testing.ts', 'testing-utils.ts', 'spec.rb', 'inspect.go', 'attest_x.py', '.env.test', '.env.test.local', 'protest_test.rs', 'e2e.ts', 'e2e-spec.ts', 'vite.config.ts', 'playwright.ts', '.env.e2e.example', '.env.cy.sample']) {
       expect(isTestFileName(name), name).toBe(false);
     }
   });
