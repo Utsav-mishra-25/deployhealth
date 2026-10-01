@@ -87,6 +87,20 @@ export interface AlertOpenedInput {
   newUndeclared?: readonly string[];
 }
 
+/**
+ * An alert lists every variable up to this many, and above it this many minus one, then "and N
+ * more" (a first deploy with no previous scan counts every variable it reads as new). Counts stay
+ * exact. Webhooks reuse the message, so they read the same.
+ */
+export const MAX_ALERT_NAMES = 6;
+
+/** "A, B, C" for up to MAX_ALERT_NAMES names; above that "A, B, C, D, E and 35 more". */
+export function listNames(names: readonly string[]): string {
+  if (names.length <= MAX_ALERT_NAMES) return names.join(', ');
+  const shown = names.slice(0, MAX_ALERT_NAMES - 1);
+  return `${shown.join(', ')} and ${names.length - shown.length} more`;
+}
+
 export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissing, newUndeclared = [] }: AlertOpenedInput): string {
   const label = endpointLabel(endpoint);
   if (!deploy) {
@@ -96,11 +110,11 @@ export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissin
   const lead = `${label} started failing ${after} after deploy ${deploy.sha.slice(0, 7)}`;
   const parts: string[] = [];
   if (newMissing.length > 0) {
-    parts.push(`${newMissing.length} ${newMissing.length === 1 ? 'missing env var' : 'missing env vars'}: ${newMissing.join(', ')}`);
+    parts.push(`${newMissing.length} ${newMissing.length === 1 ? 'missing env var' : 'missing env vars'}: ${listNames(newMissing)}`);
   }
   if (newUndeclared.length > 0) {
     const noun = newUndeclared.length === 1 ? 'new env var' : 'new env vars';
-    parts.push(`${newUndeclared.length} ${noun} no env file declares: ${newUndeclared.join(', ')}`);
+    parts.push(`${newUndeclared.length} ${noun} no env file declares: ${listNames(newUndeclared)}`);
   }
   if (parts.length === 0) return `${lead}, which had no new config findings`;
   return `${lead}, which introduced ${parts.join(', plus ')}`;
