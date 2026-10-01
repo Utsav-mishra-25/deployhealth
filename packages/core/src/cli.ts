@@ -33,8 +33,9 @@ Options:
   --no-default-ignore  also check names the platform or runtime provides (NODE_ENV,
                        CI, GITHUB_SHA, npm_*, VERCEL_*, RAILWAY_*, RENDER_*, FLY_*, ...)
   --exclude <pattern>  skip paths matching a gitignore-style pattern (repeatable)
-  --include-tests      also scan tests and fixtures (test/, tests/, __tests__/, spec/,
-                       e2e/, fixtures/, testdata/, *.test.*, *.spec.*, *_test.go, ...)
+  --include-tests      also scan tests, fixtures and test tooling (test/, tests/, e2e/,
+                       fixtures/, playwright/, testing/, *.test.*, *.spec.*, *.e2e.*,
+                       *_test.go, vitest.config.*, ...)
   --dry-run            print the findings instead of sending them
   --json               with --dry-run, print JSON
   -v, --version        print the version

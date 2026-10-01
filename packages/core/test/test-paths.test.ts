@@ -7,23 +7,23 @@ import { isTestFileName, isTestPath, TEST_DIRS } from '../src/test-paths';
 
 describe('isTestPath', () => {
   it('matches the test file names', () => {
-    for (const name of ['app.test.ts', 'app.test.tsx', 'App.spec.js', 'util.spec.mjs', 'client_test.go', 'test_views.py', 'views_test.py', 'conftest.py', 'user_spec.rb']) {
+    for (const name of ['app.test.ts', 'app.test.tsx', 'App.spec.js', 'util.spec.mjs', 'client_test.go', 'test_views.py', 'views_test.py', 'conftest.py', 'user_spec.rb', 'login.e2e.ts', 'widget.cy.tsx', 'playwright.config.ts', 'vitest.config.mts', 'vitest.workspace.ts', 'vitest.setup.ts', 'jest.config.js', 'jest.setup.cjs', 'cypress.config.ts']) {
       expect(isTestFileName(name), name).toBe(true);
     }
   });
 
   it('leaves look-alikes alone: contest.ts, latest.py, a file called test.ts, spec.rb, and env files', () => {
-    for (const name of ['contest.ts', 'latest.py', 'test.ts', 'testing.ts', 'spec.rb', 'inspect.go', 'attest_x.py', '.env.test', '.env.test.local', 'protest_test.rs']) {
+    for (const name of ['contest.ts', 'latest.py', 'test.ts', 'testing.ts', 'testing-utils.ts', 'spec.rb', 'inspect.go', 'attest_x.py', '.env.test', '.env.test.local', 'protest_test.rs', 'e2e.ts', 'vite.config.ts', 'playwright.ts', '.env.e2e.example', '.env.cy.sample']) {
       expect(isTestFileName(name), name).toBe(false);
     }
   });
 
   it('matches anything under a test or fixture directory, at any depth', () => {
-    expect([...TEST_DIRS].sort()).toEqual(['__fixtures__', '__tests__', 'e2e', 'fixtures', 'spec', 'test', 'testdata', 'tests']);
-    for (const path of ['test/a.ts', 'src/__tests__/a.ts', 'apps/web/e2e/login.ts', 'pkg/testdata/.env', 'spec/models/user.rb', 'lib/__fixtures__/x.js', 'packages/core/test/fixtures/p/.env.example']) {
+    expect([...TEST_DIRS].sort()).toEqual(['__fixtures__', '__mocks__', '__tests__', 'cypress', 'e2e', 'fixtures', 'mocks', 'playwright', 'spec', 'test', 'testdata', 'testing', 'tests']);
+    for (const path of ['test/a.ts', 'src/__tests__/a.ts', 'apps/web/e2e/login.ts', 'pkg/testdata/.env', 'spec/models/user.rb', 'lib/__fixtures__/x.js', 'packages/core/test/fixtures/p/.env.example', 'playwright/fixtures.ts', 'apps/web/cypress/support/commands.ts', 'src/mocks/handlers.ts', 'src/__mocks__/fs.ts', 'packages/testing/src/index.ts', 'src/testing/helpers.ts']) {
       expect(isTestPath(path), path).toBe(true);
     }
-    for (const path of ['src/contest.ts', 'src/testing/helpers.ts', 'latest/app.ts', 'specs/a.ts', 'src/app.ts', '.env.test.local']) {
+    for (const path of ['src/contest.ts', 'src/testing-utils.ts', 'src/mocking/x.ts', 'src/playwright-helpers.ts', 'latest/app.ts', 'specs/a.ts', 'src/app.ts', '.env.test.local', '.env.e2e.example']) {
       expect(isTestPath(path), path).toBe(false);
     }
   });
