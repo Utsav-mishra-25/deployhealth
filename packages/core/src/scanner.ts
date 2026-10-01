@@ -1,4 +1,5 @@
 import { extname } from 'node:path';
+import { scanPydanticSettings } from './pydantic';
 import type { Reference, Syntax } from './types';
 
 export type Language = 'javascript' | 'python' | 'go' | 'ruby';
@@ -101,17 +102,17 @@ export function languageForFile(file: string): Language | undefined {
 }
 
 /**
- * Find env var references in one file's source. `file` is only copied into the results. A line
- * that reads a variable more than once (`process.env.<NAME> ? process.env.<NAME> : x`) gives one
- * reference, at the first read; it has a default only if every read on the line has one.
+ * Find env var references in one file's source. `file` is only copied into the results. Python
+ * files also get pydantic-settings fields (pydantic.ts). A line that reads a variable more than
+ * once (`process.env.<NAME> ? process.env.<NAME> : x`) gives one reference, at the first read; it
+ * has a default only if every read on the line has one.
  */
 export function scanSource(source: string, language: Language, file: string): Reference[] {
-  const references: Reference[] = [];
+  const found: Reference[] = [];
   const lines = source.split(/\r?\n/);
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] as string;
-    const found: Reference[] = [];
     for (const { syntax, regex, defaultAfter } of PATTERNS[language]) {
       regex.lastIndex = 0;
       for (let match = regex.exec(line); match; match = regex.exec(line)) {
@@ -122,19 +123,20 @@ export function scanSource(source: string, language: Language, file: string): Re
         found.push(reference);
       }
     }
-    references.push(...onePerName(found));
   }
+  if (language === 'python') found.push(...scanPydanticSettings(source, file));
 
-  return references.sort((a, b) => a.line - b.line || a.column - b.column);
+  return onePerNameAndLine(found).sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
-/** One reference per name (the leftmost), with a default only if every one of them has one. */
-function onePerName(references: Reference[]): Reference[] {
-  const byName = new Map<string, Reference>();
-  for (const ref of references.sort((a, b) => a.column - b.column)) {
-    const first = byName.get(ref.name);
-    if (!first) byName.set(ref.name, { ...ref });
+/** One reference per name and line (the leftmost), with a default only if every one of them has one. */
+function onePerNameAndLine(references: Reference[]): Reference[] {
+  const merged = new Map<string, Reference>();
+  for (const ref of [...references].sort((a, b) => a.line - b.line || a.column - b.column)) {
+    const key = `${ref.line}\0${ref.name}`;
+    const first = merged.get(key);
+    if (!first) merged.set(key, { ...ref });
     else if (!ref.hasDefault) delete first.hasDefault;
   }
-  return [...byName.values()];
+  return [...merged.values()];
 }
