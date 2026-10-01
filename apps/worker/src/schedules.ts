@@ -22,7 +22,11 @@ export const QUEUES: Record<string, QueueOptions> = {
   // A reseed that fails because web's pre-deploy hasn't applied a new migration yet (the worker
   // often starts first) retries after 1, 2, 4, 8 and 16 minutes instead of all at once.
   [RESEED_QUEUE]: { policy: 'singleton', retryLimit: 5, retryDelay: 60, retryBackoff: true },
-  [PR_CHECK_QUEUE]: { policy: 'stately', retryLimit: 2, retryDelay: 30, retryBackoff: true, expireInSeconds: 600 },
+  // A pull request opened during a deploy must not be dropped: six retries, the nth (from 0) after
+  // 30 s × 2^n to twice that (pg-boss's jitter), at most 5 minutes, span about 17 to 22 minutes:
+  // a web build, its pre-deploy migration and the worker's 10-minute migration wait. A job queued
+  // while the worker waits uses no retries; it just waits too.
+  [PR_CHECK_QUEUE]: { policy: 'stately', retryLimit: 6, retryDelay: 30, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 600 },
 };
 
 export type BossQueues = Pick<PgBoss, 'createQueue' | 'updateQueue' | 'schedule' | 'unschedule'>;

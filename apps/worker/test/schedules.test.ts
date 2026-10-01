@@ -70,6 +70,18 @@ describe('worker schedules', () => {
     for (const options of updated.values()) expect(options).not.toHaveProperty('policy');
   });
 
+  it('retries a pull request check long enough to outlast a deploy', () => {
+    const { retryLimit, retryDelay, retryDelayMax } = QUEUES[PR_CHECK_QUEUE]!;
+    expect(QUEUES[PR_CHECK_QUEUE]).toMatchObject({ policy: 'stately', retryBackoff: true, expireInSeconds: 600 });
+    // pg-boss's backoff for retry n (from 0): min(max, delay × 2^(n+1) × (½ + ½·random)).
+    const delays = (jitter: number) => Array.from({ length: retryLimit! }, (_, n) => Math.min(retryDelayMax!, retryDelay! * 2 ** (n + 1) * jitter));
+    const total = (jitter: number) => delays(jitter).reduce((a, b) => a + b, 0);
+    expect(delays(0.5)).toEqual([30, 60, 120, 240, 300, 300]);
+    // Longer than the worker's 10-minute migration wait plus a web build, even with the shortest jitter.
+    expect(total(0.5) / 60).toBe(17.5);
+    expect(total(1) / 60).toBe(22);
+  });
+
   it('retries a failed reseed with a delay, so it can wait for web to apply a new migration', () => {
     expect(QUEUES[RESEED_QUEUE]).toMatchObject({ policy: 'singleton', retryDelay: 60, retryBackoff: true });
     expect(QUEUES[RESEED_QUEUE]!.retryLimit).toBeGreaterThanOrEqual(3);
