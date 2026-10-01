@@ -21,7 +21,7 @@ export const TEST_DIRS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Test file names: *.test.*, *.spec.*, *.e2e.*, *.cy.*, *_test.go, test_*.py, *_test.py,
+ * Test file names: *.test.*, *.spec.*, *.e2e.*, *.e2e-spec.* (NestJS), *.cy.*, *_test.go, test_*.py, *_test.py,
  * conftest.py, *_spec.rb, and test runner config and setup files (playwright.config.*,
  * vitest.config.*, vitest.workspace.*, vitest.setup.*, jest.config.*, jest.setup.*, cypress.config.*).
  */
@@ -29,6 +29,7 @@ const TEST_FILE_NAMES: readonly RegExp[] = [
   /.\.test\./,
   /.\.spec\./,
   /.\.e2e\./,
+  /.\.e2e-spec\./,
   /.\.cy\./,
   /_test\.go$/,
   /^test_.*\.py$/,
