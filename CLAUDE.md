@@ -8,7 +8,8 @@ Phase 1 (config health), Phase 2 (clients, uptime, alerts), Phase 3 (public demo
 export, monthly client reports), Phase 4 (licensing, the npm CLI, hard caps, /security, and the
 GitHub App's env check on every pull request), Phase 4.5 (launch polish: landing page, a demo
 that's fresh at any hour, phone layouts, /privacy and /terms, metadata, security headers) and
-Phase 4.6 (scanner accuracy on real repos, CLI 0.3.0) are built.
+Phase 4.6 (scanner accuracy on real repos, CLI 0.3.0) and Phase 4.7 (launch-week hardening: the
+worker waits for migrations, a deep health check that sees the worker, capped alert lists) are built.
 
 ## Monorepo layout
 
@@ -17,20 +18,22 @@ apps/
   web/                Next.js 15 App Router + Tailwind. UI, Auth.js, POST /api/ingest/scan
     src/env.ts        the ONLY place web reads process.env (by name, validated lazily)
     src/auth.ts       Auth.js v5: GitHub OAuth + dev-only dev login, JWT sessions, no adapter
-    src/middleware.ts rate limit for /share/* (Node runtime, in memory)
+    src/middleware.ts rate limits for /share/* and /api/health/worker (Node runtime, in memory)
     src/lib/          ingest handler, validation (zod), guard (read-only demo), demo owner, paths,
                       handoff loader, share-link signing, rate limiter, auth providers (+ the OAuth
                       scopes and what sign-in reads), formatting, github-webhook.ts (signature,
                       dedupe, per-installation limit, events), jobs.ts (send-only pg-boss client),
                       read-body.ts (capped streaming body reader), legal.ts (operator, hosting,
-                      subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts
+                      subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts,
+                      worker-health.ts (the deep health check's response)
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
                       project, handoff, report (props: ownerId/data, paths, readOnly)
     src/app/          / (landing when signed out, else → /clients), /login, /clients, /clients/new,
                       /clients/[slug](/edit, /report), /projects/new, /projects/[id] (+ endpoint
                       actions, /settings, /handoff, /handoff.md), /demo/... (read-only mirror),
                       /share/reports/[token], /api/demo/broken, /security, /privacy, /terms and
-                      /.well-known/security.txt (public), /api/github/webhook (GitHub App),
+                      /.well-known/security.txt (public), /api/health (Railway's, no database),
+                      /api/health/worker (deep check), /api/github/webhook (GitHub App),
                       /github/installed (the App's setup URL); icon.svg, opengraph-image.tsx (+
                       twitter-image), sitemap.ts
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
@@ -39,7 +42,9 @@ apps/
     e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link)
     railway.json      documentation only: the Railway build/deploy fields set by hand in the dashboard
   worker/             plain Node process running pg-boss
-    src/index.ts      wires queues and real deps: check-endpoints, prune-checks, reseed-demo, pr-check
+    src/index.ts      waits for migrations, then wires queues and real deps: check-endpoints, prune-checks,
+                      reseed-demo, pr-check
+    src/readiness.ts  waitForMigrations(): poll every 5 s, up to 10 minutes, then throw (exit 1)
     src/schedules.ts  every queue's options and cron (registerQueues: create, re-apply options, schedule)
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed)
     src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
@@ -79,7 +84,7 @@ packages/
   db/                 Drizzle schema, migrations (drizzle/), queries, seed
     src/schema.ts     users, clients, projects, deploys, scans (+ env_scopes), findings, scan_variables (+ optional),
                       endpoints, checks, check_hosts, endpoint_daily_stats, alerts, installations,
-                      installation_repos, pr_checks, webhook_deliveries
+                      installation_repos, pr_checks, webhook_deliveries, worker_heartbeats
     src/queries.ts    users, projects, ingest (recordScan + variables), deploys/scans reads
     src/clients.ts    clients CRUD, /clients overview, project settings (client, webhook, deploy notes)
     src/monitoring.ts endpoints CRUD, claimDueEndpoints(), recordCheck() (+ alert lifecycle), stats,
@@ -88,6 +93,8 @@ packages/
     src/reports.ts    getClientReport() (by client id; see Authorization)
     src/github.ts     installations, installation repos, webhook deliveries, pr_checks (worker upserts;
                       owner-scoped reads for the UI: status, PR list, agent stats)
+    src/heartbeat.ts  recordHeartbeat() / workerIsHealthy(): the deep health check's one row
+    src/migrations-status.ts  pendingMigrations(): the bundled drizzle journal vs drizzle.__drizzle_migrations
     src/demo.ts       demo user (-1, read-only) and dev user (-2), fixed demo project ids
     src/seed.ts       the demo: 2 clients, 3 projects, named endpoints, 7 days of checks, scripted alert
     src/seed-cli.ts   `pnpm db:seed` (kept apart so importing the seed runs nothing)
@@ -98,6 +105,8 @@ LICENSE               FSL-1.1-MIT (everything except packages/core, which has it
 .github/workflows/publish-cli.yml    manual: publish deployhealth-scan to npm with provenance
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
+scripts/load-demo.mjs      `pnpm load:demo`: p50/p95/errors/rps of the public pages on `next start` (manual)
+docs/prompts/              the phase prompts as given (4.5 onwards) and the review loop
 ```
 
 Workspace packages ship TypeScript source (`exports` → `src/*.ts`). Next transpiles them
@@ -181,6 +190,7 @@ pnpm build
 pnpm e2e             # Playwright smoke test (see below)
 pnpm scan:self       # run deployhealth's own scanner on this repo; must report nothing
 pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "npx --yes deployhealth-scan@x.y.z" to compare)
+pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections × 30 s per public page (--url, --no-build)
 ```
 
 - One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
@@ -207,6 +217,7 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
 - **Small conventional commits**, one per logical unit, made as you go: `feat:`, `fix:`, `test:`,
   `docs:`, `chore:`, `ci:` (optionally scoped, e.g. `feat(web):`).
 - **No attribution trailers** in commit messages (no `Co-Authored-By:`, no `Claude-Session:`).
+- **No "Generated with Claude Code" footer or session links** in PR descriptions or commit messages.
 - **Commits are authored by the maintainer:** set git `user.name`/`user.email` to
   `Utsav Mishra <utsav.mishra25@gmail.com>` at the start of a session; no attribution trailers.
 - **Push only when asked.** The maintainer reviews; pushes happen at the end of a phase, after the
@@ -358,7 +369,16 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
   (`lib/auth-providers.ts`; asserted in `test/auth-providers.test.ts`). Don't add other gates
   elsewhere; keep it in that one function. It never signs in as the read-only demo user.
 - **Schema changes:** edit `packages/db/src/schema.ts`, then `pnpm db:generate` and commit the new SQL in
-  `packages/db/drizzle/`. Never edit a migration that has been applied.
+  `packages/db/drizzle/`. Never edit a migration that has been applied. Only web's pre-deploy step
+  applies migrations; the worker bundles the journal and waits for them (Worker jobs).
+- **Health checks:** `/api/health` is Railway's deploy healthcheck and never touches the database
+  (keep it that way). `/api/health/worker` is the deep check for external monitors: 200
+  `{"ok":true}` when `check-endpoints` finished a run in the last 3 minutes
+  (`WORKER_HEARTBEAT_MAX_AGE_SECONDS`, compared on the database clock), else 503 `{"ok":false}`,
+  also on a database error. Nothing else in the body (no counts, names, hosts or timestamps),
+  `no-store`, `X-Robots-Tag: noindex`, not in the sitemap, and rate-limited per IP in
+  `middleware.ts` (30/min, its own window, same `clientIp()` as /share). /security doesn't list
+  routes, so it isn't there. Monitor setup: `docs/deploy-railway.md` step 9.
 - **Worker jobs** live in `apps/worker/src/jobs.ts` as plain functions with injected dependencies,
   so they're unit-tested without pg-boss. `index.ts` only wires queues, schedules and real deps.
   Every queue uses the `singleton` policy. Checks are scheduled per endpoint via `next_check_at`,
@@ -400,6 +420,12 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
 
 ## Worker jobs
 
+- **Migration wait** (`readiness.ts`, before `boss.start()`, so no queue is worked): the worker
+  counts the bundled journal's migrations missing from `drizzle.__drizzle_migrations` (matched on
+  the journal's `when` = drizzle's `created_at`; a database ahead of the build is ready; no drizzle
+  schema = all pending). Pending or unreachable → one log line (the count, or the pg error code,
+  never a message or the connection string), retry in 5 s; after 10 minutes it throws and the
+  process exits 1 (Railway's `ALWAYS` restart).
 - **check-endpoints** (every minute): `claimDueEndpoints()` (one claimer at a time, advisory
   lock) takes enabled endpoints with `next_check_at <= now`, oldest first, at most 5 per hostname,
   and gives each a start time with `assignHostSlots()`: checks of one hostname start at least
@@ -407,7 +433,10 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
   hostname's next free slot; an endpoint that gets no slot stays due and goes first next run. Each
   claimed endpoint's `next_check_at` becomes its start + interval. The job runs the claim in waves
   by start time (never early), up to 10 checks at a time with `runCheck()`, stores each result
-  with `recordCheck()`, and sends webhooks for alert events after the transaction commits.
+  with `recordCheck()`, and sends webhooks for alert events after the transaction commits. Every
+  run ends with `recordHeartbeat()` (the `worker_heartbeats` row `check-endpoints`, `now()`), even
+  with nothing due; a claim that throws skips it, a failed write is logged. The deep health check
+  reads that row.
 - **prune-checks** (nightly, 03:17 UTC): first `rollupChecks()` writes one `endpoint_daily_stats`
   row per endpoint per complete UTC day (idempotent upsert), then `pruneChecks()` deletes raw checks
   from whole days more than 30 days back. A failed rollup deletes nothing.
@@ -419,7 +448,9 @@ pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "np
   queue, so `registerQueues()` re-applies every option with `updateQueue` (all but the policy, which
   can't change) on each start.
   The demo also gets a GitHub App installation (`DEMO_INSTALLATION_ID = -1`) and four checked PRs.
-- **pr-check** (queued by the web app's GitHub webhook; worked only with the App configured): see
+- **pr-check** (queued by the web app's GitHub webhook; worked only with the App configured):
+  6 retries, 30 s backoff capped at 5 minutes (about 17–22 minutes in all), so a PR opened during
+  a deploy outlasts the migration wait; `schedules.test.ts` pins the span. See
   "GitHub App: pull request checks" below. The nightly prune also deletes webhook delivery ids
   older than 24 h.
 
@@ -501,7 +532,8 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   by `alertOpenedMessage()`: "…started failing 4m after deploy b52952e, which introduced 2 missing
   env vars: …", "…which introduced 2 new env vars no env file declares: …" (both kinds joined by
   ", plus"), "…which had no new config findings", or "…no deploy in the 30 minutes before the
-  first failure".
+  first failure". Each kind lists every name up to 6, else 5 and "and N more"
+  (`listNames()`, `MAX_ALERT_NAMES`); counts stay exact. Webhooks reuse the message.
 - **Webhook:** if `projects.alert_webhook_url` is set, POST `{text}` on open and on resolve. Log
   and continue on failure; at most one retry.
 - **Down duration:** "Down for 21m" (or "Failing for 1m" before an alert opens) next to endpoint
