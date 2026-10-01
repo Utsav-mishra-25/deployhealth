@@ -99,6 +99,49 @@ describe('alert messages', () => {
     );
   });
 
+  describe('caps the names it lists, keeping the counts exact', () => {
+    const names = (n: number) => Array.from({ length: n }, (_, i) => `VAR_${String(i + 1).padStart(2, '0')}`);
+    const lead = 'x.dev started failing 4m after deploy b52952e, which introduced';
+    const missing = (n: number) => alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: names(n) });
+    const undeclared = (n: number) =>
+      alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: [], newUndeclared: names(n) });
+
+    it('lists every name up to six', () => {
+      expect(missing(1)).toBe(`${lead} 1 missing env var: VAR_01`);
+      expect(missing(5)).toBe(`${lead} 5 missing env vars: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05`);
+      expect(missing(6)).toBe(`${lead} 6 missing env vars: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05, VAR_06`);
+      expect(undeclared(1)).toBe(`${lead} 1 new env var no env file declares: VAR_01`);
+      expect(undeclared(5)).toBe(`${lead} 5 new env vars no env file declares: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05`);
+      expect(undeclared(6)).toBe(`${lead} 6 new env vars no env file declares: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05, VAR_06`);
+    });
+
+    it('lists five and "and N more" above six', () => {
+      expect(missing(7)).toBe(`${lead} 7 missing env vars: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05 and 2 more`);
+      expect(missing(40)).toBe(`${lead} 40 missing env vars: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05 and 35 more`);
+      expect(undeclared(40)).toBe(`${lead} 40 new env vars no env file declares: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05 and 35 more`);
+    });
+
+    it('caps each kind separately in the ", plus" join', () => {
+      const both = alertOpenedMessage({
+        endpoint: { url: 'https://x.dev' },
+        firstFailureAt: at(4),
+        deploy,
+        newMissing: names(40),
+        newUndeclared: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+      });
+      expect(both).toBe(
+        `${lead} 40 missing env vars: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05 and 35 more, plus 7 new env vars no env file declares: A, B, C, D, E and 2 more`,
+      );
+      expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: ['A'], newUndeclared: names(6) })).toBe(
+        `${lead} 1 missing env var: A, plus 6 new env vars no env file declares: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05, VAR_06`,
+      );
+    });
+
+    it('reads the same in the webhook, which reuses the message', () => {
+      expect(webhookPayload('opened', 'acme', missing(40)).text).toBe(`[down] acme: ${lead} 40 missing env vars: VAR_01, VAR_02, VAR_03, VAR_04, VAR_05 and 35 more`);
+    });
+  });
+
   it('says so when the linked deploy had no new findings', () => {
     expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
       'x.dev started failing under a minute after deploy b52952e, which had no new config findings',
