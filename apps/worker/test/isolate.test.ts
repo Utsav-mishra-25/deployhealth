@@ -3,7 +3,7 @@ import type { DueEndpoint } from '@deployhealth/db';
 import { describe, expect, it } from 'vitest';
 import tsupConfig from '../tsup.config';
 import { checkEndpoints } from '../src/jobs';
-import type { AnalyzeInput } from '../src/pr-check/analysis';
+import { MAX_REPORTED_ROWS, MAX_REPORTED_UNDECLARED, type AnalyzeInput } from '../src/pr-check/analysis';
 import { ISOLATE_BUNDLE, isolateEntry, openPrCheckIsolate, UncheckableError } from '../src/pr-check/isolate';
 
 const ENV = ['process', 'env'].join('.');
@@ -65,6 +65,21 @@ describe('the pull request check isolate', () => {
     expect(performance.now() - started).toBeLessThan(600);
     await expect(isolate.run('select', { base: [], head: [] })).rejects.toBeInstanceOf(UncheckableError);
     await isolate.close();
+  });
+
+  it('hands back bounded lists with exact totals, so even a huge result never stalls the event loop', async () => {
+    const isolate = await openPrCheckIsolate();
+    try {
+      const { lag, result } = await maxLoopLag(isolate.run('analyze', heavyInput(8)));
+      expect(result.status).toBe('fulfilled');
+      const analysis = (result as PromiseFulfilledResult<Awaited<ReturnType<typeof isolate.run<'analyze'>>>>).value;
+      expect(analysis.added).toHaveLength(MAX_REPORTED_ROWS);
+      expect(analysis.undeclared).toHaveLength(MAX_REPORTED_UNDECLARED);
+      expect(analysis.counts).toMatchObject({ added: 300_000, addedUndeclared: 300_000, undeclared: 300_000 });
+      expect(lag).toBeLessThan(100);
+    } finally {
+      await isolate.close();
+    }
   });
 
   it('relies on terminate() stopping a thread mid-loop, even inside a backtracking regex', async () => {

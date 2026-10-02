@@ -255,8 +255,10 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   file is fixed (`isolateEntry()`): no env var or config can point it elsewhere. Anything failing
   in the thread (time limit, a thrown error, out of memory) is `UncheckableError`: a neutral
   "Couldn't be checked" check run with a fixed message, no comment, and no retry. GitHub and
-  database errors throw and retry. `test/isolate.test.ts` checks the event loop and
-  check-endpoints stay on time while a check runs out its limit.
+  database errors throw and retry. The thread hands back at most 1,000 rows per list and 10,000
+  undeclared names, with exact totals in `counts`, so copying, storing and rendering a result
+  stays cheap. `test/isolate.test.ts` checks the event loop and check-endpoints stay on time while
+  a check runs out its limit, and that a huge result doesn't stall the loop either.
 - **Licensing:** `packages/core` is MIT (its own `LICENSE`, `"license": "MIT"`); everything else is
   FSL-1.1-MIT (root `LICENSE`, `"license": "FSL-1.1-MIT"` in the root, apps and `packages/db`).
   Moving code into `packages/core` relicenses it as MIT, so only move what the CLI or scanner needs.

@@ -28,6 +28,35 @@ export interface PrReport extends EnvVarDiff {
   secrets: SecretHit[];
   /** Set when a hard cap stopped the check; the rest of the report is then empty. */
   tooLarge: string | null;
+  /** Exact totals when the lists above were cut short (analysis.ts); else the lists' lengths. */
+  counts?: ReportCounts;
+}
+
+export interface ReportCounts {
+  added: number;
+  addedUndeclared: number;
+  removed: number;
+  renamed: number;
+  renamedUndeclared: number;
+  undeclared: number;
+  envFiles: number;
+  secrets: number;
+}
+
+/** The report's totals: its `counts`, or counted from its lists. */
+export function totals(r: Omit<PrReport, 'tooLarge'>): ReportCounts {
+  return (
+    r.counts ?? {
+      added: r.added.length,
+      addedUndeclared: r.added.filter((a) => !a.declared).length,
+      removed: r.removed.length,
+      renamed: r.renamed.length,
+      renamedUndeclared: r.renamed.filter((x) => !x.declared).length,
+      undeclared: r.undeclared.length,
+      envFiles: r.envFiles.length,
+      secrets: r.secrets.length,
+    }
+  );
 }
 
 export const emptyReport = (tooLarge: string | null = null): PrReport => ({
@@ -59,18 +88,13 @@ export const worthCommenting = (r: PrReport) =>
 /** One line: "2 env vars added (1 not in .env.example), 1 removed, 1 renamed". */
 export function summaryLine(r: PrReport): string {
   if (r.tooLarge) return r.tooLarge;
+  const n = totals(r);
   const parts: string[] = [];
-  if (r.added.length) {
-    const missing = r.added.filter((a) => !a.declared).length;
-    parts.push(`${plural(r.added.length, 'env var')} added${missing ? ` (${missing} not in .env.example)` : ''}`);
-  }
-  if (r.removed.length) parts.push(`${r.removed.length} removed`);
-  if (r.renamed.length) {
-    const missing = r.renamed.filter((x) => !x.declared).length;
-    parts.push(`${r.renamed.length} renamed${missing ? ` (${missing} not in .env.example)` : ''}`);
-  }
-  if (r.envFiles.length) parts.push(plural(r.envFiles.length, 'committed env file'));
-  if (r.secrets.length) parts.push(plural(r.secrets.length, 'possible secret'));
+  if (n.added) parts.push(`${plural(n.added, 'env var')} added${n.addedUndeclared ? ` (${n.addedUndeclared} not in .env.example)` : ''}`);
+  if (n.removed) parts.push(`${n.removed} removed`);
+  if (n.renamed) parts.push(`${n.renamed} renamed${n.renamedUndeclared ? ` (${n.renamedUndeclared} not in .env.example)` : ''}`);
+  if (n.envFiles) parts.push(plural(n.envFiles, 'committed env file'));
+  if (n.secrets) parts.push(plural(n.secrets, 'possible secret'));
   return parts.length ? parts.join(', ') : 'No env var changes';
 }
 
@@ -108,18 +132,19 @@ function code(text: string): string {
   return longest ? `${fence} ${clean} ${fence}` : `${fence}${clean}${fence}`;
 }
 
-/** A Markdown table of the first MAX_ROWS items (only those are rendered), then "…and N more." */
-function table<T>(header: string[], items: readonly T[], row: (item: T) => string[]): string[] {
+/** A Markdown table of the first MAX_ROWS items (only those are rendered), then "…and N more." of `total`. */
+function table<T>(header: string[], items: readonly T[], total: number, row: (item: T) => string[]): string[] {
+  const shown = items.slice(0, MAX_ROWS);
   const out = [`| ${header.join(' | ')} |`, `| ${header.map(() => '---').join(' | ')} |`];
-  for (const item of items.slice(0, MAX_ROWS)) out.push(`| ${row(item).join(' | ')} |`);
-  if (items.length > MAX_ROWS) out.push('', `…and ${items.length - MAX_ROWS} more.`);
+  for (const item of shown) out.push(`| ${row(item).join(' | ')} |`);
+  if (total > shown.length) out.push('', `…and ${total - shown.length} more.`);
   return out;
 }
 
-/** Up to `max` items as lines, then "- …and N more". */
-function list<T>(items: readonly T[], max: number, line: (item: T) => string): string[] {
+/** Up to `max` items as lines, then "- …and N more" of `total`. */
+function list<T>(items: readonly T[], total: number, max: number, line: (item: T) => string): string[] {
   const out = items.slice(0, max).map(line);
-  if (items.length > max) out.push(`- …and ${items.length - max} more`);
+  if (total > out.length) out.push(`- …and ${total - out.length} more`);
   return out;
 }
 
@@ -129,27 +154,28 @@ const where = (refs: ReadonlyArray<{ file: string; line: number }>, total: numbe
 /** The pull request comment (Markdown). Names and file:line only, never values. */
 export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<PrCheckMode, 'off'>; headSha: string }): string {
   const status = hasFindings(r) ? (mode === 'strict' ? '❌' : '⚠️') : '✅';
+  const n = totals(r);
   const lines = [COMMENT_MARKER, `### ${COMMENT_TITLE}`, '', `${r.tooLarge ? 'ℹ️' : status} **${summaryLine(r)}.**`];
 
   if (!r.tooLarge) {
     if (r.added.length) {
       lines.push('', '#### Added', '');
-      lines.push(...table(['Variable', 'Read at', '`.env.example`'], r.added, (a) => [code(name(a.name)), where(a.refs, a.total), a.declared ? '✅ declared' : '❌ **not declared**']));
+      lines.push(...table(['Variable', 'Read at', '`.env.example`'], r.added, n.added, (a) => [code(name(a.name)), where(a.refs, a.total), a.declared ? '✅ declared' : '❌ **not declared**']));
     }
     if (r.renamed.length) {
       lines.push('', '#### Renamed', '');
-      lines.push(...table(['From', 'To', 'In', '`.env.example`'], r.renamed, (x) => [code(name(x.from)), code(name(x.to)), code(`${path(x.file)}:${x.line}`), x.declared ? '✅ declared' : '❌ **not declared**']));
+      lines.push(...table(['From', 'To', 'In', '`.env.example`'], r.renamed, n.renamed, (x) => [code(name(x.from)), code(name(x.to)), code(`${path(x.file)}:${x.line}`), x.declared ? '✅ declared' : '❌ **not declared**']));
     }
     if (r.removed.length) {
       lines.push('', '#### Removed', '', 'No longer read anywhere; you can drop them from your env files and deploy settings.', '');
-      lines.push(...table(['Variable', 'Was read at'], r.removed, (x) => [code(name(x.name)), where(x.refs, x.total)]));
+      lines.push(...table(['Variable', 'Was read at'], r.removed, n.removed, (x) => [code(name(x.name)), where(x.refs, x.total)]));
     }
     if (r.envFiles.length) {
       lines.push('', '#### Committed env files', '', 'These usually hold real values. Remove them from the pull request and rotate anything they contained.', '');
-      lines.push(...table(['File', ''], r.envFiles, (f) => [code(path(f.path)), f.added ? 'added in this pull request' : 'changed in this pull request']));
+      lines.push(...table(['File', ''], r.envFiles, n.envFiles, (f) => [code(path(f.path)), f.added ? 'added in this pull request' : 'changed in this pull request']));
     }
     if (r.secrets.length) {
-      lines.push('', `**${plural(r.secrets.length, 'possible secret')} in added lines** (see the \`deployhealth / env\` check run for where).`);
+      lines.push('', `**${plural(n.secrets, 'possible secret')} in added lines** (see the \`deployhealth / env\` check run for where).`);
     }
   }
   const footer = ['', `<sub>Checked ${code(headSha.slice(0, 7))} · mode: ${mode} · names and file:line only, never values · [deployhealth](https://deployhealth.dev)</sub>`];
@@ -158,15 +184,16 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
 
 /** The check run: the same summary, plus where each possible secret is (rule, file:line). Each part within GitHub's limits. */
 export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): CheckRunOutput {
+  const n = totals(r);
   const text: string[] = [];
-  if (r.undeclared.length) text.push('### Not in .env.example', '', ...list(r.undeclared, MAX_LISTED, (n) => `- ${code(name(n))}`), '');
-  if (r.envFiles.length) text.push('### Committed env files', '', ...list(r.envFiles, MAX_LISTED, (f) => `- ${code(path(f.path))}`), '');
+  if (r.undeclared.length) text.push('### Not in .env.example', '', ...list(r.undeclared, n.undeclared, MAX_LISTED, (v) => `- ${code(name(v))}`), '');
+  if (r.envFiles.length) text.push('### Committed env files', '', ...list(r.envFiles, n.envFiles, MAX_LISTED, (f) => `- ${code(path(f.path))}`), '');
   if (r.secrets.length) {
     text.push('### Possible secrets in added lines', '', 'Values are not shown. If one is real, rotate it: it is in the branch history now.', '');
-    text.push(...list(r.secrets, 200, (s) => `- ${code(`${path(s.file)}:${s.line}`)} ${secretRuleLabel(s.rule)}`));
+    text.push(...list(r.secrets, n.secrets, 200, (s) => `- ${code(`${path(s.file)}:${s.line}`)} ${secretRuleLabel(s.rule)}`));
   }
-  const inline = r.undeclared.slice(0, MAX_INLINE).map((n) => `\`${name(n)}\``);
-  const more = r.undeclared.length > MAX_INLINE ? ` and ${r.undeclared.length - MAX_INLINE} more` : '';
+  const inline = r.undeclared.slice(0, MAX_INLINE).map((v) => `\`${name(v)}\``);
+  const more = n.undeclared > inline.length ? ` and ${n.undeclared - inline.length} more` : '';
   return {
     conclusion,
     title: shorten(summaryLine(r), MAX_TITLE),
