@@ -145,7 +145,9 @@ async function analyzeFiles(
     const refs = scanSource(await read(file), language, file);
     if (refs.length === 0) continue;
     const scope = nearestScope(dirOf(file), scopeDirs);
-    referencesByScope.set(scope, [...(referencesByScope.get(scope) ?? []), ...refs]);
+    const list = referencesByScope.get(scope);
+    if (list) for (const ref of refs) list.push(ref);
+    else referencesByScope.set(scope, refs);
   }
 
   // Names read outside the scanned code: by test files (never reported; their env files are left
@@ -153,7 +155,9 @@ async function analyzeFiles(
   const usedOutsideCode = new Map<string, Set<string>>();
   const markUsed = (file: string, names: Iterable<string>) => {
     const scope = nearestScope(dirOf(file), scopeDirs);
-    usedOutsideCode.set(scope, new Set([...(usedOutsideCode.get(scope) ?? []), ...names]));
+    let used = usedOutsideCode.get(scope);
+    if (!used) usedOutsideCode.set(scope, (used = new Set()));
+    for (const name of names) used.add(name);
   };
   for (const file of testFiles) {
     const language = languageForFile(file);
@@ -165,12 +169,23 @@ async function analyzeFiles(
   const byUser = createNameFilter(options.ignore ?? []);
   const byDefault = createNameFilter(options.defaultIgnore === false ? [] : DEFAULT_IGNORE);
   const isIgnored = (name: string) => byUser(name) || byDefault(name);
-  const seen = [...referencesByScope.values()].flat().map((r) => r.name).concat(envFiles.flatMap((f) => f.entries.map((e) => e.key)));
-  const defaultIgnored = [...new Set(seen.filter((name) => byDefault(name) && !byUser(name)))].sort();
+  const seen = new Set<string>();
+  for (const refs of referencesByScope.values()) for (const ref of refs) seen.add(ref.name);
+  for (const f of envFiles) for (const e of f.entries) seen.add(e.key);
+  const defaultIgnored = [...seen].filter((name) => byDefault(name) && !byUser(name)).sort();
+
+  const envFilesByScope = new Map<string, ScopeEnvFile[]>();
+  for (const f of envFiles) {
+    const scope = dirOf(f.path);
+    const list = envFilesByScope.get(scope);
+    if (list) list.push(f);
+    else envFilesByScope.set(scope, [f]);
+  }
+  const envFilesOf = (scope: string) => envFilesByScope.get(scope) ?? [];
 
   const scopes = [...new Set([...scopeDirs, ...referencesByScope.keys()])].sort();
   const envScopes = scopes.map((scope) => {
-    const names = sortEnvFileNames(envFiles.filter((f) => dirOf(f.path) === scope).map((f) => f.name));
+    const names = sortEnvFileNames(envFilesOf(scope).map((f) => f.name));
     if (names.length > MAX_ENV_FILES_PER_SCOPE) {
       warnings.push({ file: scope || '.', message: `${names.length} env files; only the first ${MAX_ENV_FILES_PER_SCOPE} are reported` });
     }
@@ -180,7 +195,7 @@ async function analyzeFiles(
     .flatMap((scope) =>
       analyzeScope({
         references: referencesByScope.get(scope) ?? [],
-        envFiles: envFiles.filter((f) => dirOf(f.path) === scope),
+        envFiles: envFilesOf(scope),
         isIgnored,
         usedOutsideCode: usedOutsideCode.get(scope),
       }),
@@ -190,7 +205,7 @@ async function analyzeFiles(
     requiredVariables({
       scope,
       references: referencesByScope.get(scope) ?? [],
-      envFiles: envFiles.filter((f) => dirOf(f.path) === scope),
+      envFiles: envFilesOf(scope),
       isIgnored,
     }).map((v) => ({ ...v, defined_in: v.defined_in.slice(0, MAX_ENV_FILES_PER_SCOPE) })),
   );
