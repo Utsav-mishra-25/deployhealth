@@ -86,44 +86,36 @@ async function allFiles(dir: string): Promise<string[]> {
 }
 
 describe('scanFiles + selectTreeFiles (git trees)', () => {
-  it('select the same files and give exactly the same result as scanProject on a directory', async () => {
+  it('select the same files as scanProject, except tracked files a .gitignore matches, and give the same result for them', async () => {
     const paths = await allFiles(root);
     expect(paths).toEqual(expect.arrayContaining(['node_modules/lib/index.js', 'generated/client.ts', 'README.md']));
-    const readGitignore: string[] = [];
-    const selected = await selectTreeFiles(paths, async (path) => {
-      readGitignore.push(path);
-      return readFile(join(root, path), 'utf8');
-    });
-    expect(readGitignore).toEqual(['.gitignore']);
+    const selected = selectTreeFiles(paths);
     expect(selected).not.toEqual(expect.arrayContaining(['node_modules/lib/index.js']));
-    expect(selected).toEqual(expect.arrayContaining(['.env', '.env.local', 'src/server.ts'])); // env files kept though gitignored
-    const files = new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const)));
+    expect(selected).toEqual(expect.arrayContaining(['.env', '.env.local', 'src/server.ts']));
+    // git never ignores a file it tracks: generated/ is in .gitignore, but a tree only lists committed files.
+    expect(selected).toContain('generated/client.ts');
+    const withoutIgnored = selected.filter((p) => !p.startsWith('generated/'));
+    const files = new Map(await Promise.all(withoutIgnored.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const)));
     // Only the directory walk lists the vendored directories it skipped; the tree selection already left them out.
     const fromDir = await scanProject(root);
     expect(fromDir.vendoredSkipped).toEqual(['.next/', 'dist/', 'node_modules/', 'venv/']);
     expect(await scanFiles(files)).toEqual({ ...fromDir, vendoredSkipped: [] });
   });
 
-  it("never reads a .gitignore inside a skipped or ignored directory, and applies nested ones", async () => {
-    const tree: Record<string, string> = {
-      '.gitignore': 'build/\n',
-      'build/.gitignore': '!*\n',
-      'build/out.ts': 'process.env.FROM_BUILD',
-      'node_modules/.gitignore': '',
-      'packages/a/.gitignore': 'secret.ts\n',
-      'packages/a/secret.ts': 'process.env.IGNORED',
-      'packages/a/.env': 'KEPT=1',
-      'packages/a/index.ts': 'process.env.KEPT',
-    };
-    const read: string[] = [];
-    const selected = await selectTreeFiles(Object.keys(tree), async (path) => {
-      read.push(path);
-      return tree[path]!;
-    });
-    expect(read.sort()).toEqual(['.gitignore', 'packages/a/.gitignore']);
-    expect(selected).toEqual(['packages/a/.env', 'packages/a/index.ts']);
-    const result = await scanFiles(new Map(selected.map((p) => [p, tree[p]!])));
-    expect(result.references).toEqual([{ name: 'KEPT', file: 'packages/a/index.ts', line: 1, column: 1, syntax: 'process.env', scope: 'packages/a' }]);
+  it('never applies .gitignore files to a tree (nor fetches them), but still skips vendored directories at any depth', () => {
+    const paths = [
+      '.gitignore',
+      'build/.gitignore',
+      'build/out.ts',
+      'node_modules/.gitignore',
+      'node_modules/x/index.ts',
+      'packages/a/.gitignore',
+      'packages/a/secret.ts',
+      'packages/a/.env',
+      'packages/a/index.ts',
+      'packages/a/node_modules/lib/index.ts',
+    ];
+    expect(selectTreeFiles(paths)).toEqual(['build/out.ts', 'packages/a/.env', 'packages/a/index.ts', 'packages/a/secret.ts']);
   });
 });
 

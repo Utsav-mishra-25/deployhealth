@@ -37,23 +37,14 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, budget = 
     return text;
   };
 
-  // Choose the files each side would scan (reading .gitignore files as needed, top-down).
-  const select = async (blobs: readonly TreeBlob[]) => {
+  // Choose the files each side would scan. Tracked files are never gitignored, so no .gitignore is read.
+  const select = (blobs: readonly TreeBlob[]) => {
     const byPath = new Map(blobs.map((b) => [b.path, b]));
     const sizes = new Map(blobs.map((b) => [b.path, b.size]));
-    const paths = await selectTreeFiles(
-      [...byPath.keys()],
-      (path) => {
-        const blob = byPath.get(path)!;
-        reserve(blob);
-        return download(blob);
-      },
-      { sizes },
-    );
-    return paths.map((path) => byPath.get(path)!);
+    return selectTreeFiles([...byPath.keys()], { sizes }).map((path) => byPath.get(path)!);
   };
-  const baseFiles = await select(baseTree.blobs);
-  const headFiles = await select(headTree.blobs);
+  const baseFiles = select(baseTree.blobs);
+  const headFiles = select(headTree.blobs);
 
   // The pull request's own diff, for secrets on added lines. Each file counts toward the caps.
   const pullFiles = await api.pullFiles(pr.number);
