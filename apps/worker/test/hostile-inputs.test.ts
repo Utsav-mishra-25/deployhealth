@@ -1,15 +1,19 @@
 import { scanFiles } from '@deployhealth/core';
 import { describe, expect, it } from 'vitest';
 import { diffEnvVars } from '../src/pr-check/diff';
+import { checkRunOutput, emptyReport, renderComment } from '../src/pr-check/report';
 
-// The pull request check's own work on hostile inputs (scan both sides, diff), timed.
+// The pull request check's own work on hostile inputs (scan both sides, diff, render), timed.
 // Inputs are built at run time and stay within what the App would fetch (512 KB per file).
 const ENV = ['process', 'env'].join('.');
 
 async function check(head: Map<string, string>) {
   const started = performance.now();
   const diff = diffEnvVars(await scanFiles(new Map([['.env.example', '']])), await scanFiles(head));
-  return { diff, ms: performance.now() - started };
+  const report = { ...emptyReport(), ...diff };
+  const comment = renderComment(report, { mode: 'comment', headSha: 'a'.repeat(40) });
+  const output = checkRunOutput(report, 'neutral');
+  return { diff, comment, output, ms: performance.now() - started };
 }
 
 describe('pull request check timing on hostile inputs', () => {
@@ -26,9 +30,10 @@ describe('pull request check timing on hostile inputs', () => {
       const keys = Array.from({ length: 37_500 }, (_, i) => `K${f}_${i}`).join(',');
       head.set(`src/f${f}.ts`, `const {${keys}} = ${ENV};\n`);
     }
-    const { diff, ms } = await check(head);
+    const { diff, comment, output, ms } = await check(head);
     expect(diff.added).toHaveLength(150_000);
     expect(diff.undeclared).toHaveLength(150_000);
+    for (const text of [comment, output.summary, output.text!]) expect(text.length).toBeLessThan(65_535);
     expect(ms).toBeLessThan(3_000);
   });
 

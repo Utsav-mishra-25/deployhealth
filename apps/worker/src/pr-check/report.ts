@@ -7,8 +7,21 @@ import { secretRuleLabel, type SecretHit } from './secrets';
 /** Hidden in every comment, so the App finds its own comment again. */
 export const COMMENT_MARKER = '<!-- deployhealth-env-check -->';
 export const COMMENT_TITLE = 'deployhealth · env check';
-/** Rows per table in the comment; GitHub comments are capped at 65,536 characters. */
+/** Rows per table in the comment. */
 const MAX_ROWS = 50;
+/**
+ * GitHub refuses a comment body, or a check run's summary or text, over 65,535 characters; ours
+ * stop at this many (whole lines, then "…and N more"), leaving room to spare.
+ */
+export const MAX_GITHUB_TEXT = 60_000;
+/** A check run's title. */
+export const MAX_TITLE = 255;
+/** Names listed in the check run's text, and inline in its summary. */
+const MAX_LISTED = 1_000;
+const MAX_INLINE = 20;
+/** Longer paths and names keep their start and end around an ellipsis. */
+export const MAX_PATH_CHARS = 160;
+export const MAX_NAME_CHARS = 100;
 
 export interface PrReport extends EnvVarDiff {
   envFiles: PrEnvFile[];
@@ -61,6 +74,32 @@ export function summaryLine(r: PrReport): string {
   return parts.length ? parts.join(', ') : 'No env var changes';
 }
 
+/** `text` cut to `max` characters: its start, an ellipsis, and its end (the more telling part of a path). */
+export function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = Math.floor((max - 1) * 0.375);
+  return `${text.slice(0, head)}…${text.slice(text.length - (max - 1 - head))}`;
+}
+const path = (p: string) => shorten(p, MAX_PATH_CHARS);
+const name = (n: string) => shorten(n, MAX_NAME_CHARS);
+
+/**
+ * `lines` then `tail`, joined, within `max` characters: when they don't fit, the lines that do
+ * (whole ones, from the start), a note saying how many were cut, then `tail`.
+ */
+export function fitLines(lines: readonly string[], max: number, tail: readonly string[] = []): string {
+  const whole = [...lines, ...tail].join('\n');
+  if (whole.length <= max) return whole;
+  const kept: string[] = [];
+  let used = tail.join('\n').length + 80; // the note and its blank line
+  for (const line of lines) {
+    if (used + line.length + 1 > max) break;
+    kept.push(line);
+    used += line.length + 1;
+  }
+  return [...kept, '', `…and ${lines.length - kept.length} more lines, cut to fit GitHub's limit.`, ...tail].join('\n');
+}
+
 /** Inline code that survives any file name: no newlines, pipes escaped, a long enough fence. */
 function code(text: string): string {
   const clean = text.replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
@@ -69,15 +108,23 @@ function code(text: string): string {
   return longest ? `${fence} ${clean} ${fence}` : `${fence}${clean}${fence}`;
 }
 
-function table(header: string[], rows: string[][]): string[] {
-  const shown = rows.slice(0, MAX_ROWS);
-  const out = [`| ${header.join(' | ')} |`, `| ${header.map(() => '---').join(' | ')} |`, ...shown.map((r) => `| ${r.join(' | ')} |`)];
-  if (rows.length > MAX_ROWS) out.push('', `…and ${rows.length - MAX_ROWS} more.`);
+/** A Markdown table of the first MAX_ROWS items (only those are rendered), then "…and N more." */
+function table<T>(header: string[], items: readonly T[], row: (item: T) => string[]): string[] {
+  const out = [`| ${header.join(' | ')} |`, `| ${header.map(() => '---').join(' | ')} |`];
+  for (const item of items.slice(0, MAX_ROWS)) out.push(`| ${row(item).join(' | ')} |`);
+  if (items.length > MAX_ROWS) out.push('', `…and ${items.length - MAX_ROWS} more.`);
+  return out;
+}
+
+/** Up to `max` items as lines, then "- …and N more". */
+function list<T>(items: readonly T[], max: number, line: (item: T) => string): string[] {
+  const out = items.slice(0, max).map(line);
+  if (items.length > max) out.push(`- …and ${items.length - max} more`);
   return out;
 }
 
 const where = (refs: ReadonlyArray<{ file: string; line: number }>, total: number) =>
-  `${code(`${refs[0]!.file}:${refs[0]!.line}`)}${total > 1 ? ` (+${total - 1} more)` : ''}`;
+  `${code(`${path(refs[0]!.file)}:${refs[0]!.line}`)}${total > 1 ? ` (+${total - 1} more)` : ''}`;
 
 /** The pull request comment (Markdown). Names and file:line only, never values. */
 export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<PrCheckMode, 'off'>; headSha: string }): string {
@@ -87,45 +134,44 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
   if (!r.tooLarge) {
     if (r.added.length) {
       lines.push('', '#### Added', '');
-      lines.push(...table(['Variable', 'Read at', '`.env.example`'], r.added.map((a) => [code(a.name), where(a.refs, a.total), a.declared ? '✅ declared' : '❌ **not declared**'])));
+      lines.push(...table(['Variable', 'Read at', '`.env.example`'], r.added, (a) => [code(name(a.name)), where(a.refs, a.total), a.declared ? '✅ declared' : '❌ **not declared**']));
     }
     if (r.renamed.length) {
       lines.push('', '#### Renamed', '');
-      lines.push(...table(['From', 'To', 'In', '`.env.example`'], r.renamed.map((x) => [code(x.from), code(x.to), code(`${x.file}:${x.line}`), x.declared ? '✅ declared' : '❌ **not declared**'])));
+      lines.push(...table(['From', 'To', 'In', '`.env.example`'], r.renamed, (x) => [code(name(x.from)), code(name(x.to)), code(`${path(x.file)}:${x.line}`), x.declared ? '✅ declared' : '❌ **not declared**']));
     }
     if (r.removed.length) {
       lines.push('', '#### Removed', '', 'No longer read anywhere; you can drop them from your env files and deploy settings.', '');
-      lines.push(...table(['Variable', 'Was read at'], r.removed.map((x) => [code(x.name), where(x.refs, x.total)])));
+      lines.push(...table(['Variable', 'Was read at'], r.removed, (x) => [code(name(x.name)), where(x.refs, x.total)]));
     }
     if (r.envFiles.length) {
       lines.push('', '#### Committed env files', '', 'These usually hold real values. Remove them from the pull request and rotate anything they contained.', '');
-      lines.push(...table(['File', ''], r.envFiles.map((f) => [code(f.path), f.added ? 'added in this pull request' : 'changed in this pull request'])));
+      lines.push(...table(['File', ''], r.envFiles, (f) => [code(path(f.path)), f.added ? 'added in this pull request' : 'changed in this pull request']));
     }
     if (r.secrets.length) {
       lines.push('', `**${plural(r.secrets.length, 'possible secret')} in added lines** (see the \`deployhealth / env\` check run for where).`);
     }
   }
-  lines.push('', `<sub>Checked ${code(headSha.slice(0, 7))} · mode: ${mode} · names and file:line only, never values · [deployhealth](https://deployhealth.dev)</sub>`);
-  return `${lines.join('\n')}\n`;
+  const footer = ['', `<sub>Checked ${code(headSha.slice(0, 7))} · mode: ${mode} · names and file:line only, never values · [deployhealth](https://deployhealth.dev)</sub>`];
+  return `${fitLines(lines, MAX_GITHUB_TEXT - 1, footer)}\n`;
 }
 
-/** The check run: the same summary, plus where each possible secret is (rule, file:line). */
+/** The check run: the same summary, plus where each possible secret is (rule, file:line). Each part within GitHub's limits. */
 export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): CheckRunOutput {
   const text: string[] = [];
-  if (r.undeclared.length) text.push('### Not in .env.example', '', ...r.undeclared.map((n) => `- ${code(n)}`), '');
-  if (r.envFiles.length) text.push('### Committed env files', '', ...r.envFiles.map((f) => `- ${code(f.path)}`), '');
+  if (r.undeclared.length) text.push('### Not in .env.example', '', ...list(r.undeclared, MAX_LISTED, (n) => `- ${code(name(n))}`), '');
+  if (r.envFiles.length) text.push('### Committed env files', '', ...list(r.envFiles, MAX_LISTED, (f) => `- ${code(path(f.path))}`), '');
   if (r.secrets.length) {
     text.push('### Possible secrets in added lines', '', 'Values are not shown. If one is real, rotate it: it is in the branch history now.', '');
-    text.push(...r.secrets.slice(0, 200).map((s) => `- ${code(`${s.file}:${s.line}`)} ${secretRuleLabel(s.rule)}`));
-    if (r.secrets.length > 200) text.push(`- …and ${r.secrets.length - 200} more`);
+    text.push(...list(r.secrets, 200, (s) => `- ${code(`${path(s.file)}:${s.line}`)} ${secretRuleLabel(s.rule)}`));
   }
+  const inline = r.undeclared.slice(0, MAX_INLINE).map((n) => `\`${name(n)}\``);
+  const more = r.undeclared.length > MAX_INLINE ? ` and ${r.undeclared.length - MAX_INLINE} more` : '';
   return {
     conclusion,
-    title: summaryLine(r),
-    summary: r.tooLarge
-      ? r.tooLarge
-      : `${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${r.undeclared.map((n) => `\`${n}\``).join(', ')}.` : ''}`,
-    text: text.length ? text.join('\n') : undefined,
+    title: shorten(summaryLine(r), MAX_TITLE),
+    summary: fitLines([r.tooLarge ? r.tooLarge : `${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${inline.join(', ')}${more}.` : ''}`], MAX_GITHUB_TEXT),
+    text: text.length ? fitLines(text, MAX_GITHUB_TEXT) : undefined,
   };
 }
 
