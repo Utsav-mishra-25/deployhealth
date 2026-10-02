@@ -2,7 +2,18 @@ import { scanFiles } from '@deployhealth/core';
 import { describe, expect, it } from 'vitest';
 import { detectAgent } from '../src/pr-check/agents';
 import { committedEnvFiles, diffEnvVars, isCommittableSecretEnvFile } from '../src/pr-check/diff';
-import { checkRunOutput, COMMENT_MARKER, conclusionFor, emptyReport, renderComment, worthCommenting, type PrReport } from '../src/pr-check/report';
+import {
+  checkRunOutput,
+  COMMENT_MARKER,
+  conclusionFor,
+  emptyReport,
+  fitLines,
+  MAX_GITHUB_TEXT,
+  renderComment,
+  shorten,
+  worthCommenting,
+  type PrReport,
+} from '../src/pr-check/report';
 import { addedLines, findSecrets } from '../src/pr-check/secrets';
 
 // Built indirectly so neither deployhealth's own scanner nor secret scanners read test data as real.
@@ -228,3 +239,52 @@ describe('conclusions and the comment', () => {
     expect(checkRunOutput(emptyReport(), 'success')).toEqual({ conclusion: 'success', title: 'No env var changes', summary: 'No env var changes.', text: undefined });
   });
 });
+
+describe("GitHub's size limits", () => {
+  const GITHUB_LIMIT = 65_535;
+  const longPath = `${'deep/'.repeat(1_000)}file.ts`;
+  const longName = `VAR_${'X'.repeat(5_000)}`;
+  const many = (n: number) => Array.from({ length: n }, (_, i) => `NAME_${i}`);
+
+  it('keeps the comment, check run summary, text and title within the limits, saying how many more there were', () => {
+    const names = many(150_000);
+    const report: PrReport = {
+      ...emptyReport(),
+      added: [{ name: longName, refs: [{ file: longPath, line: 1 }], total: 3, declared: false }, ...names.map((n) => ({ name: n, refs: [{ file: longPath, line: 2 }], total: 1, declared: false }))],
+      removed: names.map((n) => ({ name: `OLD_${n}`, refs: [{ file: longPath, line: 3 }], total: 1 })),
+      renamed: names.slice(0, 500).map((n) => ({ from: `A_${n}`, to: `B_${n}`, file: longPath, line: 4, declared: false })),
+      undeclared: [longName, ...names],
+      envFiles: names.slice(0, 5_000).map((n) => ({ path: `${longPath}/${n}/.env`, added: true })),
+      secrets: names.slice(0, 5_000).map((n, i) => ({ rule: 'github-token', file: `${longPath}/${n}`, line: i })),
+    };
+    const comment = renderComment(report, { mode: 'strict', headSha: 'a'.repeat(40) });
+    const output = checkRunOutput(report, 'failure');
+    for (const text of [comment, output.summary, output.text!]) expect(text.length).toBeLessThan(GITHUB_LIMIT);
+    expect(output.title.length).toBeLessThanOrEqual(255);
+    expect(comment).toContain('…and 149951 more.');
+    expect(comment).toContain('names and file:line only'); // the footer survives
+    expect(output.summary).toContain('and 149981 more.');
+    expect(output.text).toContain('- …and 149001 more');
+    expect(comment).not.toContain(longPath);
+    expect(comment).toContain(shorten(longPath, 160));
+    expect(comment).not.toContain(longName);
+  });
+
+  it('cuts at whole lines with a note, keeping the tail', () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `line ${i} ${'x'.repeat(90)}`);
+    const out = fitLines(lines, 2_000, ['', 'TAIL']);
+    expect(out.length).toBeLessThanOrEqual(2_000);
+    expect(out.endsWith('\nTAIL')).toBe(true);
+    expect(out).toMatch(/…and \d+ more lines, cut to fit GitHub's limit\./);
+    expect(fitLines(['short'], MAX_GITHUB_TEXT, ['t'])).toBe('short\nt');
+  });
+
+  it('shortens long paths around an ellipsis, keeping the end', () => {
+    const short = shorten(longPath, 160);
+    expect(short).toHaveLength(160);
+    expect(short.endsWith('/file.ts')).toBe(true);
+    expect(short).toContain('…');
+    expect(shorten('src/a.ts', 160)).toBe('src/a.ts');
+  });
+});
+
