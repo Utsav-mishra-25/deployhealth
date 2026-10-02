@@ -114,27 +114,41 @@ function insideParens(text: string, open: number): string | null {
 interface PyClass {
   name: string;
   bases: string[];
-  /** Indexes into the logical lines: the header, and the body's lines (any depth). */
+  /** Indexes into the logical lines: the header, and one past the body's last line (any depth). */
   header: number;
-  body: number[];
+  end: number;
+  /** The body's lines at the body's own indent (fields, methods, nested class headers). */
+  direct: number[];
 }
 
 const CLASS_HEADER = /^class\s+([A-Za-z_]\w*)\s*(\(?)/;
 
-/** Every class in a file, with base names reduced to their last dotted part (`pydantic_settings.BaseSettings` → `BaseSettings`). */
+/**
+ * Every class in a file, with base names reduced to their last dotted part
+ * (`pydantic_settings.BaseSettings` → `BaseSettings`). One pass with a stack of open classes, so
+ * deeply nested classes cost no more than flat ones.
+ */
 function classesOf(lines: readonly LogicalLine[]): PyClass[] {
   const classes: PyClass[] = [];
-  lines.forEach((ll, index) => {
+  const open: Array<{ cls: PyClass; indent: number; bodyIndent: number | null }> = [];
+  for (let index = 0; index < lines.length; index++) {
+    const ll = lines[index]!;
+    while (open.length > 0 && ll.indent <= open[open.length - 1]!.indent) open.pop()!.cls.end = index;
+    const owner = open[open.length - 1];
+    if (owner) {
+      owner.bodyIndent ??= ll.indent;
+      if (ll.indent === owner.bodyIndent) owner.cls.direct.push(index);
+    }
     const header = CLASS_HEADER.exec(ll.code);
-    if (!header) return;
+    if (!header) continue;
     const args = header[2] ? (insideParens(ll.code, header[0].length - 1) ?? '') : '';
     const bases = splitTopLevel(args, ',')
       .filter((b) => b && !b.includes('='))
       .map((b) => b.replace(/\[.*$/s, '').split('.').pop()!.trim());
-    const body: number[] = [];
-    for (let k = index + 1; k < lines.length && lines[k]!.indent > ll.indent; k++) body.push(k);
-    classes.push({ name: header[1]!, bases, header: index, body });
-  });
+    const cls: PyClass = { name: header[1]!, bases, header: index, end: lines.length, direct: [] };
+    classes.push(cls);
+    open.push({ cls, indent: ll.indent, bodyIndent: null });
+  }
   return classes;
 }
 
@@ -152,42 +166,84 @@ export function scanPydanticSettings(source: string, file: string, settingsBases
   const lines = logicalLines(source);
   const classes = classesOf(lines);
 
-  // Settings classes: BaseSettings subclasses, then (to a fixed point) subclasses of those in this file.
-  const settings = new Map<string, PyClass>();
-  const isSettingsBase = (base: string) => base === 'BaseSettings' || settingsBases.has(base) || settings.has(base);
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const cls of classes) {
-      if (!settings.has(cls.name) && cls.bases.some(isSettingsBase)) {
-        settings.set(cls.name, cls);
-        changed = true;
+  // Settings classes: BaseSettings subclasses, then subclasses of those in this file, found
+  // breadth-first from a map of each name to the classes that list it as a base (linear in the
+  // classes, whatever order they're defined in). For a name defined twice, the first qualifying
+  // definition in the file is used.
+  const children = new Map<string, PyClass[]>();
+  for (const cls of classes) {
+    for (const base of cls.bases) {
+      const list = children.get(base);
+      if (list) list.push(cls);
+      else children.set(base, [cls]);
+    }
+  }
+  const qualifying = new Set<PyClass>();
+  const queue: string[] = ['BaseSettings', ...settingsBases];
+  const queued = new Set(queue);
+  for (let q = 0; q < queue.length; q++) {
+    for (const cls of children.get(queue[q]!) ?? []) {
+      qualifying.add(cls);
+      if (!queued.has(cls.name)) {
+        queued.add(cls.name);
+        queue.push(cls.name);
       }
     }
   }
+  const settings = new Map<string, PyClass>();
+  for (const cls of classes) if (qualifying.has(cls) && !settings.has(cls.name)) settings.set(cls.name, cls);
   if (settings.size === 0) return [];
   // Field types that are models (nested settings), read as JSON or nested names: not one env var each.
   const models = new Set([...settings.keys(), ...classes.filter((c) => c.bases.includes('BaseModel')).map((c) => c.name)]);
 
-  const prefixOf = (cls: PyClass, seen = new Set<string>()): string => {
+  // For each line, the next line at or after it that sets env_prefix (or case_sensitive=True), so
+  // a class finds its own setting in O(1) however large its body.
+  const nextLineWith = (pattern: RegExp) => {
+    const next = new Int32Array(lines.length + 1).fill(lines.length);
+    for (let k = lines.length - 1; k >= 0; k--) next[k] = pattern.test(lines[k]!.code) ? k : next[k + 1]!;
+    return next;
+  };
+  const nextPrefix = nextLineWith(/\benv_prefix\s*=\s*[rRuU]?(['"])([A-Za-z0-9_]*)\1/);
+  const nextCaseSensitive = nextLineWith(/\bcase_sensitive\s*=\s*True\b/);
+  const ownPrefix = (cls: PyClass): string | null => {
     // model_config = SettingsConfigDict(env_prefix=...), class Config: env_prefix = ..., or a class keyword.
-    for (const k of [cls.header, ...cls.body]) {
-      const m = /\benv_prefix\s*=\s*[rRuU]?(['"])([A-Za-z0-9_]*)\1/.exec(lines[k]!.code);
-      if (m) return m[2]!;
+    const k = nextPrefix[cls.header]!;
+    return k < cls.end ? /\benv_prefix\s*=\s*[rRuU]?(['"])([A-Za-z0-9_]*)\1/.exec(lines[k]!.code)![2]! : null;
+  };
+
+  // A class's prefix is its own, else its first settings base's: memoised and iterative, so a
+  // chain of thousands of classes neither recurses nor is walked once per class.
+  const prefixes = new Map<PyClass, string>();
+  const prefixOf = (cls: PyClass): string => {
+    const path: PyClass[] = [];
+    const onPath = new Set<PyClass>();
+    let found = '';
+    for (let current: PyClass | undefined = cls; current; ) {
+      const known = prefixes.get(current);
+      if (known !== undefined) {
+        found = known;
+        break;
+      }
+      path.push(current);
+      onPath.add(current);
+      const own = ownPrefix(current);
+      if (own !== null) {
+        found = own;
+        break;
+      }
+      current = current.bases.map((b) => settings.get(b)).find((p) => p && !onPath.has(p));
     }
-    seen.add(cls.name);
-    const parent = cls.bases.map((b) => settings.get(b)).find((p) => p && !seen.has(p.name));
-    return parent ? prefixOf(parent, seen) : '';
+    for (const c of path) prefixes.set(c, found);
+    return found;
   };
 
   const references: Reference[] = [];
   for (const cls of settings.values()) {
-    if (cls.body.length === 0) continue;
-    const bodyIndent = lines[cls.body[0]!]!.indent;
+    if (cls.direct.length === 0) continue;
     const prefix = prefixOf(cls);
-    const caseSensitive = cls.body.some((k) => /\bcase_sensitive\s*=\s*True\b/.test(lines[k]!.code));
-    for (const k of cls.body) {
+    const caseSensitive = nextCaseSensitive[cls.header + 1]! < cls.end;
+    for (const k of cls.direct) {
       const ll = lines[k]!;
-      if (ll.indent !== bodyIndent) continue;
       const field = FIELD.exec(ll.code);
       if (!field) continue;
       const [, name, rest] = field as unknown as [string, string, string];

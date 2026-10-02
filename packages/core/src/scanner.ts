@@ -125,9 +125,10 @@ export function scanSource(source: string, language: Language, file: string): Re
         found.push(reference);
       }
     }
-    if (language === 'javascript') found.push(...destructuredReads(line, index + 1, file));
+    if (language === 'javascript') for (const ref of destructuredReads(line, index + 1, file)) found.push(ref);
   }
-  if (language === 'python') found.push(...scanPydanticSettings(source, file));
+  // Loops, not push(...refs): spreading an unbounded array into arguments overflows the stack.
+  if (language === 'python') for (const ref of scanPydanticSettings(source, file)) found.push(ref);
 
   return onePerNameAndLine(found).sort((a, b) => a.line - b.line || a.column - b.column);
 }
@@ -171,7 +172,7 @@ function isWholeString(line: string, start: number, end: number): boolean {
 /** One reference per name and line (the leftmost), with a default only if every one of them has one. */
 function onePerNameAndLine(references: Reference[]): Reference[] {
   const merged = new Map<string, Reference>();
-  for (const ref of [...references].sort((a, b) => a.line - b.line || a.column - b.column)) {
+  for (const ref of references.slice().sort((a, b) => a.line - b.line || a.column - b.column)) {
     const key = `${ref.line}\0${ref.name}`;
     const first = merged.get(key);
     if (!first) merged.set(key, { ...ref });

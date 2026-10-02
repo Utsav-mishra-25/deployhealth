@@ -84,16 +84,21 @@ const KIND_ORDER: Record<FindingKind, number> = { missing: 0, unused: 1, mismatc
  * reference has an inline default. Names only: env values are never read into the result.
  */
 export function requiredVariables({ scope, references, envFiles, isIgnored }: ScopeInput & { scope: string }): RequiredVariable[] {
-  const names = [...new Set(references.map((r) => r.name))].filter((name) => !isIgnored(name)).sort();
+  // Indexed by name once, so this stays linear in references and env file entries.
+  const allDefaulted = new Map<string, boolean>();
+  for (const ref of references) allDefaulted.set(ref.name, (allDefaulted.get(ref.name) ?? true) && ref.hasDefault === true);
+  const definedIn = new Map<string, EnvFileName[]>();
+  for (const f of envFiles) {
+    for (const key of new Set([...f.entries, ...(f.commented ?? [])].map((e) => e.key))) {
+      const list = definedIn.get(key);
+      if (list) list.push(f.name);
+      else definedIn.set(key, [f.name]);
+    }
+  }
+  const names = [...allDefaulted.keys()].filter((name) => !isIgnored(name)).sort();
   return names.map((var_name) => {
-    const variable: RequiredVariable = {
-      var_name,
-      scope,
-      defined_in: sortEnvFileNames(
-        envFiles.filter((f) => [...f.entries, ...(f.commented ?? [])].some((e) => e.key === var_name)).map((f) => f.name),
-      ),
-    };
-    if (references.every((r) => r.name !== var_name || r.hasDefault)) variable.optional = true;
+    const variable: RequiredVariable = { var_name, scope, defined_in: sortEnvFileNames(definedIn.get(var_name) ?? []) };
+    if (allDefaulted.get(var_name)) variable.optional = true;
     return variable;
   });
 }
