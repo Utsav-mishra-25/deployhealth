@@ -7,7 +7,8 @@ var drift between code and env files), is it up (uptime checks), and did the las
 Built: Phases 1–4.8, from config health to the pre-launch security fixes (list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for
-an area before changing it (index at the end).
+an area before changing it (index at the end). Each app and package has a short CLAUDE.md naming
+its docs, and `AGENTS.md` points other coding agents here.
 
 ## Layout
 
