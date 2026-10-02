@@ -43,7 +43,7 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   and `PUBLISHED_CLI_VERSION` (`src/constants.ts`, what the Action snippet, the settings page and
   this repo's `.github/workflows/deployhealth.yml` pin). Tests keep each group in sync, and the
   first never behind the second. 0.3.1 (the 4.8 parser and matcher fixes, `DEPLOYHEALTH_TOKEN` as
-  `--token`'s default, a warning for plain-http `--url` to another machine) awaits publishing.
+  `--token`'s default, a warning for plain-http `--url` to another machine) is on npm.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow

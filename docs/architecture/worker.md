@@ -12,7 +12,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
                       reseed-demo, pr-check
     src/readiness.ts  waitForMigrations(): poll every 5 s, up to 10 minutes, then throw (exit 1)
     src/schedules.ts  every queue's options and cron (registerQueues: create, re-apply options, schedule)
-    src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed)
+    src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed;
+                      prCheck)
     src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
     src/guarded-http.ts  the ONLY outbound HTTP: guardedRequest / guardedPost on node:http(s) + guardedLookup,
@@ -25,7 +26,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
 
 - **Worker jobs** live in `apps/worker/src/jobs.ts` as plain functions with injected dependencies,
   so they're unit-tested without pg-boss. `index.ts` only wires queues, schedules and real deps.
-  Every queue uses the `singleton` policy. Checks are scheduled per endpoint via `next_check_at`,
+  Every queue uses the `singleton` policy except `pr-check`, which is `stately` (see
+  [github-app.md](github-app.md)). Checks are scheduled per endpoint via `next_check_at`,
   never with a cron per endpoint.
 
 ## Worker jobs
@@ -59,9 +61,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
 - **Queue options** live in `schedules.ts` (`QUEUES`). pg-boss's `createQueue` ignores an existing
   queue, so `registerQueues()` re-applies every option with `updateQueue` (all but the policy, which
   can't change) on each start.
-  The demo also gets a GitHub App installation (`DEMO_INSTALLATION_ID = -1`) and four checked PRs.
 - **pr-check** (queued by the web app's GitHub webhook; worked only with the App configured):
   6 retries, 30 s backoff capped at 5 minutes (about 17–22 minutes in all), so a PR opened during
   a deploy outlasts the migration wait; `schedules.test.ts` pins the span. See
-  "GitHub App: pull request checks" below. The nightly prune also deletes webhook delivery ids
+  [github-app.md](github-app.md). The nightly prune also deletes webhook delivery ids
   older than 24 h.

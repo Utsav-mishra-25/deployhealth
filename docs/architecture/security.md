@@ -15,7 +15,7 @@ a URL, a query's scoping, share links, headers, or those pages.
 - **Hard caps** live in `packages/core/src/limits.ts` and hold for every account whatever its plan:
   100 endpoints per project and 500 per user (`createEndpoint`, which locks the owner's row so
   concurrent creates can't race past them), one check per hostname per 10 s across all users (the
-  claim, above), at most `MAX_CLAIM_PER_OWNER` (50) of one owner's endpoints per claim, 5 MB ingest
+  claim, see [worker.md](worker.md)), at most `MAX_CLAIM_PER_OWNER` (50) of one owner's endpoints per claim, 5 MB ingest
   bodies (counted while streaming), 2,000 files / 20 MB fetched per pull request check
   (`createFetchBudget()`: `take(size)` per distinct path + blob before any download, `verify()`
   after), and `PR_CHECK_TIME_LIMIT_MS` (60 s) of scanning per pull request check (isolate.ts).

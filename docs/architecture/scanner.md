@@ -76,8 +76,8 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
   no env file) for `test/scan-defaults.test.ts`; `fixtures/accuracy` covers 0.3.0 (each declaration
   file name, commented declarations, test tooling, duplicate reads, pydantic-settings, Compose) for
   `test/scan-accuracy.test.ts`, whose vendored directories and >512 KB file are written at test
-  time. Their `.env`, `.env.local` and `.env.*.local`
-  files are committed through negations in the root `.gitignore`. Decoys (node_modules, dist,
+  time. Their `.env`, `.env.local`, `.env.*.local`, `.env.production`, `.env.development` and
+  `.env.test` files are committed through negations in the root `.gitignore`. Decoys (node_modules, dist,
   .git, …) are written into a temp copy at test time rather than committed. The scanner reads
   comments too, so write example code in comments as `process.env.<NAME>`. The fixtures sit under
   `test/`, which the scanner skips by default, but their tests scan the fixture directory itself
