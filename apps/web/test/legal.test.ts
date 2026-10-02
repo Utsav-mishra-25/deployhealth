@@ -1,3 +1,4 @@
+import { MAX_CLAIM_PER_OWNER, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
 import { CHECK_RETENTION_DAYS } from '@deployhealth/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -73,5 +74,17 @@ describe('/terms', () => {
     expect(text).toMatch(/under MIT\. You may self-host it/);
     expect(text).toContain(`Last updated: ${formatLegalDate(LEGAL_LAST_UPDATED)}`);
     expect(text).not.toMatch(/governing law|jurisdiction/i);
+  });
+});
+
+describe('/security states what the code does', () => {
+  it('gives the pull request time limit, the per-owner cap, and that redirects aren\'t counted toward spacing', () => {
+    const text = plain(render(SecurityPage));
+    expect(text).toContain(`stops after ${PR_CHECK_TIME_LIMIT_MS / 1000} seconds of work`);
+    expect(text).toContain('“Couldn\'t be checked”');
+    expect(text).toContain(`at most ${MAX_CLAIM_PER_OWNER} checks started per minute`);
+    expect(text).toContain("requests that follow a redirect (up to 5 per check) aren't counted toward the spacing");
+    expect(text).not.toMatch(/flood/);
+    expect(text).not.toContain('.gitignore');
   });
 });
