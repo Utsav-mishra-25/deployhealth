@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { REPORT_SHARE_HKDF_INFO, reportShareKey, shareLinkExpiry, signReportShare, verifyReportShare } from '@/lib/share-link';
+import { REPORT_SHARE_HKDF_INFO, reportShareKey, shareLinkExpiry, shareTokenFromParam, signReportShare, verifyReportShare } from '@/lib/share-link';
+import { resetServerEnvForTests } from '@/env';
 
 const AUTH_SECRET = 'a'.repeat(32) + '-auth-secret';
 
@@ -76,6 +77,25 @@ describe('report share links', () => {
     for (const payload of [`v2.${CLIENT_A}.2026-09.1893456000`, 'v1.not-a-uuid.2026-09.1893456000', `v1.${CLIENT_A}.2026-13.1893456000`, `v1.${CLIENT_A}.2026-09.soon`]) {
       const signed = `${Buffer.from(payload).toString('base64url')}.${createHmac('sha256', key).update(payload).digest('base64url')}`;
       expect(verifyReportShare(signed, key, NOW), payload).toEqual({ ok: false, reason: 'malformed' });
+    }
+  });
+});
+
+describe('malformed share tokens', () => {
+  it('decodes a route param, or gives null for a malformed escape', () => {
+    expect(shareTokenFromParam('abc.def')).toBe('abc.def');
+    expect(shareTokenFromParam('a%2Eb')).toBe('a.b');
+    expect(shareTokenFromParam('%E0%A4%A')).toBeNull();
+    expect(shareTokenFromParam('%')).toBeNull();
+  });
+
+  it('404s on the shared report page, never a 500', async () => {
+    Object.assign(process.env, { DATABASE_URL: 'postgres://x@localhost/db', AUTH_SECRET: 'x'.repeat(32) });
+    resetServerEnvForTests();
+    const { default: SharedReportPage } = await import('@/app/share/reports/[token]/page');
+    for (const token of ['%E0%A4%A', '%', 'not-a-token', `${'a'.repeat(5_000)}.${'b'.repeat(43)}`, '..', 'YQ.YQ']) {
+      const error = await SharedReportPage({ params: Promise.resolve({ token }) }).catch((e: unknown) => e);
+      expect((error as { digest?: string }).digest).toMatch(/;404$/);
     }
   });
 });

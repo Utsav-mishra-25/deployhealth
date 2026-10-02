@@ -45,6 +45,18 @@ export function signReportShare(share: ReportShare, key: Buffer): string {
   return `${Buffer.from(payload, 'utf8').toString('base64url')}.${hmac(payload, key)}`;
 }
 
+/**
+ * The token from a /share/reports/[token] route param, percent-decoded; null when the escape is
+ * malformed (`%E0%A4%A`), so the page 404s instead of throwing.
+ */
+export function shareTokenFromParam(param: string): string | null {
+  try {
+    return decodeURIComponent(param);
+  } catch {
+    return null;
+  }
+}
+
 /** Check the signature first (constant time), then the fields, then the expiry. */
 export function verifyReportShare(token: string, key: Buffer, now: Date): ShareVerification {
   const parts = token.split('.');
