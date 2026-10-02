@@ -1,6 +1,6 @@
 import { PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
 import { Worker } from 'node:worker_threads';
-import type { AnalyzeInput, Analysis, SelectInput } from './analysis';
+import type { AnalyzeInput, Analysis, SelectInput, Selection } from './analysis';
 
 /**
  * The pull request check's CPU work (tree selection, scanning, diff, secret search) runs here, in
@@ -28,7 +28,7 @@ export class UncheckableError extends Error {
 }
 
 interface Tasks {
-  select: { input: SelectInput; output: { base: string[]; head: string[] } };
+  select: { input: SelectInput; output: Selection };
   analyze: { input: AnalyzeInput; output: Analysis };
 }
 

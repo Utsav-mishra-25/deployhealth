@@ -1,6 +1,7 @@
 import { scanFiles, selectTreeFiles } from '@deployhealth/core';
 import type { PrEnvFile } from '@deployhealth/db';
 import type { PullFile, TreeBlob } from '../github/api';
+import { treeCoverage, type Coverage } from './coverage';
 import { committedEnvFiles, diffEnvVars, type EnvVarDiff } from './diff';
 import { totals, type ReportCounts } from './report';
 import { findSecrets, type SecretHit } from './secrets';
@@ -17,14 +18,23 @@ export const MAX_REPORTED_UNDECLARED = 10_000;
 // the isolate (isolate.ts), never on the worker's main event loop.
 
 export interface SelectInput {
-  base: ReadonlyArray<Pick<TreeBlob, 'path' | 'size'>>;
-  head: ReadonlyArray<Pick<TreeBlob, 'path' | 'size'>>;
+  base: ReadonlyArray<Pick<TreeBlob, 'path' | 'sha' | 'size'>>;
+  head: ReadonlyArray<Pick<TreeBlob, 'path' | 'sha' | 'size'>>;
 }
 
-/** The paths each side would scan (selectTreeFiles), sorted. */
-export function selectFiles({ base, head }: SelectInput): { base: string[]; head: string[] } {
+export interface Selection {
+  /** The paths each side would scan (selectTreeFiles), sorted. */
+  base: string[];
+  head: string[];
+  /** What those are, and what the pull request changes, from the listings alone (coverage.ts). */
+  coverage: Coverage;
+}
+
+/** Choose each side's files and work out the coverage: no file contents needed. */
+export function selectFiles({ base, head }: SelectInput): Selection {
   const pick = (blobs: SelectInput['base']) => selectTreeFiles(blobs.map((b) => b.path), { sizes: new Map(blobs.map((b) => [b.path, b.size])) });
-  return { base: pick(base), head: pick(head) };
+  const [selectedBase, selectedHead] = [pick(base), pick(head)];
+  return { base: selectedBase, head: selectedHead, coverage: treeCoverage(base, head, selectedBase, selectedHead) };
 }
 
 export interface AnalyzeInput {

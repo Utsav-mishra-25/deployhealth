@@ -262,12 +262,23 @@ export function selectTreeFiles(
   const selected: string[] = [];
   for (const path of paths) {
     const name = posix.basename(path);
-    if (!isScannable(path, name) || isVendoredFileName(name) || (!includeTests && isTestPath(path))) continue;
+    if (!isScannable(path, name) || !passesTreeRules(path, { skipDirs, includeTests })) continue;
     if (!isEnvFileName(name) && (sizes?.get(path) ?? 0) > MAX_SOURCE_FILE_BYTES) continue;
-    if (inSkippedDir(path, skipDirs)) continue;
     selected.push(path);
   }
   return selected.sort();
+}
+
+/**
+ * The rules `selectTreeFiles` applies whatever the file type: not in a skipped (vendored)
+ * directory, not a generated file name, not a test file or under a test directory. Used to count
+ * files the scanner doesn't read with the same rules, so `node_modules/**` never counts.
+ */
+export function passesTreeRules(
+  path: string,
+  { skipDirs = DEFAULT_SKIP_DIRS, includeTests = false }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean } = {},
+): boolean {
+  return !isVendoredFileName(posix.basename(path)) && (includeTests || !isTestPath(path)) && !inSkippedDir(path, skipDirs);
 }
 
 /** Whether any directory on the path is one `walk` never enters. */

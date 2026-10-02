@@ -47,8 +47,13 @@ describe('the pull request check isolate', () => {
   it('chooses files and analyzes them in the thread', async () => {
     const isolate = await openPrCheckIsolate();
     try {
-      const chosen = await isolate.run('select', { base: [], head: [{ path: 'src/a.ts', size: 10 }, { path: 'node_modules/x.ts', size: 1 }, { path: '.env.example', size: 0 }] });
-      expect(chosen).toEqual({ base: [], head: ['.env.example', 'src/a.ts'] });
+      const head = [
+        { path: 'src/a.ts', sha: 'a', size: 10 },
+        { path: 'node_modules/x.ts', sha: 'b', size: 1 },
+        { path: '.env.example', sha: 'c', size: 0 },
+      ];
+      const chosen = await isolate.run('select', { base: [], head });
+      expect(chosen).toMatchObject({ base: [], head: ['.env.example', 'src/a.ts'], coverage: { sourceFiles: 1, readFiles: 2, changedRead: 2 } });
       const analysis = await isolate.run('analyze', { base: [], head: [['src/a.ts', `${ENV}.API_KEY`], ['.env.example', '']], baseTree: [], headTree: [], pullFiles: [] });
       expect(analysis.undeclared).toEqual(['API_KEY']);
     } finally {
