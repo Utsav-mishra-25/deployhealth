@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   extensionOf,
+  LANGUAGES_SENTENCE,
   listLabels,
   NO_SOURCE_FILES_LINE,
   SUPPORTED_LANGUAGES,
@@ -60,5 +62,22 @@ describe('the supported languages constant', () => {
     expect(supportedLanguageOf('App.java')).toBeUndefined();
     expect(unreadExtensionOf('src/main/resources/application.properties')).toBe('.properties');
     expect(unreadExtensionOf('pom.xml')).toBeNull();
+  });
+});
+
+describe("the README's language line", () => {
+  const readme = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
+  const flat = (text: string) => text.replace(/\s+/g, ' ');
+
+  it('opens the README, before the first screenshot, as the constant', () => {
+    const opening = readme.slice(0, readme.indexOf('!['));
+    expect(opening.split('\n')).toContain(LANGUAGES_SENTENCE);
+  });
+
+  it('is the first known limitation, with the CLI\'s own line', () => {
+    const limitations = readme.slice(readme.indexOf('## Known limitations'));
+    const first = limitations.slice(limitations.indexOf('\n- ') + 1, limitations.indexOf('\n- ', limitations.indexOf('\n- ') + 1));
+    expect(first.startsWith(`- **Languages.** The scanner reads ${SUPPORTED_LANGUAGES_AND} source`)).toBe(true);
+    expect(flat(first)).toContain(flat(NO_SOURCE_FILES_LINE));
   });
 });
