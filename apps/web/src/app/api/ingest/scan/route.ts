@@ -9,5 +9,6 @@ export async function POST(request: Request): Promise<Response> {
   return handleIngest(request, {
     findProjectByTokenHash: (hash) => findProjectByTokenHash(db, hash),
     recordScan: (input) => recordScan(db, input),
+    log: (message) => console.log(message),
   });
 }

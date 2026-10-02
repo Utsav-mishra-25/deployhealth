@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { CLI_NPM_PACKAGE, PUBLISHED_CLI_VERSION, TOKEN_PREFIX, TOKEN_SECRET_NAME } from './constants';
 import { isEnvFileName, MAX_ENV_FILES_PER_SCOPE, type EnvFileName } from './env-files';
-import { ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type FindingCounts } from './types';
+import { ENV_NAME_PATTERN, FINDING_KINDS, SHA_PATTERN, type FindingCounts, type FindingRow } from './types';
 
 /** Upper bound on findings per scan; protects the ingest endpoint from runaway payloads. */
 export const MAX_FINDINGS = 10_000;
@@ -45,6 +45,20 @@ export const envScopeSchema = z.object({
   scope: z.string().max(1000),
   env_files: z.array(envFileNameSchema).max(MAX_ENV_FILES_PER_SCOPE),
 });
+
+/** The env parser's key pattern (dotenv: letters, digits, `_`, `.` and `-`, not starting with a digit). */
+export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+
+/**
+ * Whether the server stores a finding row: its variable is a name the scanner could have found
+ * (a code reference or an env file key) and its env file, if any, is an env file the scanner
+ * reads. Rows that fail are dropped, not rejected, so a payload from an older CLI whose parser
+ * read part of a value as a key still stores everything else.
+ */
+export function isStorableFinding(row: Pick<FindingRow, 'var_name' | 'env_file'>): boolean {
+  if (!ENV_KEY_PATTERN.test(row.var_name)) return false;
+  return row.env_file === null || isEnvFileName(row.env_file.slice(row.env_file.lastIndexOf('/') + 1));
+}
 
 /** Body of `POST /api/ingest/scan`. Shared by the CLI (sender) and the web app (receiver). */
 export const ingestPayloadSchema = z.object({

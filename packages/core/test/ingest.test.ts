@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PUBLISHED_CLI_VERSION } from '../src/constants';
 import {
+  isStorableFinding,
   generateToken,
   githubActionSnippet,
   hashToken,
@@ -193,5 +194,20 @@ describe('githubActionSnippet', () => {
 
   it('uses the given branch', () => {
     expect(githubActionSnippet({ appUrl: 'http://localhost:3000', branch: 'release' })).toContain('branches: [release]');
+  });
+});
+
+describe('isStorableFinding', () => {
+  it('keeps names the env parser or the scanner can produce and env files the scanner reads', () => {
+    expect(isStorableFinding({ var_name: 'DATABASE_URL', env_file: null })).toBe(true);
+    expect(isStorableFinding({ var_name: 'app.name-1', env_file: 'apps/web/.env.example' })).toBe(true);
+    expect(isStorableFinding({ var_name: 'X', env_file: 'deep/dir/.env.appStore.example' })).toBe(true);
+  });
+  it('drops anything else', () => {
+    expect(isStorableFinding({ var_name: 'has space', env_file: null })).toBe(false);
+    expect(isStorableFinding({ var_name: 'a+b/c=', env_file: null })).toBe(false);
+    expect(isStorableFinding({ var_name: '1ABC', env_file: null })).toBe(false);
+    expect(isStorableFinding({ var_name: 'ABC', env_file: 'notes.txt' })).toBe(false);
+    expect(isStorableFinding({ var_name: 'ABC', env_file: '.env.staging' })).toBe(false);
   });
 });
