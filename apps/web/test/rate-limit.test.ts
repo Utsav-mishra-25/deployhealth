@@ -39,17 +39,14 @@ describe('middleware on /share', () => {
   });
 });
 
-describe('GET /api/health?ip=1', () => {
-  it('logs the rate-limit key (the last hop) next to the raw header, only when asked', async () => {
+describe('GET /api/health', () => {
+  it('answers ok and logs nothing, whatever the query or headers', async () => {
     const { GET } = await import('@/app/api/health/route');
     const logs: string[] = [];
     const spy = vi.spyOn(console, 'log').mockImplementation((line: string) => void logs.push(line));
     try {
-      const spoofed = { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' };
-      expect(await GET(new Request('http://app/api/health', { headers: spoofed })).json()).toEqual({ ok: true });
+      expect(await GET().json()).toEqual({ ok: true });
       expect(logs).toEqual([]);
-      expect(await GET(new Request('http://app/api/health?ip=1', { headers: spoofed })).json()).toEqual({ ok: true });
-      expect(logs).toEqual(['[health] client ip 203.0.113.9 (x-forwarded-for: 6.6.6.6, 203.0.113.9)']);
     } finally {
       spy.mockRestore();
     }

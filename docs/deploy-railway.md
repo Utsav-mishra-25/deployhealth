@@ -190,26 +190,23 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
 
 ## 7. Verify the rate limiter
 
-Shared reports (`/share/*`) are rate-limited per client IP, taken from the **last**
-`X-Forwarded-For` entry: the one Railway's edge proxy adds. Earlier entries come from the client,
-so check a client can't pick its own IP. Send a spoofed header (`203.0.113.7` is a documentation
-address; any made-up value works):
+Shared reports (`/share/*`) and the deep health check are rate-limited per client IP, taken from
+the **last** `X-Forwarded-For` entry: the one Railway's edge proxy adds. Earlier entries come from
+the client, so check a client can't pick its own IP. The deep health check allows 30 requests a
+minute per IP; send 31, each with a **different** made-up `X-Forwarded-For` (documentation
+addresses from `203.0.113.0/24`):
 
 ```sh
-curl -s 'https://<your-domain>/api/health?ip=1' -H 'X-Forwarded-For: 203.0.113.7'
-curl -s https://api.ipify.org; echo    # your real public IP, to compare
+for i in $(seq 1 31); do
+  curl -s -o /dev/null -w '%{http_code}\n' https://<your-domain>/api/health/worker -H "X-Forwarded-For: 203.0.113.$i"
+done | sort | uniq -c
 ```
 
-`?ip=1` makes web log one line (without it, `/api/health` logs nothing). In web's **Deploy Logs**:
-
-```
-[health] client ip 198.51.100.23 (x-forwarded-for: 203.0.113.7, 198.51.100.23)
-```
-
-The `client ip` must be your real IP (the second command's output, or your IPv6 address if the
-request went over IPv6), **not** `203.0.113.7`. If it shows the spoofed value, the proxy passed your
-header through without adding its own hop: anyone could dodge the limit by changing the header.
-Don't rely on the limiter in that case, and open an issue.
+Expect 30 answers of `200` (or `503`, if the worker isn't up yet) and **one `429`**: every request
+counted against your real IP, the hop the proxy added. If all 31 get through, the limiter keyed on
+the header you sent, so anyone could dodge it by changing that header: don't rely on the limiter
+in that case, and open an issue. (Wait a minute before running it again: the window is per
+minute.)
 
 ## 8. GitHub App: env checks on pull requests (optional)
 
