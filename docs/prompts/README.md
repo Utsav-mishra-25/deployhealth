@@ -22,4 +22,5 @@ Every phase runs the same way:
    still owed (publishing, dashboard settings, redeploys).
 6. **Review before merge.** The maintainer reads the diff and the summary, then pushes and merges.
 
-The working and code conventions every phase follows live in [CLAUDE.md](../../CLAUDE.md).
+The working conventions and the rules every phase follows live in [CLAUDE.md](../../CLAUDE.md);
+each area's detail is in [docs/architecture/](../architecture/).
