@@ -46,7 +46,7 @@ describe('scanner timing on hostile inputs', () => {
   });
 
   it('survives deeply nested classes (one stack pass, no per-class body copies)', async () => {
-    const depth = 3_000;
+    const depth = 1_000; // the input itself grows with depth² (indentation)
     const lines = ['class Top(BaseSettings):', '    top: str'];
     for (let i = 0; i < depth; i++) lines.push(`${'    '.repeat(i + 1)}class N${i}:`, `${'    '.repeat(i + 2)}n${i}: int = 1`);
     const { value, ms } = await timed(() => scanSource(lines.join('\n'), 'python', 'settings.py'));

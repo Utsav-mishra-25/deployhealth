@@ -24,7 +24,9 @@ describe('pull request check timing on hostile inputs', () => {
     expect(ms).toBeLessThan(2_000);
   });
 
-  it('diffs 150,000 new variables read by destructuring (four files under 512 KB) in under 3 s', async () => {
+  // About 1.7 s alone, twice that when CI runs every package's tests at once; quadratic code took
+  // minutes. The bound leaves room for a loaded runner.
+  it('diffs 150,000 new variables read by destructuring (four files under 512 KB) in under 10 s', async () => {
     const head = new Map([['.env.example', '']]);
     for (let f = 0; f < 4; f++) {
       const keys = Array.from({ length: 37_500 }, (_, i) => `K${f}_${i}`).join(',');
@@ -34,7 +36,7 @@ describe('pull request check timing on hostile inputs', () => {
     expect(diff.added).toHaveLength(150_000);
     expect(diff.undeclared).toHaveLength(150_000);
     for (const text of [comment, output.summary, output.text!]) expect(text.length).toBeLessThan(65_535);
-    expect(ms).toBeLessThan(3_000);
+    expect(ms).toBeLessThan(10_000);
   });
 
   it('pairs renames through per-file indexes, not names × files', async () => {
