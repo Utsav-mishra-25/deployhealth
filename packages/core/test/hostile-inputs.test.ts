@@ -70,4 +70,11 @@ describe('scanner timing on hostile inputs', () => {
     expect(value.counts.missing).toBe(1);
     expect(ms).toBeLessThan(3_000);
   });
+
+  it('warns once, with file:line only, when a quote in an env file never closes', async () => {
+    const secretish = Array.from({ length: 40 }, (_, i) => String.fromCharCode(65 + (i % 26))).join('');
+    const result = await scanFiles(new Map([['.env', `KEY="${secretish}\n${secretish}=\nOTHER=1\n`], ['src/a.ts', `${ENV}.KEY`]]));
+    expect(result.warnings).toEqual([{ file: '.env', line: 1, message: 'a quote that never closes: the rest of the file was read as this value' }]);
+    expect(JSON.stringify(result)).not.toContain(secretish);
+  });
 });

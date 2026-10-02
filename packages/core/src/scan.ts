@@ -107,6 +107,11 @@ function isScannable(relPath: string, name: string): boolean {
   return isEnvFileName(name) || isComposeFileName(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
 }
 
+const UNTERMINATED = {
+  quote: 'a quote that never closes: the rest of the file was read as this value',
+  block: 'a -----BEGIN block with no -----END line: the rest of the file was skipped',
+} as const;
+
 interface Source {
   read: (file: string) => Promise<string>;
   /** Size in bytes, checked before a source file is read. */
@@ -132,8 +137,9 @@ async function analyzeFiles(
       else (isComposeFileName(name) ? composeFiles : sourceFiles).push(file);
       continue;
     }
-    const { entries, commented, invalid } = parseEnv(await read(file));
+    const { entries, commented, invalid, unterminated } = parseEnv(await read(file));
     for (const { line } of invalid) warnings.push({ file, line, message: 'ignored a line that is not KEY=value' });
+    if (unterminated) warnings.push({ file, line: unterminated.line, message: UNTERMINATED[unterminated.kind] });
     envFiles.push({ path: file, name, entries, commented: isDeclarationFile(name) ? commented : [] });
   }
 
