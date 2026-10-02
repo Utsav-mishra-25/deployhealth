@@ -99,3 +99,62 @@ describe('GitignoreMatcher', () => {
     expect(m.ignores('public.secret.ts', false)).toBe(true);
   });
 });
+
+describe('GitignoreMatcher on hostile patterns (linear time, never throws)', () => {
+  const timed = (fn: () => unknown) => {
+    const started = performance.now();
+    const value = fn();
+    return { value, ms: performance.now() - started };
+  };
+
+  it('matches twenty `*a` and a `b` against a 200-character name in well under 50 ms', () => {
+    const pattern = `${'*a'.repeat(20)}b`;
+    const { value, ms } = timed(() => matcher(pattern).ignores('a'.repeat(200), false));
+    expect(value).toBe(false);
+    expect(ms).toBeLessThan(50);
+    expect(matcher(pattern).ignores(`${'a'.repeat(200)}b`, false)).toBe(true);
+  });
+
+  it('reads `[]|(a+)+b]` as one class of single characters: no alternation, no backtracking', () => {
+    const m = matcher('[]|(a+)+b]');
+    for (const one of [']', '|', '(', 'a', '+', ')', 'b']) expect(m.ignores(one, false)).toBe(true);
+    expect(m.ignores('x', false)).toBe(false);
+    expect(m.ignores('ab', false)).toBe(false);
+    expect(m.ignores('b]', false)).toBe(false);
+    const { value, ms } = timed(() => m.ignores(`${'a'.repeat(10_000)}c`, false));
+    expect(value).toBe(false);
+    expect(ms).toBeLessThan(50);
+  });
+
+  it('treats a reversed range as empty instead of throwing', () => {
+    expect(() => matcher('[z-a]')).not.toThrow();
+    expect(matcher('[z-a]').ignores('m', false)).toBe(false);
+    expect(matcher('[!z-a]').ignores('m', false)).toBe(true);
+  });
+
+  it('never matches with an invalid class: unclosed, or an unknown [:name:]', () => {
+    expect(matcher('[abc').ignores('[abc', false)).toBe(false);
+    expect(matcher('[abc').ignores('a', false)).toBe(false);
+    expect(matcher('[[:nope:]]').ignores('a', false)).toBe(false);
+  });
+
+  it('follows git for classes: ] first is literal, ^ negates, escapes, POSIX names, never /', () => {
+    expect(matcher('x[]]').ignores('x]', false)).toBe(true);
+    expect(matcher('v[^0-9].js').ignores('va.js', false)).toBe(true);
+    expect(matcher('v[^0-9].js').ignores('v1.js', false)).toBe(false);
+    expect(matcher('a[\\]]b').ignores('a]b', false)).toBe(true);
+    expect(matcher('log[[:digit:]].txt').ignores('log4.txt', false)).toBe(true);
+    expect(matcher('log[[:digit:]].txt').ignores('logx.txt', false)).toBe(false);
+    expect(matcher('a[!x]b').ignores('a/b', false)).toBe(false);
+    expect(matcher('a?b').ignores('a/b', false)).toBe(false);
+  });
+
+  it('drops patterns over 1,024 characters and keeps the first 1,000 rules of a file', () => {
+    expect(matcher(`${'x'.repeat(1_025)}`).ignores('x'.repeat(1_025), false)).toBe(false);
+    expect(matcher(`${'x'.repeat(1_024)}`).ignores('x'.repeat(1_024), false)).toBe(true);
+    const many = Array.from({ length: 1_001 }, (_, i) => `f${i}`).join('\n');
+    expect(parseGitignore(many)).toHaveLength(1_000);
+    expect(matcher(many).ignores('f999', false)).toBe(true);
+    expect(matcher(many).ignores('f1000', false)).toBe(false);
+  });
+});
