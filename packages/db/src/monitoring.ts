@@ -5,6 +5,7 @@ import {
   DEPLOY_LINK_WINDOW_MINUTES,
   HOST_CHECK_SPACING_MS,
   LimitExceededError,
+  MAX_CLAIM_PER_OWNER,
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
   newMissingVars,
@@ -170,16 +171,18 @@ export function assignHostSlots<T extends { hostname: string }>(
 }
 
 /**
- * Claim due endpoints (enabled, next_check_at passed), oldest first, give each a start time with
+ * Claim due endpoints (enabled, next_check_at passed), give each a start time with
  * `assignHostSlots`, and move each claimed endpoint's next_check_at one interval past its start.
  * At most CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS endpoints per hostname are considered per claim,
- * so one busy host can't crowd out the others. Claims run one at a time (advisory lock), so two
- * workers never claim the same endpoint or share a host slot. If a worker dies mid-check, the
- * endpoint is simply checked again one interval later.
+ * so one busy host can't crowd out the others, and at most MAX_CLAIM_PER_OWNER per owner, so one
+ * account can't fill a run. Owners take turns: each owner's oldest due endpoint, then each
+ * owner's second, and so on (oldest first within a turn). Claims run one at a time (advisory
+ * lock), so two workers never claim the same endpoint or share a host slot. If a worker dies
+ * mid-check, the endpoint is simply checked again one interval later.
  */
 export async function claimDueEndpoints(
   db: Db,
-  { now = new Date(), limit = 500 }: { now?: Date; limit?: number } = {},
+  { now = new Date(), limit = 500, perOwner = MAX_CLAIM_PER_OWNER }: { now?: Date; limit?: number; perOwner?: number } = {},
 ): Promise<DueEndpoint[]> {
   const perHost = Math.ceil(CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS);
   return db.transaction(async (tx) => {
@@ -195,14 +198,19 @@ export async function claimDueEndpoints(
     }>(sql`
       select id, project_id, url, hostname, method, interval_seconds, expected_status
       from (
-        select e.id, e.project_id, e.url, e.method, e.interval_seconds, e.expected_status, e.next_check_at,
-               ${hostnameOf(sql`e.url`)} as hostname,
-               row_number() over (partition by ${hostnameOf(sql`e.url`)} order by e.next_check_at, e.id) as n
-        from ${endpoints} e
-        where e.enabled and e.next_check_at <= ${now.toISOString()}::timestamptz
+        select h.*, row_number() over (partition by h.owner_id order by h.next_check_at, h.id) as owner_turn
+        from (
+          select e.id, e.project_id, e.url, e.method, e.interval_seconds, e.expected_status, e.next_check_at, p.owner_id,
+                 ${hostnameOf(sql`e.url`)} as hostname,
+                 row_number() over (partition by ${hostnameOf(sql`e.url`)} order by e.next_check_at, e.id) as n
+          from ${endpoints} e
+          join ${projects} p on p.id = e.project_id
+          where e.enabled and e.next_check_at <= ${now.toISOString()}::timestamptz
+        ) h
+        where h.n <= ${perHost}
       ) d
-      where n <= ${perHost}
-      order by next_check_at, id
+      where owner_turn <= ${perOwner}
+      order by owner_turn, next_check_at, id
       limit ${limit}
     `);
     if (due.rows.length === 0) return [];

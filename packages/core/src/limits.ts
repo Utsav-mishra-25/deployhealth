@@ -11,6 +11,13 @@ export const MAX_ENDPOINTS_PER_USER = 500;
 /** No target hostname is checked more than once per this many milliseconds, across all users. */
 export const HOST_CHECK_SPACING_MS = 10_000;
 
+/**
+ * Endpoints one owner can get in a single check-endpoints run (every minute). With 10 checks at a
+ * time and at most 10 seconds each, one account holds the run's slots for at most 50 seconds;
+ * the rest stay due and go first next run.
+ */
+export const MAX_CLAIM_PER_OWNER = 50;
+
 /** POST /api/ingest/scan request body. */
 export const MAX_INGEST_BODY_BYTES = 5 * 1024 * 1024;
 

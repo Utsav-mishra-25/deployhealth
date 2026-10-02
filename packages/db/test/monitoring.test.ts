@@ -1,4 +1,4 @@
-import { failingFor, LimitExceededError, type FindingRow } from '@deployhealth/core';
+import { failingFor, LimitExceededError, MAX_CLAIM_PER_OWNER, type FindingRow } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -192,6 +192,31 @@ describe('claimDueEndpoints: host spacing across all users', () => {
     const claimed = await claimDueEndpoints(db, { now: T0, limit: 6 });
     expect(claimed.map((c) => c.hostname).sort()).toEqual(['busy.example', 'busy.example', 'busy.example', 'busy.example', 'busy.example', 'quiet.example']);
     expect(claimed.find((c) => c.id === quiet.id)?.runAt).toEqual(T0);
+  });
+});
+
+describe('claimDueEndpoints: fairness between owners', () => {
+  it('gives one owner at most MAX_CLAIM_PER_OWNER endpoints per run, and the rest go first next run', async () => {
+    const [big, small] = [await makeUser(db), await makeUser(db)];
+    const [pb, ps] = [await makeProject(db, big.id), await makeProject(db, small.id)];
+    // 60 endpoints on distinct hosts, all older than the small owner's one.
+    await db.insert(endpoints).values(Array.from({ length: 60 }, (_, i) => ({ projectId: pb.id, url: `https://h${i}.example/`, nextCheckAt: minutes(-30 + i * 0.1) })));
+    const lone = await makeEndpoint(db, ps.id, { url: 'https://small.example/', nextCheckAt: minutes(-1) });
+
+    const first = await claimDueEndpoints(db, { now: T0 });
+    expect(first.filter((c) => c.projectId === pb.id)).toHaveLength(MAX_CLAIM_PER_OWNER);
+    expect(first.some((c) => c.id === lone.id)).toBe(true);
+    const next = await claimDueEndpoints(db, { now: T0 });
+    expect(next).toHaveLength(60 - MAX_CLAIM_PER_OWNER);
+  });
+
+  it('lets owners take turns, so the claim limit is shared fairly', async () => {
+    const [a, b] = [await makeUser(db), await makeUser(db)];
+    const [pa, pb] = [await makeProject(db, a.id), await makeProject(db, b.id)];
+    await db.insert(endpoints).values(Array.from({ length: 10 }, (_, i) => ({ projectId: pa.id, url: `https://a${i}.example/`, nextCheckAt: minutes(-30 + i) })));
+    await db.insert(endpoints).values(Array.from({ length: 10 }, (_, i) => ({ projectId: pb.id, url: `https://b${i}.example/`, nextCheckAt: minutes(-5 + i * 0.1) })));
+    const claimed = await claimDueEndpoints(db, { now: T0, limit: 6 });
+    expect(claimed.map((c) => (c.projectId === pa.id ? 'a' : 'b'))).toEqual(['a', 'b', 'a', 'b', 'a', 'b']);
   });
 });
 
