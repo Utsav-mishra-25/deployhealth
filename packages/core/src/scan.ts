@@ -56,6 +56,10 @@ export interface ScanResult {
   vendoredSkipped: string[];
   /** Source files over MAX_SOURCE_FILE_BYTES (bundles, not code people wrote), never read. */
   tooLargeSkipped: string[];
+  /**
+   * Source files read, in a language the scanner reads (languages.ts), tests and oversized files
+   * aside. 0 means the scan can't check this directory: it reports no UNUSED rows then.
+   */
   sourceFiles: number;
   envFiles: string[];
   warnings: Warning[];
@@ -206,6 +210,9 @@ async function analyzeFiles(
         usedOutsideCode: usedOutsideCode.get(scope),
       }),
     )
+    // With no source file in a language the scanner reads, nothing was read that could use a
+    // variable, so "defined but never used" would be wrong: no UNUSED rows (MISMATCH stays).
+    .filter((f) => sourceFiles.length > 0 || f.kind !== 'unused')
     .sort(compareFindings);
   const variables = scopes.flatMap((scope) =>
     requiredVariables({
