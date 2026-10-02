@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT, run, type CliIo } from '../src/cli';
 import { ingestPayloadSchema } from '../src/ingest';
+import { NO_SOURCE_FILES_LINE } from '../src/languages';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/project/', import.meta.url));
 const DEFAULTS = fileURLToPath(new URL('./fixtures/defaults/', import.meta.url));
@@ -278,5 +279,57 @@ describe('arguments', () => {
     const { io, out } = makeIo({ fetch: () => Promise.reject(new Error('ECONNREFUSED')) });
     expect(await run(['--url', 'http://x', '--token', 'dh_t', '--sha', SHA, '--branch', 'main'], io)).toBe(EXIT.failed);
     expect(out.stderr).toContain('could not reach http://x/api/ingest/scan: ECONNREFUSED');
+  });
+});
+
+describe('a directory with no JS/TS, Python, Go or Ruby source', () => {
+  let javaDir: string;
+  beforeAll(async () => {
+    javaDir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-java-'));
+    await mkdir(join(javaDir, 'src/main/java/app'), { recursive: true });
+    await writeFile(join(javaDir, 'src/main/java/app/App.java'), 'class App { String url = System.getenv("DATABASE_URL"); }\n');
+    await writeFile(join(javaDir, 'application.properties'), 'spring.datasource.url=${DATABASE_URL}\n');
+    await writeFile(join(javaDir, '.env.example'), 'DATABASE_URL=\n');
+  });
+  afterAll(async () => {
+    await rm(javaDir, { recursive: true, force: true });
+  });
+
+  it('prints the can\'t-check line with --dry-run, reports no UNUSED rows, and exits 0', async () => {
+    const { io, out } = makeIo({ cwd: javaDir });
+    expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+    expect(out.stdout).toContain(`deployhealth-scan: 0 source files, scopes: (root)\n\n${NO_SOURCE_FILES_LINE}\n`);
+    expect(out.stdout).toContain('UNUSED (0)');
+  });
+
+  it('keeps --json valid: can_check false and source_files 0, with the line on stderr', async () => {
+    const { io, out } = makeIo({ cwd: javaDir });
+    expect(await run(['--dry-run', '--json'], io)).toBe(EXIT.ok);
+    const json = JSON.parse(out.stdout);
+    expect(json).toMatchObject({ source_files: 0, can_check: false, findings: [] });
+    expect(out.stderr).toBe(`${NO_SOURCE_FILES_LINE}\n`);
+  });
+
+  it('still sends the scan (so the deploy is recorded), prints the line, and exits 0', async () => {
+    let sent = 0;
+    const fetch: CliIo['fetch'] = async () => {
+      sent++;
+      return Response.json({ deployId: 'd', scanId: 's', counts: { missing: 0, unused: 0, mismatch: 0 } });
+    };
+    const { io, out } = makeIo({ cwd: javaDir, fetch });
+    expect(await run(['--url', 'https://dh.example', '--token', 'dh_t', '--sha', SHA, '--branch', 'main'], io)).toBe(EXIT.ok);
+    expect(sent).toBe(1);
+    expect(out.stdout).toContain(`${NO_SOURCE_FILES_LINE}\n`);
+  });
+
+  it('prints nothing new for a directory it can read, and --json says can_check true', async () => {
+    const { io, out } = makeIo();
+    expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+    expect(out.stdout).not.toContain(NO_SOURCE_FILES_LINE);
+    const { io: io2, out: out2 } = makeIo();
+    expect(await run(['--dry-run', '--json'], io2)).toBe(EXIT.ok);
+    expect(JSON.parse(out2.stdout)).toMatchObject({ can_check: true });
+    expect(JSON.parse(out2.stdout).source_files).toBeGreaterThan(0);
+    expect(out2.stderr).not.toContain(NO_SOURCE_FILES_LINE);
   });
 });
