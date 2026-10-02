@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CLI_BUNDLE_KB } from '../src/constants';
 import { githubActionSnippet } from '../src/ingest';
+import { LANGUAGES_SENTENCE } from '../src/languages';
 import { CLI_VERSION } from '../src/version';
 
 const CORE = fileURLToPath(new URL('..', import.meta.url));
@@ -27,6 +28,7 @@ describe('the deployhealth-scan npm package', () => {
     // Provenance ties the package to this repository, so the URL must be exactly the repo's.
     expect(manifest.repository.url).toBe('git+https://github.com/Utsav-mishra-25/deployhealth.git');
     expect(readFileSync(`${NPM}README.md`, 'utf8')).toContain(`npx deployhealth-scan@${CLI_VERSION} `);
+    expect(readFileSync(`${NPM}README.md`, 'utf8').split('\n')).toContain(LANGUAGES_SENTENCE);
   });
 
   it("README's workflow is exactly the snippet the settings page generates", () => {
