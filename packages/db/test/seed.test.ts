@@ -177,6 +177,17 @@ describe('seed', () => {
     expect(await agentPrStats(db, userId, acme!.id, ...september)).toEqual({ undeclared: 1, total: 1 });
   });
 
+  it('keeps every sample pull request a real result under the 4.9 wording: none reads "Not checked"', async () => {
+    const { userId } = await seed(db, NOW);
+    const all = [
+      ...(await listPrChecksForOwner(db, userId, DEMO_PROJECT_IDS.storefront)),
+      ...(await listPrChecksForOwner(db, userId, DEMO_PROJECT_IDS.northwind)),
+    ];
+    expect(all).toHaveLength(4);
+    // A neutral run that flagged nothing is a can't-check run (the web app labels it "Not checked").
+    for (const c of all.filter((c) => c.conclusion === 'neutral')) expect(c.undeclared + c.envFiles + c.secretHits).toBeGreaterThan(0);
+  });
+
   it('keeps the incident fresh: the deploy is inside the freshness window and Acme API has been down under an hour', async () => {
     const result = await seed(db, NOW);
     const [latest] = await listDeploys(db, result.projectId);
@@ -248,6 +259,7 @@ describe('seed', () => {
     const portfolio = await getLatestScan(db, DEMO_PROJECT_IDS.portfolio, portfolioDeploy!.deploy.id);
     expect(portfolio?.findings).toEqual([]);
     expect(portfolio?.scopesWithoutEnvFiles).toEqual([{ scope: '', variables: 2 }]);
+    expect(portfolio?.noEnvVarReferences).toBe(false);
     const handoff = await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.portfolio, NOW);
     expect(handoff?.envScopes).toEqual([{ scope: '', env_files: [] }]);
 
