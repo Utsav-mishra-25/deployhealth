@@ -21,6 +21,7 @@ function makeIo(overrides: Partial<CliIo> = {}) {
     fetch: () => Promise.reject(new Error('fetch not expected')),
     git: () => null,
     now: () => new Date('2026-09-28T12:00:00.000Z'),
+    env: {},
     ...overrides,
   };
   return { io, out };
@@ -64,7 +65,10 @@ describe('--dry-run', () => {
     expect(await run(['--dry-run', '--json'], io)).toBe(EXIT.ok);
     const skipped = JSON.parse(out.stdout);
     expect(skipped.test_files_skipped).toBeGreaterThan(20);
-    expect(skipped.scopes).toEqual([]); // no fixture scopes (and core's own code reads no env vars)
+    // No fixture scopes: only core's own, whose .env.example declares the one variable the CLI reads.
+    expect(skipped.scopes).toEqual(['']);
+    expect(skipped.findings).toEqual([]);
+    expect(skipped.variables).toEqual([{ var_name: 'DEPLOYHEALTH_TOKEN', scope: '', defined_in: ['.env.example'] }]);
     const { io: io2, out: out2 } = makeIo({ cwd: core });
     expect(await run(['--dry-run'], io2)).toBe(EXIT.ok);
     expect(out2.stdout).toMatch(/Skipped \d+ test and fixture files \(read only to see which variables they use\)\. --include-tests includes them\./);
@@ -235,6 +239,39 @@ describe('arguments', () => {
   ])('exits 2 for %s', async (_label, args) => {
     const { io } = makeIo();
     expect(await run(args, io)).toBe(EXIT.usage);
+  });
+
+  it('takes the token from DEPLOYHEALTH_TOKEN when --token is not given; --token wins', async () => {
+    const sent: string[] = [];
+    const fetch: CliIo['fetch'] = async (_url, init) => {
+      sent.push(new Headers(init?.headers).get('authorization') ?? '');
+      return Response.json({ deployId: 'd', scanId: 's', counts: { missing: 0, unused: 0, mismatch: 0 } });
+    };
+    const args = ['--url', 'https://dh.example', '--sha', SHA, '--branch', 'main'];
+    expect(await run(args, makeIo({ fetch, env: { DEPLOYHEALTH_TOKEN: 'dh_from_env' } }).io)).toBe(EXIT.ok);
+    expect(await run([...args, '--token', 'dh_flag'], makeIo({ fetch, env: { DEPLOYHEALTH_TOKEN: 'dh_from_env' } }).io)).toBe(EXIT.ok);
+    expect(sent).toEqual(['Bearer dh_from_env', 'Bearer dh_flag']);
+    const { io, out } = makeIo({ env: { DEPLOYHEALTH_TOKEN: '' } });
+    expect(await run(args, io)).toBe(EXIT.usage);
+    expect(out.stderr).toContain('--url and --token (or DEPLOYHEALTH_TOKEN) are required');
+  });
+
+  it('warns on stderr when --url is plain http to another machine, and still sends', async () => {
+    const fetch: CliIo['fetch'] = async () => Response.json({ deployId: 'd', scanId: 's', counts: { missing: 0, unused: 0, mismatch: 0 } });
+    const warning = 'warning: --url is plain http; the token and the report are sent unencrypted';
+    for (const [url, warns] of [
+      ['http://dh.example', true],
+      ['http://10.0.0.5:3000', true],
+      ['https://dh.example', false],
+      ['http://localhost:3000', false],
+      ['http://app.localhost', false],
+      ['http://127.0.0.1:3000', false],
+      ['http://[::1]:3000', false],
+    ] as const) {
+      const { io, out } = makeIo({ fetch });
+      expect(await run(['--url', url, '--token', 'dh_t', '--sha', SHA, '--branch', 'main'], io)).toBe(EXIT.ok);
+      expect(out.stderr.includes(warning)).toBe(warns);
+    }
   });
 
   it('reports network errors with exit 1', async () => {

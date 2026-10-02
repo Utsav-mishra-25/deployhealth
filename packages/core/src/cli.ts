@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 // Type-only: the zod schema stays out of the CLI bundle. The server validates every payload.
 import type { IngestPayload, IngestResponse } from './ingest';
 import { scanProject, type ScanResult } from './scan';
+import { TOKEN_SECRET_NAME } from './constants';
 import { SHA_PATTERN, type FindingKind } from './types';
 import { CLI_VERSION } from './version';
 
@@ -15,6 +16,8 @@ export interface CliIo {
   /** Run git and return trimmed stdout, or null if git fails or is not installed. */
   git: (args: string[], cwd: string) => string | null;
   now: () => Date;
+  /** The environment variables the CLI reads, by name (nothing else in the environment). */
+  env: { DEPLOYHEALTH_TOKEN?: string };
 }
 
 export const EXIT = { ok: 0, failed: 1, usage: 2 } as const;
@@ -25,7 +28,8 @@ Scan a repository for env var drift and report it to deployhealth.
 
 Options:
   --url <url>          deployhealth base URL (required unless --dry-run)
-  --token <token>      the project's ingest token, dh_... (required unless --dry-run)
+  --token <token>      the project's ingest token, dh_... (required unless --dry-run;
+                       default: the DEPLOYHEALTH_TOKEN environment variable)
   --sha <sha>          commit being deployed (default: git rev-parse HEAD)
   --branch <name>      branch being deployed (default: current git branch)
   --dir <path>         directory to scan (default: current directory)
@@ -90,9 +94,13 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     return EXIT.ok;
   }
 
-  if (!values.url || !values.token) {
-    io.stderr('deployhealth-scan: --url and --token are required (or pass --dry-run)\n');
+  const token = values.token || io.env.DEPLOYHEALTH_TOKEN || undefined;
+  if (!values.url || !token) {
+    io.stderr(`deployhealth-scan: --url and --token (or ${TOKEN_SECRET_NAME}) are required (or pass --dry-run)\n`);
     return EXIT.usage;
+  }
+  if (isPlainHttpToRemote(values.url)) {
+    io.stderr('deployhealth-scan: warning: --url is plain http; the token and the report are sent unencrypted\n');
   }
 
   const sha = values.sha ?? io.git(['rev-parse', 'HEAD'], root);
@@ -120,7 +128,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   try {
     response = await io.fetch(endpoint, {
       method: 'POST',
-      headers: { authorization: `Bearer ${values.token}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
   } catch (error) {
@@ -141,6 +149,20 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       `${missing} missing, ${unused} unused, ${mismatch} mismatch (deploy ${body.deployId})\n`,
   );
   return EXIT.ok;
+}
+
+/** `http:` to anything but this machine (localhost, *.localhost, 127.0.0.0/8, ::1). */
+export function isPlainHttpToRemote(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false; // the request itself reports a bad URL
+  }
+  if (url.protocol !== 'http:') return false;
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const local = host === 'localhost' || host.endsWith('.localhost') || /^127(?:\.\d{1,3}){3}$/.test(host) || host === '::1';
+  return !local;
 }
 
 function toJson(result: ScanResult) {
@@ -233,4 +255,5 @@ export const nodeIo = (): CliIo => ({
     }
   },
   now: () => new Date(),
+  env: { DEPLOYHEALTH_TOKEN: process.env.DEPLOYHEALTH_TOKEN },
 });
