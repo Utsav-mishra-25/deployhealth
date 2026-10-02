@@ -25,9 +25,9 @@ describe('createGithubApp', () => {
     }) as typeof globalThis.fetch;
 
     const app = createGithubApp({ appId: 5126679, privateKey: PEM }, { fetch });
-    const api = githubApi(app.forInstallation(7), 'acme/shop');
+    const api = githubApi(app.forInstallation(7), 'acme/shop', { appId: 1 });
     expect((await api.blob('aaa')).toString()).toBe('hello');
-    expect((await githubApi(app.forInstallation(7), 'acme/shop').blob('bbb')).toString()).toBe('hello');
+    expect((await githubApi(app.forInstallation(7), 'acme/shop', { appId: 1 }).blob('bbb')).toString()).toBe('hello');
 
     const tokenRequests = requests.filter((r) => r.url.endsWith('/access_tokens'));
     expect(tokenRequests).toHaveLength(1);
