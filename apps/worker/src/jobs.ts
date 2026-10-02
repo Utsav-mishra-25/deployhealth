@@ -53,7 +53,8 @@ export interface CheckEndpointsSummary {
  * Each claimed endpoint has a start time (`runAt`) that keeps checks of one hostname at least
  * 10 seconds apart across all users. Endpoints sharing a start time form a wave; waves run in
  * order, each no earlier than its start time (never early, so the spacing only ever grows).
- * Then it records the heartbeat /api/health/worker reads.
+ * Alert webhooks are sent alongside, outside the concurrency limit, so a slow webhook never
+ * delays a check; the run waits for them before it records the heartbeat /api/health/worker reads.
  */
 export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEndpointsSummary> {
   const due = await deps.claimDue();
@@ -61,11 +62,18 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   const sleepUntil = deps.sleepUntil ?? realSleepUntil;
 
   const waves = new Map<number, DueEndpoint[]>();
-  for (const endpoint of due) waves.set(endpoint.runAt.getTime(), [...(waves.get(endpoint.runAt.getTime()) ?? []), endpoint]);
+  for (const endpoint of due) {
+    const wave = waves.get(endpoint.runAt.getTime());
+    if (wave) wave.push(endpoint);
+    else waves.set(endpoint.runAt.getTime(), [endpoint]);
+  }
+  // Webhooks start as soon as their check is recorded but never hold one of the check slots.
+  const sends: Array<Promise<unknown>> = [];
   for (const at of [...waves.keys()].sort((a, b) => a - b)) {
     await sleepUntil(new Date(at));
-    await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary));
+    await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary, sends));
   }
+  await Promise.allSettled(sends);
   // A claim that throws skips this, so the deep health check sees a worker that can't do its job.
   // A failed write is logged, not thrown: the run itself succeeded.
   try {
@@ -76,8 +84,8 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   return summary;
 }
 
-/** Check one endpoint, record the result, and send the webhook for an alert event, if any. */
-async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary: CheckEndpointsSummary): Promise<void> {
+/** Check one endpoint, record the result, and start the webhook for an alert event, if any (into `sends`). */
+async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary: CheckEndpointsSummary, sends: Array<Promise<unknown>>): Promise<void> {
   try {
     const outcome = await deps.check(endpoint);
     const { event } = await deps.record(endpoint.id, outcome);
@@ -86,7 +94,7 @@ async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary
     if (!event) return;
     summary[event.type === 'opened' ? 'opened' : 'resolved']++;
     deps.log(`[alert] ${event.type}: ${event.projectName}: ${event.message}`);
-    if (event.webhookUrl) await deps.notify(event.webhookUrl, webhookPayload(event.type, event.projectName, event.message));
+    if (event.webhookUrl) sends.push(deps.notify(event.webhookUrl, webhookPayload(event.type, event.projectName, event.message)).catch(() => false));
   } catch (error) {
     summary.errors++;
     deps.log(`[check] ${endpoint.url} could not be processed: ${(error as Error).message}`);

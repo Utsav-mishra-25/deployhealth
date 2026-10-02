@@ -84,6 +84,34 @@ describe('checkEndpoints job', () => {
     expect(peak).toBeLessThanOrEqual(3);
   });
 
+  it('sends alert webhooks outside the check slots, and waits for them before the heartbeat', async () => {
+    const order: string[] = [];
+    let releaseWebhook!: () => void;
+    const webhookDone = new Promise<void>((resolve) => (releaseWebhook = resolve));
+    const run = checkEndpoints({
+      heartbeat: async () => void order.push('heartbeat'),
+      claimDue: async () => [due('a'), due('b'), due('c')],
+      check: async (t) => {
+        order.push(`check ${t.url}`);
+        return result(!t.url.includes('a.'));
+      },
+      record: async (id) => (id === 'a' ? { consecutiveFailures: 2, event: event('opened', 'https://hooks.example/x') } : { consecutiveFailures: 0, event: null }),
+      notify: async () => {
+        order.push('webhook started');
+        await webhookDone; // a slow webhook
+        order.push('webhook done');
+        return true;
+      },
+      log: () => {},
+      concurrency: 1, // one slot: b and c only run if the webhook doesn't hold it
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(order).toEqual(['check https://a.example/', 'webhook started', 'check https://b.example/', 'check https://c.example/']);
+    releaseWebhook();
+    await run;
+    expect(order.slice(-2)).toEqual(['webhook done', 'heartbeat']);
+  });
+
   it('runs waves in start-time order, each no earlier than its start, so one host is never hit twice in 10s', async () => {
     const events: string[] = [];
     let clock = T0.getTime();
