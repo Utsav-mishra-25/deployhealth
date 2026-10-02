@@ -13,10 +13,16 @@ test-results/
 .env
 .env.local
 .env.*.local
-# ...except the scanner fixture, which needs real ones.
+.env.production
+.env.development
+.env.test
+# ...except the scanner fixtures, which need real ones.
 !packages/core/test/fixtures/**/.env
 !packages/core/test/fixtures/**/.env.local
 !packages/core/test/fixtures/**/.env.*.local
+!packages/core/test/fixtures/**/.env.production
+!packages/core/test/fixtures/**/.env.development
+!packages/core/test/fixtures/**/.env.test
 
 # Copied from packages/core/dist at build time.
 apps/web/public/deployhealth-scan.mjs
