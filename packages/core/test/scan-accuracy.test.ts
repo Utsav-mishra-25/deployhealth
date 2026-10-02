@@ -201,7 +201,7 @@ describe('Compose interpolation', () => {
     const root = `${FIXTURE}compose`;
     const paths = await allFiles(root);
     const selected = selectTreeFiles(paths);
-    expect(selected).toEqual(['.env.example', 'compose.override.yaml', 'docker-compose.yml', 'services/api/.env.example', 'services/api/docker-compose.dev.yml']);
+    expect(selected).toEqual(['.env.example', 'app.ts', 'compose.override.yaml', 'docker-compose.yml', 'services/api/.env.example', 'services/api/docker-compose.dev.yml']);
     const fromTree = await scanFiles(new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const))));
     expect(fromTree.findings).toEqual((await scanProject(root)).findings);
   });
