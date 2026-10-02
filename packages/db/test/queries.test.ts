@@ -190,6 +190,17 @@ describe('recordScan', () => {
       { scope: 'tools', env_files: [] },
     ]);
     expect(detail?.scopesWithoutEnvFiles).toEqual([{ scope: '', variables: 2 }]);
+    expect(detail?.noEnvVarReferences).toBe(false);
+  });
+
+  it('marks a scan with env scopes and no variables at all (a repo in a language not read), and only that', async () => {
+    const project = await makeProject(db, (await makeUser(db)).id);
+    const base = { projectId: project.id, branch: 'main', deployedAt: at('2026-09-01T10:00:00Z'), findings: [] };
+    const none = await recordScan(db, { ...base, sha: 'aaa1111', variables: [], envScopes: [{ scope: '', env_files: ['.env.example'] }] });
+    expect((await getLatestScan(db, project.id, none.deployId))?.noEnvVarReferences).toBe(true);
+    // A CLI before 0.2.0 recorded no env scopes: nothing is known, so no notice.
+    const old = await recordScan(db, { ...base, sha: 'bbb2222', variables: [] });
+    expect((await getLatestScan(db, project.id, old.deployId))?.noEnvVarReferences).toBe(false);
   });
 
   it('stores a 0.1.0-shaped scan exactly as before: no env scopes, nothing optional, no notices', async () => {
@@ -205,6 +216,7 @@ describe('recordScan', () => {
     const detail = await getLatestScan(db, project.id, scan.deployId);
     expect(detail?.scan.envScopes).toBeNull();
     expect(detail?.scopesWithoutEnvFiles).toEqual([]);
+    expect(detail?.noEnvVarReferences).toBe(false);
     expect(await getScanVariables(db, scan.scanId)).toEqual([{ scope: '', var_name: 'REDIS_URL', defined_in: [] }]);
   });
 

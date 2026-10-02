@@ -429,6 +429,11 @@ export interface ScanDetail {
    * one notice for each instead of MISSING rows. Empty for scans from CLIs before 0.2.0.
    */
   scopesWithoutEnvFiles: Array<{ scope: string; variables: number }>;
+  /**
+   * The scan recorded its env scopes (CLI 0.2.0+) and referenced no env var at all: the project
+   * page says which languages are read, since the repo may be in one that isn't.
+   */
+  noEnvVarReferences: boolean;
 }
 
 /**
@@ -471,5 +476,9 @@ export async function getLatestScan(db: Db, projectId: string, deployId: string)
     .filter((s) => s.variables > 0)
     .sort((a, b) => (a.scope === '' ? -1 : b.scope === '' ? 1 : a.scope.localeCompare(b.scope)));
 
-  return { deploy: row.deploy, scan: row.scan, findings: rows, scopesWithoutEnvFiles };
+  const noEnvVarReferences =
+    row.scan.envScopes !== null &&
+    (await db.select({ id: scanVariables.scanId }).from(scanVariables).where(eq(scanVariables.scanId, row.scan.id)).limit(1)).length === 0;
+
+  return { deploy: row.deploy, scan: row.scan, findings: rows, scopesWithoutEnvFiles, noEnvVarReferences };
 }

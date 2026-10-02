@@ -6,7 +6,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { SummaryCards } from '@/components/counts';
 import { DeployList } from '@/components/deploy-list';
 import { EndpointsSection } from '@/components/endpoints-section';
-import { NoEnvFileNotices } from '@/components/env-scope-notice';
+import { NoEnvFileNotices, NoReferencesNotice } from '@/components/env-scope-notice';
 import { FindingsByKind } from '@/components/findings-table';
 import { PrChecksSection } from '@/components/pr-checks';
 import { TimeAgo } from '@/components/time-ago';
@@ -146,6 +146,7 @@ export async function ProjectView({
               Findings
             </h2>
             <div className="space-y-6">
+              <NoReferencesNotice show={detail.noEnvVarReferences} />
               <NoEnvFileNotices scopes={detail.scopesWithoutEnvFiles} handoffHref={paths.handoff(project.id)} />
               <FindingsByKind findings={detail.findings} />
             </div>
