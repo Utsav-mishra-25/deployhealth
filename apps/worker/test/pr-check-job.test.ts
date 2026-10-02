@@ -13,7 +13,7 @@ const BASE = {
   '.env.example': 'DATABASE_URL=\n',
   '.gitignore': 'generated/\n',
   'src/db.ts': `connect(${ENV}.DATABASE_URL);`,
-  'generated/client.ts': `${ENV}.IGNORED_BY_GITIGNORE`,
+  'generated/client.ts': `${ENV}.TRACKED_THOUGH_GITIGNORED`,
   'README.md': `${ENV}.NOT_SCANNED`,
 };
 const HEAD = { ...BASE, 'src/cache.ts': `redis(${ENV}.REDIS_URL);` };
@@ -68,9 +68,10 @@ describe('prCheck against a mocked Octokit', () => {
       conclusion: 'neutral',
       secretHits: 0,
     });
-    // Only scannable, non-ignored files were downloaded, each distinct blob once (plus .gitignore).
+    // Only scannable files were downloaded, each distinct blob once. A tracked file is never
+    // gitignored, so generated/client.ts is read and no .gitignore is.
     const blobCalls = mock.calls.filter((c) => c.startsWith('git.getBlob'));
-    expect(blobCalls).toHaveLength(4); // .gitignore, .env.example, src/db.ts, src/cache.ts
+    expect(blobCalls).toHaveLength(4); // .env.example, src/db.ts, generated/client.ts, src/cache.ts
     const [comment] = [...mock.state.comments.values()];
     expect(comment!.body.startsWith(`${COMMENT_MARKER}\n### deployhealth · env check`)).toBe(true);
     expect(comment!.body).toContain('| `REDIS_URL` | `src/cache.ts:1` | ❌ **not declared** |');
@@ -223,7 +224,7 @@ describe('hard caps on what a check fetches', () => {
     const { deps, rows } = harness(mock, { mode: 'strict' });
     expect(await prCheck(JOB, deps)).toBe('neutral');
     expect(rows[0]).toMatchObject({ conclusion: 'neutral', addedVars: [], undeclaredVars: [] });
-    expect(mock.calls.filter((c) => c.startsWith('git.getBlob')).length).toBeLessThan(10); // only .gitignore files
+    expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toEqual([]);
     expect([...mock.state.comments.values()][0]!.body).toContain('needs more than 2000 files; too large to check');
   });
 

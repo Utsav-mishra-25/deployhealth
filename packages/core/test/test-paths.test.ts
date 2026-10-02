@@ -79,9 +79,9 @@ describe('scanning skips tests and fixtures by default', () => {
   });
 
   it('applies the same rule to git trees (the GitHub App never fetches test files) and to in-memory files', async () => {
-    const selected = await selectTreeFiles(Object.keys(FILES), async () => '');
+    const selected = selectTreeFiles(Object.keys(FILES));
     expect(selected).toEqual(['.env.example', 'src/app.ts', 'src/contest.ts']);
-    expect(await selectTreeFiles(Object.keys(FILES), async () => '', { includeTests: true })).toHaveLength(Object.keys(FILES).length);
+    expect(selectTreeFiles(Object.keys(FILES), { includeTests: true })).toHaveLength(Object.keys(FILES).length);
 
     const inMemory = await scanFiles(new Map(Object.entries(FILES)));
     const onDisk = await scanProject(root);

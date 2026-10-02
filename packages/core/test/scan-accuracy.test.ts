@@ -112,7 +112,7 @@ describe('vendored and generated code', () => {
   it('applies the same rules to a git tree, so the GitHub App never fetches vendored code or big files', async () => {
     const paths = await allFiles(root);
     const sizes = new Map(await Promise.all(paths.map(async (p) => [p, Buffer.byteLength(await readFile(join(root, p)))] as const)));
-    const selected = await selectTreeFiles(paths, (p) => readFile(join(root, p), 'utf8'), { sizes });
+    const selected = selectTreeFiles(paths, { sizes });
     expect(selected).toEqual(['.env.example', 'build/webpack.config.js', 'src/app.ts', 'src/boundary.js']);
     const fromTree = await scanFiles(new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const))));
     const fromDir = await scanProject(root);
@@ -120,7 +120,7 @@ describe('vendored and generated code', () => {
     expect(fromTree.variables).toEqual(fromDir.variables);
     expect(fromTree.references).toEqual(fromDir.references);
     // Without sizes, scanFiles still refuses to read a file over the limit.
-    const unsized = await selectTreeFiles(paths, (p) => readFile(join(root, p), 'utf8'));
+    const unsized = selectTreeFiles(paths);
     expect(unsized).toContain('src/huge.js');
     const fromUnsized = await scanFiles(new Map(await Promise.all(unsized.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const))));
     expect(fromUnsized.tooLargeSkipped).toEqual(['src/huge.js']);
@@ -145,7 +145,7 @@ describe('test tooling counts as tests', () => {
 
   it('the GitHub App never fetches them', async () => {
     const paths = await allFiles(ROOT);
-    expect(await selectTreeFiles(paths, (p) => readFile(join(ROOT, p), 'utf8'))).toEqual(['.env.e2e.example', '.env.example', 'src/app.ts', 'src/testing-utils.ts']);
+    expect(selectTreeFiles(paths)).toEqual(['.env.e2e.example', '.env.example', 'src/app.ts', 'src/testing-utils.ts']);
   });
 });
 
@@ -200,7 +200,7 @@ describe('Compose interpolation', () => {
   it('is read from a git tree too (the GitHub App fetches Compose files)', async () => {
     const root = `${FIXTURE}compose`;
     const paths = await allFiles(root);
-    const selected = await selectTreeFiles(paths, (p) => readFile(join(root, p), 'utf8'));
+    const selected = selectTreeFiles(paths);
     expect(selected).toEqual(['.env.example', 'compose.override.yaml', 'docker-compose.yml', 'services/api/.env.example', 'services/api/docker-compose.dev.yml']);
     const fromTree = await scanFiles(new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const))));
     expect(fromTree.findings).toEqual((await scanProject(root)).findings);

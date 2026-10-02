@@ -15,7 +15,6 @@ import {
   type RequiredVariable,
   type Warning,
 } from './types';
-import { GitignoreMatcher } from './gitignore';
 import { isTestPath } from './test-paths';
 import { isVendoredFileName, MAX_SOURCE_FILE_BYTES } from './vendored';
 import { DEFAULT_SKIP_DIRS, walk } from './walker';
@@ -218,51 +217,39 @@ async function analyzeFiles(
 
 /**
  * The files `scanProject` would read, chosen from a git tree's blob paths instead of a directory:
- * the same skipped directories, nested `.gitignore` files (read top-down through `readGitignore`,
- * so ones inside ignored directories are never read), env files kept even when ignored, and test
- * files and test/fixture directories left out unless `includeTests`, and vendored code (vendored.ts:
- * its directories, generated file names, and, given `sizes`, source files over
- * MAX_SOURCE_FILE_BYTES), so none of those are ever fetched. Returns the paths to fetch, sorted.
+ * the same skipped directories, env files, test files and test/fixture directories left out
+ * unless `includeTests`, and vendored code (vendored.ts: its directories, generated file names,
+ * and, given `sizes`, source files over MAX_SOURCE_FILE_BYTES), so none of those are ever
+ * fetched. Unlike a directory walk, `.gitignore` files are not applied: git never ignores a file
+ * it tracks, so every path in the tree is committed code. Returns the paths to fetch, sorted.
  */
-export async function selectTreeFiles(
+export function selectTreeFiles(
   paths: readonly string[],
-  readGitignore: (path: string) => Promise<string>,
   {
     skipDirs = DEFAULT_SKIP_DIRS,
     includeTests = false,
     sizes,
   }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean; sizes?: ReadonlyMap<string, number> } = {},
-): Promise<string[]> {
-  const gitignores = new Set(paths.filter((p) => posix.basename(p) === '.gitignore'));
-  const matchers = new Map<string, GitignoreMatcher | null>(); // null: the directory is skipped or ignored
-
-  async function matcherFor(dir: string): Promise<GitignoreMatcher | null> {
-    const known = matchers.get(dir);
-    if (known !== undefined) return known;
-    let matcher: GitignoreMatcher | null;
-    if (dir === '') {
-      matcher = GitignoreMatcher.empty();
-    } else {
-      const parent = await matcherFor(dirOf(dir));
-      matcher = parent && !skipDirs.has(posix.basename(dir)) && !parent.ignores(dir, true) ? parent : null;
-    }
-    const ignoreFile = dir === '' ? '.gitignore' : `${dir}/.gitignore`;
-    if (matcher && gitignores.has(ignoreFile)) matcher = matcher.extend(dir, await readGitignore(ignoreFile));
-    matchers.set(dir, matcher);
-    return matcher;
-  }
-
+): string[] {
   const selected: string[] = [];
-  for (const path of [...paths].sort()) {
+  for (const path of paths) {
     const name = posix.basename(path);
     if (!isScannable(path, name) || isVendoredFileName(name) || (!includeTests && isTestPath(path))) continue;
     if (!isEnvFileName(name) && (sizes?.get(path) ?? 0) > MAX_SOURCE_FILE_BYTES) continue;
-    const matcher = await matcherFor(dirOf(path));
-    if (!matcher) continue;
-    if (matcher.ignores(path, false) && !isEnvFileName(name)) continue;
+    if (inSkippedDir(path, skipDirs)) continue;
     selected.push(path);
   }
-  return selected;
+  return selected.sort();
+}
+
+/** Whether any directory on the path is one `walk` never enters. */
+function inSkippedDir(path: string, skipDirs: ReadonlySet<string>): boolean {
+  let start = 0;
+  for (let slash = path.indexOf('/'); slash !== -1; slash = path.indexOf('/', start)) {
+    if (skipDirs.has(path.slice(start, slash))) return true;
+    start = slash + 1;
+  }
+  return false;
 }
 
 function dirOf(path: string): string {
