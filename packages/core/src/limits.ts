@@ -22,6 +22,13 @@ export const MAX_PR_CHECK_FILES = 2_000;
 /** ...and at most this many bytes of file content. */
 export const MAX_PR_CHECK_BYTES = 20 * 1024 * 1024;
 
+/**
+ * A pull request check's CPU work (choosing files, scanning, diffing, the secret search) runs off
+ * the worker's event loop and is stopped after this long in total; the check is then reported as
+ * "Couldn't be checked" and never retried.
+ */
+export const PR_CHECK_TIME_LIMIT_MS = 60_000;
+
 export type LimitName = 'endpointsPerProject' | 'endpointsPerUser' | 'prCheckFiles' | 'prCheckBytes';
 
 /** A hard cap was reached. `message` is safe to show to the user. */

@@ -3,7 +3,8 @@ import type { NewPrCheck, PrCheck, PrCheckMode, PrCheckTarget } from '@deployhea
 import { describe, expect, it } from 'vitest';
 import { githubApi } from '../src/github/api';
 import { prCheck, type PrCheckDeps } from '../src/jobs';
-import { COMMENT_MARKER } from '../src/pr-check/report';
+import { openPrCheckIsolate } from '../src/pr-check/isolate';
+import { COMMENT_MARKER, UNCHECKABLE_SUMMARY, UNCHECKABLE_TITLE } from '../src/pr-check/report';
 import { mockOctokit, type MockRepo } from './mock-octokit';
 
 const ENV = ['process', 'env'].join('.');
@@ -270,3 +271,31 @@ describe('hard caps on what a check fetches', () => {
     expect(mock.calls.some((c) => c.startsWith('git.getBlob'))).toBe(false);
   });
 });
+
+describe("a check the isolate can't finish", () => {
+  // Seconds of real work (150,000 new variables in four files under 512 KB), with a 50 ms limit.
+  const heavy = Object.fromEntries(
+    Array.from({ length: 4 }, (_, f) => [`src/f${f}.ts`, `const {${Array.from({ length: 37_500 }, (_, i) => `K${f}_${i}`).join(',')}} = ${ENV};`]),
+  );
+
+  it("reports a neutral check run with a fixed message, comments nothing, and returns instead of throwing", async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...HEAD, ...heavy } } }));
+    const { deps, rows, logs } = harness(mock);
+    expect(await prCheck(JOB, { ...deps, openIsolate: () => openPrCheckIsolate({ limitMs: 50 }) })).toBe('neutral');
+    expect(rows).toEqual([expect.objectContaining({ conclusion: 'neutral', addedVars: [], undeclaredVars: [], secretHits: 0, commentId: null })]);
+    expect([...mock.state.comments.values()]).toEqual([]);
+    expect([...mock.state.checkRuns.values()]).toEqual([{ headSha: 'head1', conclusion: 'neutral', title: UNCHECKABLE_TITLE, summary: UNCHECKABLE_SUMMARY, text: undefined }]);
+    expect(logs.at(-1)).toBe("[pr-check] acme/shop#42 head1: couldn't be checked (timeout); not retried");
+
+    // Running the same head again updates that check run in place.
+    expect(await prCheck(JOB, { ...deps, openIsolate: () => openPrCheckIsolate({ limitMs: 50 }) })).toBe('neutral');
+    expect(mock.state.checkRuns.size).toBe(1);
+  });
+
+  it('still throws (so the queue retries) when GitHub fails', async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE } })); // head1's tree is missing: a 404 from GitHub
+    const { deps } = harness(mock);
+    await expect(prCheck(JOB, deps)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
