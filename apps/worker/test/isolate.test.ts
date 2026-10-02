@@ -80,7 +80,8 @@ describe('the pull request check isolate', () => {
     } finally {
       await isolate.close();
     }
-  });
+    // About 2.7 s alone and 8 s on a loaded CI runner, so 60 s rather than the 20 s default.
+  }, 60_000);
 
   it('relies on terminate() stopping a thread mid-loop, even inside a backtracking regex', async () => {
     for (const code of ['for (;;) {}', "/^(a+)+$/.test('a'.repeat(40) + 'b')"]) {
