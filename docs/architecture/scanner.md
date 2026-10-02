@@ -11,6 +11,8 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
 ```
   core/               scanner + shared contract, no framework deps
     src/scan.ts       scanProject(): walks the repo, env scopes (+ envScopes, defaultIgnored), findings rows
+    src/languages.ts  SUPPORTED_LANGUAGES (id, label, extensions), the display strings, the unread
+                      extensions for messages, NO_SOURCE_FILES_LINE, LANGUAGES_SENTENCE (browser-safe)
     src/scanner.ts    per-language regexes (JS/TS incl. .mjs/.cjs/.mts/.cts, Python, Go, Ruby),
                       same-line inline defaults (Reference.hasDefault), one reference per name per line
     src/pydantic.ts   pydantic-settings fields as references (Python logical lines, env_prefix, aliases)
@@ -67,6 +69,21 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
   closes makes the rest of the file that value and parsing stops (`unterminated`; `scanFiles`
   warns with file:line only); an unquoted `-----BEGIN …` (alone or as a value) skips every line
   through the next `-----END …` (none: the rest of the file, same warning).
+
+- **One list of languages** (`languages.ts`, 0.3.2): `SUPPORTED_LANGUAGES` names each language
+  the scanner reads and its extensions; `scanner.ts` builds its extension map from it and
+  `test/languages.test.ts` pins the two together, so they can't drift. `SUPPORTED_LANGUAGES_OR` /
+  `_AND` ("JS/TS, Python, Go or Ruby" / "… and Ruby") word every message (the App's check runs,
+  the CLI, the web app, the README, whose opening line and "Languages" limitation are tested
+  against the constants). `UNREAD_SOURCE_EXTENSIONS` (`.java`, `.kt`, `.properties`, `.php`,
+  `.rs`, `.cs`, …) is only for saying what a repo holds that isn't read (counts by extension, never
+  paths), never for scanning. `passesTreeRules()` (`scan.ts`) is the skip, vendored and test-path
+  part of `selectTreeFiles`, which the App's coverage counts use for unread files too.
+- **No supported source, no UNUSED** (decision 18, 0.3.2): when a whole scan reads no supported
+  source file (`sourceFiles` 0, after the skip, vendored and test rules), `scanFiles` emits no
+  UNUSED findings: nothing it reads could use them. MISMATCH stays (`.env` vs `.env.example` doesn't
+  depend on the language). Repo-level, not per scope: a monorepo scope holding only Java and a
+  `.env.example` next to JS scopes still gets UNUSED rows.
 
 ## Fixtures
 

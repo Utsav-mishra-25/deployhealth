@@ -60,6 +60,22 @@ And in core, for client components:
   "Sign in with GitHub" links to /login (no inline server action, so the guard test's list holds).
   "Free while in beta", never prices. The bundle size it states is `CLI_BUNDLE_KB` (core), pinned to
   the built CLI by `test/npm-package.test.ts`.
+  Under the headline, one line names the languages the scanner reads: `LANGUAGES_SENTENCE` (core
+  `languages.ts`), the same line as the README's opening and the npm README's (tests pin all three).
+- **Setup copy** is worded once in `lib/setup-copy.ts` (browser-safe: `TokenReveal` is rendered by
+  client forms): two options, **Pull request checks** (the App plus a project for the exact
+  owner/repo; no token, no secret, no variable) and **Deploy history and alerts** (the Action plus
+  the ingest token as the repository secret `DEPLOYHEALTH_TOKEN`, with the GitHub path to the
+  Secrets tab and why not a Variable or an environment secret: `components/secret-steps.tsx`). The
+  project settings page groups its sections under the two options, the screen after creating a
+  project (`TokenReveal`) and `/github/installed` (`SetupOptions`, signed in or out) show both.
+  Short copy, no wizard. A token value appears only in `TokenReveal`'s box, once
+  (`test/setup-copy.test.ts`).
+- **Project page notices:** "The last scan found no env var references. deployhealth reads JS/TS,
+  Python, Go and Ruby." (`NoReferencesNotice`) shows when the displayed scan recorded its env
+  scopes (CLI 0.2.0+) and referenced no variable at all (`ScanDetail.noEnvVarReferences`); older
+  scans show nothing. A pull request check that's neutral with nothing flagged reads "Not checked"
+  (a can't-check run; `prResult`).
 - **Metadata:** the root layout sets `metadataBase` from `appUrl()` and generic Open Graph / Twitter
   (`summary_large_image`) cards titled "deployhealth" on every page, so link previews never carry a
   client's name. `app/opengraph-image.tsx` (next/og, its bundled font, rendered at build) is the

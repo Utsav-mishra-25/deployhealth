@@ -4,7 +4,7 @@ deployhealth is one page for every client project a freelancer maintains: is the
 var drift between code and env files), is it up (uptime checks), and did the last deploy break it
 (alerts linked to the deploy that introduced new missing variables).
 
-Built: Phases 1–4.8, from config health to the pre-launch security fixes (list: development.md).
+Built: Phases 1–4.9, from config health to "can't check" on unsupported stacks (list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for
 an area before changing it (index at the end). Each app and package has a short CLAUDE.md naming
