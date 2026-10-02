@@ -1,11 +1,13 @@
 import {
   CHECK_TIMEOUT_MS,
   HOST_CHECK_SPACING_MS,
+  MAX_CLAIM_PER_OWNER,
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
   MAX_PR_CHECK_BYTES,
   MAX_PR_CHECK_FILES,
   MAX_REDIRECTS,
+  PR_CHECK_TIME_LIMIT_MS,
 } from '@deployhealth/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -74,7 +76,7 @@ export default function SecurityPage() {
           </li>
           <li className={li}>
             <strong>SSRF-guarded.</strong> A URL must be public http(s): no credentials, no private, loopback, link-local
-            or otherwise reserved addresses. That&apos;s checked when you save it, and again at connect time for every
+            or otherwise reserved addresses, nor IPv6 addresses that carry or tunnel to an IPv4 one. That&apos;s checked when you save it, and again at connect time for every
             redirect hop, which also defeats DNS rebinding. Alert webhooks go through the same guard.
           </li>
           <li className={li}>
@@ -83,7 +85,9 @@ export default function SecurityPage() {
           <li className={li}>
             A hostname is checked at most once every {HOST_CHECK_SPACING_MS / 1000} seconds, however many accounts
             monitor it, and an account can monitor at most {MAX_ENDPOINTS_PER_USER} endpoints ({MAX_ENDPOINTS_PER_PROJECT}{' '}
-            per project). deployhealth can&apos;t be used to flood a server.
+            per project), with at most {MAX_CLAIM_PER_OWNER} checks started per minute. The spacing applies to the hostname
+            in the saved URL: requests that follow a redirect (up to {MAX_REDIRECTS} per check) aren&apos;t counted toward
+            the spacing of the host they land on.
           </li>
         </ul>
       </Section>
@@ -93,9 +97,15 @@ export default function SecurityPage() {
           If you install it, the App asks GitHub for read access to the contents of the repositories you choose, and write
           access to their pull requests and checks (to comment and add the <code>deployhealth / env</code> check). For each
           pull request it reads, at the pull request&apos;s head and at its merge base, only the files the scanner reads
-          (source files in the scanned languages up to 512 KB, env files, Docker Compose files and <code>.gitignore</code>;
-          never tests, fixtures or vendored code), plus the pull request&apos;s diff and commit messages. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
+          (source files in the scanned languages up to 512 KB, env files and Docker Compose files; never tests, fixtures
+          or vendored code), plus the pull request&apos;s diff and commit messages. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
           pull request, fetched only from api.github.com.
+        </p>
+        <p>
+          The scanning runs apart from uptime checks, in a separate thread, and stops after {PR_CHECK_TIME_LIMIT_MS / 1000}{' '}
+          seconds of work: a pull request that takes longer, or whose files can&apos;t be scanned, gets a neutral
+          &ldquo;Couldn&apos;t be checked&rdquo; check run and no comment, and isn&apos;t retried. A slow pull request
+          can&apos;t hold up anyone&apos;s uptime checks or alerts.
         </p>
         <p>
           It stores what it reports: variable names with file:line, the names of committed env files, how many secret-shaped
