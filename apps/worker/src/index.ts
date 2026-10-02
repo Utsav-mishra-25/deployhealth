@@ -23,7 +23,7 @@ import { workerEnv } from './env';
 import { githubApi } from './github/api';
 import { createGithubApp } from './github/app';
 import { isolateEntry } from './pr-check/isolate';
-import { CHECK_QUEUE, checkEndpoints, PR_CHECK_QUEUE, prCheck, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
+import { CHECK_QUEUE, checkEndpoints, errorLabel, PR_CHECK_QUEUE, prCheck, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
 import { waitForMigrations } from './readiness';
 import { registerQueues, RESEED_INTERVAL_MINUTES } from './schedules';
 import { sendWebhook } from './webhook';
@@ -103,8 +103,7 @@ async function main(): Promise<void> {
       try {
         await runPrCheck(job!.data);
       } catch (error) {
-        const code = (error as { code?: unknown }).code;
-        log(`[pr-check] ${job!.data.repoFullName}#${job!.data.prNumber} failed (the queue retries it up to 6 times): ${(error as Error).name}${typeof code === 'string' ? ` ${code}` : ''}`);
+        log(`[pr-check] ${job!.data.repoFullName}#${job!.data.prNumber} failed (the queue retries it up to 6 times): ${errorLabel(error)}`);
         throw error;
       }
     });

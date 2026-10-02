@@ -60,11 +60,12 @@ describe('checkEndpoints job', () => {
   });
 
   it('keeps going when one endpoint fails to record, and respects the concurrency limit', async () => {
+    const logs: string[] = [];
     let running = 0;
     let peak = 0;
     const summary = await checkEndpoints({
       heartbeat: async () => {},
-      claimDue: async () => Array.from({ length: 7 }, (_, i) => due(`e${i}`)),
+      claimDue: async () => Array.from({ length: 7 }, (_, i) => due(`e${i}`, `https://e${i}.example/?token=abc`)),
       check: async () => {
         running++;
         peak = Math.max(peak, running);
@@ -73,15 +74,17 @@ describe('checkEndpoints job', () => {
         return result(true);
       },
       record: async (id) => {
-        if (id === 'e3') throw new Error('db down');
+        if (id === 'e3') throw Object.assign(new Error('insert failed for https://e3.example/?token=abc'), { code: '23505' });
         return { consecutiveFailures: 0, event: null };
       },
       notify: async () => true,
-      log: () => {},
+      log: (m) => void logs.push(m),
       concurrency: 3,
     });
     expect(summary).toMatchObject({ checked: 6, errors: 1 });
     expect(peak).toBeLessThanOrEqual(3);
+    // The host only, and the error's name and code: never the URL or the message.
+    expect(logs).toEqual(['[check] e3.example could not be processed: Error 23505']);
   });
 
   it('sends alert webhooks outside the check slots, and waits for them before the heartbeat', async () => {

@@ -93,7 +93,10 @@ export async function handleGithubWebhook(request: Request, deps: GithubWebhookD
   } catch (error) {
     // Let GitHub's redelivery run it again.
     await deps.forgetDelivery(deliveryId);
-    deps.log(`[github] ${event} ${deliveryId} failed: ${error instanceof z.ZodError ? 'unexpected payload shape' : (error as Error).message}`);
+    // The error's name and code only: a message can quote payload data or a query's parameters.
+    const code = (error as { code?: unknown } | null)?.code;
+    const label = error instanceof z.ZodError ? 'unexpected payload shape' : `${error instanceof Error ? error.name : 'Error'}${typeof code === 'string' ? ` ${code}` : ''}`;
+    deps.log(`[github] ${event} ${deliveryId} failed: ${label}`);
     return reply(error instanceof z.ZodError ? 400 : 500, 'failed');
   }
 }

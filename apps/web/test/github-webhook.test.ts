@@ -87,13 +87,15 @@ describe('delivery dedupe', () => {
 
   it('forgets the delivery when handling fails, so a redelivery runs it again', async () => {
     let fail = true;
-    const { deps, calls } = setup({
+    const { deps, calls, logs } = setup({
       enqueuePrCheck: async (job) => {
-        if (fail) throw new Error('queue down');
+        if (fail) throw Object.assign(new Error(`queue down for ${job.repoFullName}`), { code: 'ECONNREFUSED' });
         calls.push(`enqueue ${job.prNumber}`);
       },
     });
     expect((await handleGithubWebhook(delivery('pull_request', pr('opened'), { id: 'retry-me' }), deps)).status).toBe(500);
+    // The error's name and code only, never its message (which can quote payload data).
+    expect(logs).toEqual(['[github] pull_request retry-me failed: Error ECONNREFUSED']);
     fail = false;
     expect((await handleGithubWebhook(delivery('pull_request', pr('opened'), { id: 'retry-me' }), deps)).status).toBe(202);
     expect(calls).toEqual(['enqueue 42']);
