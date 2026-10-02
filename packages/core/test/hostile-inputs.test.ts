@@ -45,13 +45,19 @@ describe('scanner timing on hostile inputs', () => {
     expect(ms).toBeLessThan(2_000);
   });
 
-  it('survives deeply nested classes (one stack pass, no per-class body copies)', async () => {
-    const depth = 1_000; // the input itself grows with depth² (indentation)
-    const lines = ['class Top(BaseSettings):', '    top: str'];
-    for (let i = 0; i < depth; i++) lines.push(`${'    '.repeat(i + 1)}class N${i}:`, `${'    '.repeat(i + 2)}n${i}: int = 1`);
-    const { value, ms } = await timed(() => scanSource(lines.join('\n'), 'python', 'settings.py'));
-    expect(value.map((r) => r.name)).toEqual(['TOP']);
-    expect(ms).toBeLessThan(2_000);
+  it('resolves 650 nested settings classes, each inheriting from the one around it, in under 1 s', async () => {
+    // Each class re-reads its ancestors' prefixes over their whole bodies unless prefixes are
+    // memoised and bodies precomputed: about 5.6 s before 4.8, under 0.1 s now. One-space indents
+    // keep the file under the 512 KB source limit (430 KB), so the App would fetch and scan it.
+    const depth = 650;
+    const lines: string[] = [];
+    for (let i = 0; i < depth; i++) lines.push(`${' '.repeat(i)}class N${i}(${i === 0 ? 'BaseSettings' : `N${i - 1}`}):`, `${' '.repeat(i + 1)}n${i}: str`);
+    const source = `${lines.join('\n')}\n`;
+    expect(Buffer.byteLength(source)).toBeLessThan(512 * 1024);
+    const { value, ms } = await timed(() => scanSource(source, 'python', 'settings.py'));
+    expect(value).toHaveLength(depth);
+    expect(value[0]).toMatchObject({ name: 'N0', line: 2 });
+    expect(ms).toBeLessThan(1_000);
   });
 
   it('reads one line destructuring 150,000 keys from process.env in under 3 s', async () => {
