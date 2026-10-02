@@ -1,13 +1,15 @@
-import { CLI_NPX, githubActionSnippet, TOKEN_SECRET_NAME } from '@deployhealth/core';
+import { CLI_NPX, githubActionSnippet } from '@deployhealth/core';
 import { getClientForOwner, getGithubAppStatus, getProjectForOwner, listClients, type GithubAppStatus } from '@deployhealth/db';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/auth';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { CodeBlock } from '@/components/code-block';
+import { SecretSteps } from '@/components/secret-steps';
 import { serverEnv } from '@/env';
 import { appUrl } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
+import { DEPLOY_HISTORY_OPTION, PR_CHECKS_OPTION } from '@/lib/setup-copy';
 import { PrCheckModeForm } from './pr-check-mode-form';
 import { ProjectSettingsForm } from './project-settings-form';
 import { RegenerateToken } from './regenerate-token';
@@ -60,32 +62,17 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         />
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Ingest token</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Current token: <code className="font-mono">{project.apiTokenHint}</code>. Tokens are stored hashed, so a lost
-          token can only be replaced.
-        </p>
-        <RegenerateToken projectId={project.id} />
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold">GitHub Action</h2>
-        <p className="mt-1 mb-3 text-sm text-gray-600">
-          Save the token as the repository secret <code className="font-mono font-semibold">{TOKEN_SECRET_NAME}</code>,
-          then add this workflow to <strong>{project.repoFullName}</strong>:
-        </p>
-        <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
-      </section>
-
-      <section aria-labelledby="github-app">
-        <h2 id="github-app" className="text-lg font-semibold">
-          GitHub App
+      <section aria-labelledby="pr-checks">
+        <h2 id="pr-checks" className="text-lg font-semibold">
+          {PR_CHECKS_OPTION.title}
         </h2>
-        <p className="mt-1 mb-3 text-sm text-gray-600">
-          Checks every pull request on <strong>{project.repoFullName}</strong>: which env vars it adds, removes or renames, new
-          ones missing from <code>.env.example</code>, committed <code>.env</code> files and secret-shaped strings. It comments
-          once per pull request and adds a <code>deployhealth / env</code> check. Names and file:line only, never values.
+        <p className="mt-1 text-sm text-gray-600" data-testid="pr-checks-option">
+          {PR_CHECKS_OPTION.body}
+        </p>
+        <p className="mt-2 mb-3 text-sm text-gray-600">
+          The GitHub App checks every pull request on <strong>{project.repoFullName}</strong>: which env vars it adds, removes or
+          renames, new ones missing from <code>.env.example</code>, committed <code>.env</code> files and secret-shaped strings. It
+          comments once per pull request and adds a <code>deployhealth / env</code> check. Names and file:line only, never values.
         </p>
         <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
           <AppStatusLine status={appStatus!} repo={project.repoFullName} />
@@ -101,6 +88,37 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
             <p className="text-sm text-gray-500">The GitHub App isn&apos;t configured on this deployment (GITHUB_APP_SLUG).</p>
           )}
           <PrCheckModeForm projectId={project.id} mode={project.prCheckMode} />
+        </div>
+      </section>
+
+      <section aria-labelledby="deploy-history" className="space-y-6">
+        <div>
+          <h2 id="deploy-history" className="text-lg font-semibold">
+            {DEPLOY_HISTORY_OPTION.title}
+          </h2>
+          <p className="mt-1 text-sm text-gray-600" data-testid="deploy-history-option">
+            {DEPLOY_HISTORY_OPTION.body}
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-semibold">Ingest token</h3>
+          <p className="mt-1 text-sm text-gray-600">
+            Current token: <code className="font-mono">{project.apiTokenHint}</code>. Tokens are stored hashed, so a lost
+            token can only be replaced.
+          </p>
+          <RegenerateToken projectId={project.id} />
+        </div>
+
+        <div>
+          <h3 className="font-semibold">GitHub Action</h3>
+          <div className="text-sm">
+            <SecretSteps repo={project.repoFullName} />
+          </div>
+          <p className="mt-3 mb-3 text-sm text-gray-600">
+            Then add this workflow to <strong className="break-all">{project.repoFullName}</strong>:
+          </p>
+          <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
         </div>
       </section>
 

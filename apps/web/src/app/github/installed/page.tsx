@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { auth } from '@/auth';
 import { AppNextSteps } from '@/components/app-next-steps';
+import { SetupOptions } from '@/components/setup-options';
 import { getDb } from '@/lib/db';
 import { GITHUB_INSTALLED_PATH, newProjectHref, signInHref } from '@/lib/github-app';
 
@@ -34,6 +35,7 @@ export default async function GithubInstalledPage() {
             </Link>
           </p>
         </div>
+        <SetupOptions />
       </div>
     );
   }
@@ -88,6 +90,7 @@ export default async function GithubInstalledPage() {
         Pull requests are checked for your projects whose repository is one of these. Each project&apos;s mode (off, comment or strict)
         is in its settings. <Link href="/clients" className="font-medium text-emerald-700 hover:underline">Back to your clients</Link>
       </p>
+      <SetupOptions />
     </div>
   );
 }
