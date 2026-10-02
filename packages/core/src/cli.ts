@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import type { IngestPayload, IngestResponse } from './ingest';
 import { scanProject, type ScanResult } from './scan';
 import { TOKEN_SECRET_NAME } from './constants';
+import { NO_SOURCE_FILES_LINE } from './languages';
 import { SHA_PATTERN, type FindingKind } from './types';
 import { CLI_VERSION } from './version';
 
@@ -89,8 +90,13 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   });
   for (const w of result.warnings) io.stderr(`warning ${w.file}${w.line ? `:${w.line}` : ''}: ${w.message}\n`);
 
+  // No source file in a language the scanner reads: say so plainly, never fail anyone's CI.
+  const canCheck = result.sourceFiles > 0;
   if (values['dry-run']) {
-    io.stdout(values.json ? `${JSON.stringify(toJson(result), null, 2)}\n` : renderText(result));
+    if (values.json) {
+      if (!canCheck) io.stderr(`${NO_SOURCE_FILES_LINE}\n`);
+      io.stdout(`${JSON.stringify(toJson(result), null, 2)}\n`);
+    } else io.stdout(renderText(result));
     return EXIT.ok;
   }
 
@@ -123,6 +129,8 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     env_scopes: result.envScopes,
   };
 
+  // Still sent, so the deploy is recorded; the project page explains a scan with no references.
+  if (!canCheck) io.stdout(`${NO_SOURCE_FILES_LINE}\n`);
   const endpoint = `${values.url.replace(/\/+$/, '')}/api/ingest/scan`;
   let response: Response;
   try {
@@ -167,6 +175,9 @@ export function isPlainHttpToRemote(raw: string): boolean {
 
 function toJson(result: ScanResult) {
   return {
+    /** Source files read in a language the scanner reads; 0 → can_check false. */
+    source_files: result.sourceFiles,
+    can_check: result.sourceFiles > 0,
     counts: result.counts,
     scopes: result.scopes,
     env_scopes: result.envScopes,
@@ -185,6 +196,7 @@ const TITLES: Record<FindingKind, string> = { missing: 'MISSING', unused: 'UNUSE
 function renderText(result: ScanResult): string {
   const scopes = result.scopes.map((s) => s || '(root)').join(', ');
   const out = [`deployhealth-scan: ${result.sourceFiles} source files, scopes: ${scopes}`, ''];
+  if (result.sourceFiles === 0) out.push(NO_SOURCE_FILES_LINE, '');
   for (const kind of ['missing', 'unused', 'mismatch'] as const) {
     const rows = result.findings.filter((f) => f.kind === kind);
     out.push(`${TITLES[kind]} (${result.counts[kind]})`);
