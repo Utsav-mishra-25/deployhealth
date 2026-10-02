@@ -172,11 +172,17 @@ describe('pull request checks', () => {
     const { alice, project, inst } = await setup();
     await check(project.id, inst.id, 7, 'aaa', { undeclaredVars: ['A'], conclusion: 'neutral' });
     await check(project.id, inst.id, 7, 'bbb', { undeclaredVars: [], conclusion: 'success' });
-    await check(project.id, inst.id, 8, 'ccc', { undeclaredVars: ['B', 'C'], conclusion: 'neutral', authorIsAgent: true, agentName: 'Claude' });
+    await check(project.id, inst.id, 8, 'ccc', {
+      undeclaredVars: ['B', 'C'],
+      committedEnvFiles: [{ path: '.env', added: true }],
+      conclusion: 'neutral',
+      authorIsAgent: true,
+      agentName: 'Claude',
+    });
     const list = await listPrChecksForOwner(db, alice.id, project.id);
-    expect(list.map((c) => [c.prNumber, c.headSha, c.undeclared, c.closed])).toEqual([
-      [8, 'ccc', 2, false],
-      [7, 'bbb', 0, false],
+    expect(list.map((c) => [c.prNumber, c.headSha, c.undeclared, c.envFiles, c.closed])).toEqual([
+      [8, 'ccc', 2, 1, false],
+      [7, 'bbb', 0, 0, false],
     ]);
     const stranger = await makeUser(db);
     expect(await listPrChecksForOwner(db, stranger.id, project.id)).toEqual([]);
