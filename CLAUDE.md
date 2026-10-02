@@ -8,8 +8,11 @@ Phase 1 (config health), Phase 2 (clients, uptime, alerts), Phase 3 (public demo
 export, monthly client reports), Phase 4 (licensing, the npm CLI, hard caps, /security, and the
 GitHub App's env check on every pull request), Phase 4.5 (launch polish: landing page, a demo
 that's fresh at any hour, phone layouts, /privacy and /terms, metadata, security headers) and
-Phase 4.6 (scanner accuracy on real repos, CLI 0.3.0) and Phase 4.7 (launch-week hardening: the
-worker waits for migrations, a deep health check that sees the worker, capped alert lists) are built.
+Phase 4.6 (scanner accuracy on real repos, CLI 0.3.0), Phase 4.7 (launch-week hardening: the
+worker waits for migrations, a deep health check that sees the worker, capped alert lists) and
+Phase 4.8 (security fixes: the PR check runs isolated with a time limit, linear-time scanning and
+gitignore matching, an env parser that never reads a value as a name, more SSRF ranges, fair
+claims, CLI 0.3.1) are built.
 
 ## Monorepo layout
 
@@ -53,8 +56,11 @@ apps/
                       and githubFetch (Octokit's fetch: api.github.com only, keep-alive, response cap)
     src/github/       app.ts (App JWT → installation token via @octokit/auth-app, one client per
                       installation), api.ts (the few GitHub calls a check makes)
-    src/pr-check/     build.ts (trees → files → scan, within the caps), diff.ts, secrets.ts,
-                      agents.ts, report.ts (conclusion, the comment, the check run)
+    src/pr-check/     build.ts (GitHub calls and the caps, on the main thread), isolate.ts (the worker
+                      thread + time limit; UncheckableError), isolate-worker.ts (its entry, bundled
+                      as dist/pr-check-isolate.js), analysis.ts (select files, scan, diff, secrets:
+                      what runs in the thread), diff.ts, secrets.ts, agents.ts, report.ts
+                      (conclusion, the comment, the check run, GitHub's size limits)
     src/env.ts        the ONLY place the worker reads process.env
     railway.json      documentation only, like web's
 packages/
@@ -70,7 +76,8 @@ packages/
                       newUndeclaredVars() for deploy correlation
     src/default-ignore.ts  DEFAULT_IGNORE: names the platform or runtime provides, skipped by default
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 24 KB file, served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 28 KB file, served by web)
+    src/gitignore.ts  .gitignore matching for the CLI's walk: each pattern a small state machine, linear time
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
     npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
                       `build:npm` adds dist/ and LICENSE (gitignored)
@@ -231,9 +238,25 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 - **Hard caps** live in `packages/core/src/limits.ts` and hold for every account whatever its plan:
   100 endpoints per project and 500 per user (`createEndpoint`, which locks the owner's row so
   concurrent creates can't race past them), one check per hostname per 10 s across all users (the
-  claim, above), 5 MB ingest bodies (counted while streaming), and 2,000 files / 20 MB fetched per
-  pull request check (`createFetchBudget()`: `take(size)` before each download, `verify()` after).
+  claim, above), at most `MAX_CLAIM_PER_OWNER` (50) of one owner's endpoints per claim, 5 MB ingest
+  bodies (counted while streaming), 2,000 files / 20 MB fetched per pull request check
+  (`createFetchBudget()`: `take(size)` per distinct path + blob before any download, `verify()`
+  after), and `PR_CHECK_TIME_LIMIT_MS` (60 s) of scanning per pull request check (isolate.ts).
   Exceeding one throws `LimitExceededError`, whose message is safe to show.
+- **Every parser of untrusted input gets a timing test.** Repository files (via the App or a
+  cloned repo), .gitignore patterns, env files, payloads: each parser runs in time linear in its
+  input (no regex built from input, no nested loops over names × files, no recursion on input
+  depth, no `push(...array)` of unbounded arrays) and has a test that a hostile input, built at
+  run time, finishes under a stated bound (`packages/core/test/hostile-inputs.test.ts`,
+  `apps/worker/test/hostile-inputs.test.ts`, `gitignore.test.ts`, `env-parser.test.ts`).
+- **The PR check runs isolated with a time limit.** Its CPU work (file selection, scanning, diff,
+  secret search; `pr-check/analysis.ts`) runs only in the worker thread from
+  `openPrCheckIsolate()`, never on the main event loop, and gets only downloaded data. The entry
+  file is fixed (`isolateEntry()`): no env var or config can point it elsewhere. Anything failing
+  in the thread (time limit, a thrown error, out of memory) is `UncheckableError`: a neutral
+  "Couldn't be checked" check run with a fixed message, no comment, and no retry. GitHub and
+  database errors throw and retry. `test/isolate.test.ts` checks the event loop and
+  check-endpoints stay on time while a check runs out its limit.
 - **Licensing:** `packages/core` is MIT (its own `LICENSE`, `"license": "MIT"`); everything else is
   FSL-1.1-MIT (root `LICENSE`, `"license": "FSL-1.1-MIT"` in the root, apps and `packages/db`).
   Moving code into `packages/core` relicenses it as MIT, so only move what the CLI or scanner needs.
@@ -302,7 +325,8 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   links work, using the shared constants (`CHECK_TIMEOUT_MS`, caps, `SHARE_LINK_DAYS`) so it can't
   drift. Keep it true when behaviour changes (anything new that reads repositories goes there). The
   contact is `SECURITY_CONTACT_EMAIL`, else a private GitHub security advisory; the same contact
-  goes into `/.well-known/security.txt` (RFC 9116, `Expires` 180 days out, rounded to the day).
+  goes into `/.well-known/security.txt` (RFC 9116, `Expires` 180 days out, rounded to the day;
+  `no-store`, since its URLs come from the request's host headers).
 - **/privacy and /terms** are static pages whose facts live in `lib/legal.ts` (operator and
   country, `LEGAL_LAST_UPDATED`, hosting region, subprocessors, deletion window,
   `CHECK_RETENTION_TEXT`) and `lib/auth-providers.ts` (`GITHUB_OAUTH_SCOPES`, `githubSignInReads()`,
@@ -318,6 +342,10 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   `assertPublicUrl()` when saved, and must be fetched through `apps/worker/src/guarded-http.ts`
   (`guardedRequest` / `guardedPost`, on `guardedLookup`), never plain `fetch`. The guard re-checks
   the resolved address at connect time, which covers redirects and DNS rebinding.
+  The guard also refuses documentation ranges and every IPv6 address that carries or tunnels to
+  an IPv4 one (`::/96`, `::ffff:0:0/96`, 6to4, Teredo, local-use NAT64; matched by hand, since
+  `BlockList` checks IPv4 addresses against IPv6 rules too); a saved endpoint in a newly blocked
+  range just fails its checks with the guard's message.
   `apps/worker/test/no-unguarded-http.test.ts` walks the repo and fails if any other non-test file
   contains `fetch(`, `http(s).request(`/`.get(`, axios, undici, `got(`, node-fetch, or imports
   `node:http(s)`/`http2`. Its allowlist names every exception with a reason (the guarded module,
@@ -325,7 +353,9 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 - **Tokens:** `dh_` + 32 random bytes. Only the SHA-256 is stored, plus a `dh_…abcd` hint. The
   plaintext is shown once, on creation or regeneration.
 - **Ingest:** authenticate first, then read the body (5 MB cap), validate with the zod schema from
-  `@deployhealth/core`, and store through `recordScan()`, which computes counts server-side. A
+  `@deployhealth/core`, drop finding rows that fail `isStorableFinding()` (`var_name` must match
+  the env parser's key pattern `ENV_KEY_PATTERN`, `env_file` must be null or an env file name; one
+  log line with the count), and store through `recordScan()`, which computes counts server-side. A
   re-reported sha adds a scan to the existing deploy. Every field a CLI release adds is optional
   (`variables` in 0.1.0; `variables[].optional` and `env_scopes` in 0.2.0), so older payloads keep
   working and are stored as before (`scans.env_scopes` null, nothing optional); zod drops fields it
@@ -362,6 +392,10 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   None). **Compose interpolation** (`compose.ts`) only marks names used in the file's scope, like
   test files (`usedOutsideCode`): never a reference, a variable or MISSING. Measure changes with
   `pnpm eval:repos` against the published CLI; never commit other projects' variable names.
+- **The env parser never reads a value as a key** (`env-parser.ts`, 0.3.1): a quote that never
+  closes makes the rest of the file that value and parsing stops (`unterminated`; `scanFiles`
+  warns with file:line only); an unquoted `-----BEGIN …` (alone or as a value) skips every line
+  through the next `-----END …` (none: the rest of the file, same warning).
 - **Client components** import only from `@deployhealth/core/browser` (the main entry pulls in
   `node:fs` / `node:crypto`). Type-only imports from the main entry are fine.
 - **The dev login** ("Continue as dev user", provider `dev`, signs in as the writable `dev` user,
@@ -371,8 +405,8 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 - **Schema changes:** edit `packages/db/src/schema.ts`, then `pnpm db:generate` and commit the new SQL in
   `packages/db/drizzle/`. Never edit a migration that has been applied. Only web's pre-deploy step
   applies migrations; the worker bundles the journal and waits for them (Worker jobs).
-- **Health checks:** `/api/health` is Railway's deploy healthcheck and never touches the database
-  (keep it that way). `/api/health/worker` is the deep check for external monitors: 200
+- **Health checks:** `/api/health` is Railway's deploy healthcheck: it never touches the database,
+  logs nothing and isn't rate-limited (keep it that way). `/api/health/worker` is the deep check for external monitors: 200
   `{"ok":true}` when `check-endpoints` finished a run in the last 3 minutes
   (`WORKER_HEARTBEAT_MAX_AGE_SECONDS`, compared on the database clock), else 503 `{"ok":false}`,
   also on a database error. Nothing else in the body (no counts, names, hosts or timestamps),
@@ -404,7 +438,8 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 - Two versions: `CLI_VERSION` (`src/version.ts`, = `npm/package.json`, what the next publish ships)
   and `PUBLISHED_CLI_VERSION` (`src/constants.ts`, what the Action snippet, the settings page and
   this repo's `.github/workflows/deployhealth.yml` pin). Tests keep each group in sync, and the
-  first never behind the second.
+  first never behind the second. 0.3.1 (the 4.8 parser and matcher fixes, `DEPLOYHEALTH_TOKEN` as
+  `--token`'s default, a warning for plain-http `--url` to another machine) awaits publishing.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow
@@ -427,13 +462,15 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   never a message or the connection string), retry in 5 s; after 10 minutes it throws and the
   process exits 1 (Railway's `ALWAYS` restart).
 - **check-endpoints** (every minute): `claimDueEndpoints()` (one claimer at a time, advisory
-  lock) takes enabled endpoints with `next_check_at <= now`, oldest first, at most 5 per hostname,
-  and gives each a start time with `assignHostSlots()`: checks of one hostname start at least
+  lock) takes enabled endpoints with `next_check_at <= now`, at most 5 per hostname and 50 per
+  owner, owners taking turns (each owner's oldest, then each one's second, …), and gives each a start time with `assignHostSlots()`: checks of one hostname start at least
   10 s apart **across all users**, on a 10 s grid within the next 50 s. `check_hosts` stores each
   hostname's next free slot; an endpoint that gets no slot stays due and goes first next run. Each
   claimed endpoint's `next_check_at` becomes its start + interval. The job runs the claim in waves
   by start time (never early), up to 10 checks at a time with `runCheck()`, stores each result
-  with `recordCheck()`, and sends webhooks for alert events after the transaction commits. Every
+  with `recordCheck()`, and starts the webhook for an alert event after the transaction commits,
+  outside the check slots (the run awaits every send before the heartbeat). Failures log the
+  endpoint's host and the error's name and code, never its URL or message. Every
   run ends with `recordHeartbeat()` (the `worker_heartbeats` row `check-endpoints`, `now()`), even
   with nothing due; a claim that throws skips it, a failed write is logged. The deep health check
   reads that row.
@@ -487,17 +524,22 @@ pull_requests: write; events: pull_request; installation events arrive regardles
   is `githubFetch`, so every GitHub call is SSRF-guarded and pinned to api.github.com.
 - **The check** (`jobs.ts#prCheck`, tested against a mocked Octokit in `test/pr-check-job.test.ts`):
   mode `off` → nothing at all. Otherwise `buildReport()`: both trees (recursive; truncated → not
-  checked), `selectTreeFiles()` (the CLI's rules, `.gitignore` read top-down), every blob reserved
-  against `createFetchBudget()` (2,000 files / 20 MB, PR patches included) **before** downloading,
-  each distinct blob once; `scanFiles()` on both sides; `diffEnvVars()` (variable level; rename =
+  checked), `selectTreeFiles()` in the isolate (the CLI's rules except `.gitignore`: git never
+  ignores a tracked file, so none is read or applied), each distinct path + blob reserved against
+  `createFetchBudget()` (2,000 files / 20 MB, PR patches included) **before** downloading, each
+  distinct blob downloaded once; then in the isolate `scanFiles()` on both sides; `diffEnvVars()` (variable level; rename =
   removed + added in the same file; declared = in the `.env.example` of every scope that reads it);
   committed env files the PR adds or changes; `findSecrets()` on added lines (rule + file:line only).
-  A cap → neutral "too large to check". Conclusion: success when nothing is undeclared and no env
-  files or secrets; else neutral (comment) or failure (strict).
+  A cap → neutral "too large to check"; the isolate failing → neutral "Couldn't be checked", no
+  comment, no retry. Conclusion: success when nothing is undeclared and no env files or secrets;
+  else neutral (comment) or failure (strict).
 - **Idempotent output.** One `pr_checks` row per project + PR + head (upsert keeps comment and check
-  run ids). One comment per PR: stored id → else the latest row's → else the App's comment with the
-  `<!-- deployhealth-env-check -->` marker; created only when there's something to say, recreated if
-  deleted (404). One `deployhealth / env` check run per head, updated on re-runs.
+  run ids). One comment per PR: stored id → else the latest row's → else the comment with the
+  `<!-- deployhealth-env-check -->` marker whose `performed_via_github_app.id` is this App's
+  (`GITHUB_APP_ID`; never someone else's marked comment); created only when there's something to
+  say, recreated if deleted (404). One `deployhealth / env` check run per head, updated on re-runs.
+  The comment and the check run's summary and text stay under 60,000 characters (whole lines, then
+  "…and N more"); titles ≤ 255; long paths and names are shortened around an ellipsis.
 - **Agents:** PR author login (without `[bot]`) in the known list, else a `Co-Authored-By` trailer
   naming Claude, Codex, Copilot, Cursor or Devin. Dependabot and Renovate are never agents.
 - **Never values.** Comments, check runs, rows and logs carry names, paths, line numbers and rule
@@ -535,7 +577,9 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   first failure". Each kind lists every name up to 6, else 5 and "and N more"
   (`listNames()`, `MAX_ALERT_NAMES`); counts stay exact. Webhooks reuse the message.
 - **Webhook:** if `projects.alert_webhook_url` is set, POST `{text}` on open and on resolve. Log
-  and continue on failure; at most one retry.
+  and continue on failure; at most one retry. `webhookPayload()` escapes the text for chat
+  (`escapeChatText`: `&` `<` `>` as entities, a zero-width space after the `@` of `@everyone`,
+  `@here`, `@channel`).
 - **Down duration:** "Down for 21m" (or "Failing for 1m" before an alert opens) next to endpoint
   and project badges is measured from the first failed check of the current run:
   `failingSinceSql()` in `monitoring.ts` (also used for the alert's first failure), exposed as

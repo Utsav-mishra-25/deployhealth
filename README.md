@@ -150,6 +150,7 @@ self-host, not to offer as a competing hosted service; converts to MIT two years
 | 4.5 Launch polish | Done | Landing page, a demo that's fresh at any hour with sample PR checks, phone layouts, /privacy and /terms, link previews, security headers |
 | 4.6 Scanner accuracy | Done | CLI 0.3.0: skips vendored code and test tooling, reads more declaration files, pydantic-settings and Compose interpolation |
 | 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
+| 4.8 Security fixes | Done | Pull request checks run isolated with a time limit, linear-time scanning and gitignore matching, an env parser that never reads values as names, more SSRF ranges, fair endpoint claims, CLI 0.3.1 |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -379,11 +380,17 @@ PR opened / pushed ─▶ GitHub ─▶ POST /api/github/webhook ─▶ pr-check
    project gets you nothing.
 3. **The worker** signs an App JWT, swaps it for an installation token (reused until it expires),
    and reads the pull request's head and merge base: both git trees, then only the files the
-   scanner reads (same rules as the CLI, including `.gitignore`), each distinct blob once, plus the
-   pull request's diff for secret patterns. At most 2,000 files and 20 MB; past that the check
-   says so and stays neutral. All of it goes through the SSRF-guarded client, to api.github.com only.
-4. **The report** is stored per head (`pr_checks`), the one comment is updated in place (found by a
-   hidden `<!-- deployhealth-env-check -->` marker if needed), and the head gets its check run.
+   scanner reads (the CLI's rules, except `.gitignore`: git never ignores a file it tracks), each
+   distinct blob once, plus the pull request's diff for secret patterns. At most 2,000 files and
+   20 MB (each path counts); past that the check says so and stays neutral. All of it goes through
+   the SSRF-guarded client, to api.github.com only.
+4. **The scanning** (choosing files, scanning both sides, the diff, the secret search) runs in a
+   worker thread, apart from uptime checks, and is stopped after 60 seconds of work. A pull
+   request it can't finish gets a neutral "Couldn't be checked" check run and no comment, and
+   isn't retried; GitHub and database errors are.
+5. **The report** is stored per head (`pr_checks`), the one comment is updated in place (found by a
+   hidden `<!-- deployhealth-env-check -->` marker on a comment this App posted, if needed), and the
+   head gets its check run. Both stay within GitHub's 65,535-character limit ("…and N more").
    Running a head again changes nothing new.
 
 ### SSRF protection
@@ -392,15 +399,17 @@ Endpoint and webhook URLs are user input, so they're checked twice:
 
 - **On save:** only http/https, no credentials, and the host must not be (or resolve to) loopback,
   RFC1918, link-local, cloud metadata (`169.254.169.254`, `100.100.100.200`, `fd00:ec2::254`),
-  CGNAT, multicast or reserved addresses.
+  CGNAT, multicast, documentation or reserved addresses, nor IPv6 addresses that carry or tunnel
+  to an IPv4 one (IPv4-mapped and -compatible, 6to4, Teredo, local-use NAT64).
 - **At connect time:** a guarded DNS lookup repeats the check on the address the socket is about to
   use. That covers every redirect hop and DNS rebinding.
 
 ## Limits
 
 Hard caps, the same on every plan: **100 endpoints per project and 500 per account**, **one check
-per target hostname every 10 seconds** across all accounts, **5 MB** per scan report, and pull
-request checks read at most **2,000 files and 20 MB** per pull request.
+per target hostname every 10 seconds** across all accounts, **at most 50 of one account's checks
+per minute's run**, **5 MB** per scan report, and pull request checks read at most **2,000 files
+and 20 MB** per pull request and stop after **60 seconds** of scanning.
 
 ## Known limitations
 
@@ -439,8 +448,19 @@ request checks read at most **2,000 files and 20 MB** per pull request.
   sharing).
 - **Pull request checks follow the installer.** An App installed by an org admin checks pull
   requests only for that admin's deployhealth projects. Very large repositories (more than GitHub
-  lists in one tree, or past the 2,000-file / 20 MB caps) aren't checked. Secret detection is a
-  small set of fixed-prefix formats, not a full secret scanner.
+  lists in one tree, or past the 2,000-file / 20 MB caps) aren't checked, nor is one whose
+  scanning takes more than 60 seconds ("Couldn't be checked"). Secret detection is a small set of
+  fixed-prefix formats, not a full secret scanner.
+- **The App and the CLI can differ on force-added files.** The App scans every tracked file,
+  since git never ignores one; the CLI walks a working directory and honours `.gitignore`, so a
+  file committed despite a matching rule is scanned by the App but not by the CLI.
+- **An env file with a quote that never closes** is read up to that quote: the rest of the file is
+  that value (the CLI warns with the file and line), so keys after it aren't seen. An unquoted
+  `-----BEGIN … -----END` block is skipped.
+- **Spacing is per saved hostname.** Checks of one hostname are 10 seconds apart, but requests
+  that follow a redirect to another host aren't counted toward that host's spacing. One account
+  gets at most 50 checks per minute's run, so 500 endpoints on 1-minute intervals are each checked
+  about every 10 minutes.
 
 ## Repository layout
 
