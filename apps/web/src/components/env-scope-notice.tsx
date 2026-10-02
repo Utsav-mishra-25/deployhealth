@@ -1,4 +1,4 @@
-import { plural } from '@deployhealth/core/browser';
+import { plural, SUPPORTED_LANGUAGES_AND } from '@deployhealth/core/browser';
 import Link from 'next/link';
 
 /**
@@ -31,6 +31,21 @@ export function NoEnvFileNotices({ scopes, handoffHref }: { scopes: Array<{ scop
           </p>
         </div>
       ))}
+    </div>
+  );
+}
+
+export const NO_REFERENCES_NOTICE = `The last scan found no env var references. deployhealth reads ${SUPPORTED_LANGUAGES_AND}.`;
+
+/**
+ * When a scan recorded its env scopes and referenced no env var at all: often a repo in a language
+ * the scanner doesn't read yet, so say which ones it reads rather than leave an empty, "clean" page.
+ */
+export function NoReferencesNotice({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <div role="note" data-testid="no-references-notice" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+      {NO_REFERENCES_NOTICE}
     </div>
   );
 }

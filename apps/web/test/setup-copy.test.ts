@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { NO_REFERENCES_NOTICE, NoReferencesNotice } from '@/components/env-scope-notice';
 import { SecretSteps } from '@/components/secret-steps';
 import { SetupOptions } from '@/components/setup-options';
 import { TokenReveal } from '@/components/token-reveal';
@@ -29,5 +30,13 @@ describe('the setup copy', () => {
     expect(html.split(token)).toHaveLength(2);
     expect(text(html)).toContain('No token, no secret, no variable.');
     expect(text(html)).toContain('Secrets tab → New repository secret');
+  });
+});
+
+describe('the no-references notice on the project page', () => {
+  it('says the last scan found no env var references and which languages are read', () => {
+    expect(NO_REFERENCES_NOTICE).toBe('The last scan found no env var references. deployhealth reads JS/TS, Python, Go and Ruby.');
+    expect(renderToStaticMarkup(createElement(NoReferencesNotice, { show: true }))).toContain('deployhealth reads JS/TS, Python, Go and Ruby.');
+    expect(renderToStaticMarkup(createElement(NoReferencesNotice, { show: false }))).toBe('');
   });
 });
