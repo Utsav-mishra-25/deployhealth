@@ -134,7 +134,21 @@ export function alertResolvedMessage({
 
 /** Body of the Slack/Discord-compatible webhook: plain `{ text }`. */
 export function webhookPayload(event: 'opened' | 'resolved', projectName: string, message: string): { text: string } {
-  return { text: `[${event === 'opened' ? 'down' : 'resolved'}] ${projectName}: ${message}` };
+  return { text: escapeChatText(`[${event === 'opened' ? 'down' : 'resolved'}] ${projectName}: ${message}`) };
+}
+
+/**
+ * Text a chat webhook can't turn into markup or a mass mention: `&`, `<` and `>` as Slack's
+ * entities (so `<!channel>`, `<@U…>` and links can't be formed), and a zero-width space after the
+ * `@` of `@everyone`, `@here` and `@channel` (Discord pings on those). The fixed wording of alert
+ * messages contains none of these, so only names (project, endpoint, variables) ever change.
+ */
+export function escapeChatText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/@(everyone|here|channel)\b/gi, '@\u200b$1');
 }
 
 export type UptimeStatus = 'up' | 'degraded' | 'down' | 'no_endpoints';

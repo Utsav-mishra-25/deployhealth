@@ -8,6 +8,7 @@ import {
   formatDuration,
   uptimeStatus,
   webhookPayload,
+  escapeChatText,
   type AlertAction,
 } from '../src/alerts';
 import { newMissingVars } from '../src/findings';
@@ -160,6 +161,18 @@ describe('alert messages', () => {
     );
     expect(webhookPayload('opened', 'shop', 'x.dev started failing')).toEqual({ text: '[down] shop: x.dev started failing' });
     expect(webhookPayload('resolved', 'shop', 'x.dev is back up')).toEqual({ text: '[resolved] shop: x.dev is back up' });
+  });
+
+  it('escapes chat markup and mass mentions in webhook text', () => {
+    const name = '<!channel> & <@U123> <https://evil.example|click> @everyone @here @Channel';
+    const { text } = webhookPayload('opened', name, `${name} started failing`);
+    expect(text).not.toMatch(/[<>]/);
+    expect(text).not.toMatch(/@(everyone|here|channel)/i);
+    expect(text).toBe(
+      '[down] &lt;!channel&gt; &amp; &lt;@U123&gt; &lt;https://evil.example|click&gt; @\u200beveryone @\u200bhere @\u200bChannel: ' +
+        '&lt;!channel&gt; &amp; &lt;@U123&gt; &lt;https://evil.example|click&gt; @\u200beveryone @\u200bhere @\u200bChannel started failing',
+    );
+    expect(escapeChatText('a@everyoneelse b@here.')).toBe('a@everyoneelse b@\u200bhere.');
   });
 
   it('formats durations and labels', () => {
