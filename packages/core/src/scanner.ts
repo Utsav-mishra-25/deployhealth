@@ -1,22 +1,14 @@
 import { extname } from 'node:path';
+import { SUPPORTED_LANGUAGES, type LanguageId } from './languages';
 import { scanPydanticSettings } from './pydantic';
 import type { Reference, Syntax } from './types';
 
-export type Language = 'javascript' | 'python' | 'go' | 'ruby';
+export type Language = LanguageId;
 
-export const LANGUAGE_BY_EXTENSION: Readonly<Record<string, Language>> = {
-  '.ts': 'javascript',
-  '.tsx': 'javascript',
-  '.mts': 'javascript',
-  '.cts': 'javascript',
-  '.js': 'javascript',
-  '.jsx': 'javascript',
-  '.mjs': 'javascript',
-  '.cjs': 'javascript',
-  '.py': 'python',
-  '.go': 'go',
-  '.rb': 'ruby',
-};
+/** Built from SUPPORTED_LANGUAGES (languages.ts), the one list every result names languages from. */
+export const LANGUAGE_BY_EXTENSION: Readonly<Record<string, Language>> = Object.fromEntries(
+  SUPPORTED_LANGUAGES.flatMap((l) => l.extensions.map((ext) => [ext, l.id] as const)),
+);
 
 export const SCANNED_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(LANGUAGE_BY_EXTENSION));
 

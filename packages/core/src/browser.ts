@@ -5,6 +5,7 @@
 export * from './types';
 export * from './env-files';
 export * from './constants';
+export * from './languages';
 export * from './limits';
 export * from './alerts';
 export * from './format';
