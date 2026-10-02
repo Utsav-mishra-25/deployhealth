@@ -32,18 +32,51 @@ describe('isBlockedAddress', () => {
     ['::ffff:7f00:1', 'IPv4-mapped loopback, hex'],
     ['64:ff9b::a9fe:a9fe', 'NAT64 of 169.254.169.254'],
     ['64:ff9b::127.0.0.1', 'NAT64 of loopback, dotted'],
+    ['192.0.2.10', 'TEST-NET-1'],
+    ['198.51.100.7', 'TEST-NET-2'],
+    ['203.0.113.7', 'TEST-NET-3'],
+    ['198.18.0.1', 'benchmarking 198.18/15'],
+    ['198.19.255.255', 'benchmarking 198.18/15 top'],
+    ['240.0.0.1', 'reserved 240/4'],
+    ['::8.8.8.8', 'IPv4-compatible (::/96), even of a public address'],
+    ['::a00:1', 'IPv4-compatible, hex'],
+    ['::ffff:8.8.8.8', 'IPv4-mapped (::ffff:0:0/96), even of a public address'],
+    ['0:0:0:0:0:ffff:808:808', 'IPv4-mapped, long form'],
+    ['2002:808:808::1', '6to4 (2002::/16) of a public address'],
+    ['2002:a00:1::1', '6to4 of a private address'],
+    ['2001:0:4136:e378:8000:63bf:3fff:fdd2', 'Teredo (2001::/32)'],
+    ['64:ff9b:1::1', 'local-use NAT64 (64:ff9b:1::/48)'],
+    ['fec0::1', 'site-local (fec0::/10)'],
+    ['feff::1', 'site-local top'],
+    ['100::1', 'discard-only (100::/64)'],
+    ['2001:db8::1', 'documentation (2001:db8::/32)'],
+    ['2001:db8:ffff::1', 'documentation top'],
+    ['fe80::1%eth0', 'link-local with a zone'],
     ['[::1]', 'bracketed'],
     ['not-an-ip', 'not an IP'],
   ])('blocks %s (%s)', (address) => {
     expect(isBlockedAddress(address)).toBe(true);
   });
 
-  it.each(['8.8.8.8', '1.1.1.1', '172.32.0.1', '192.169.0.1', '100.128.0.1', '2606:4700:4700::1111', '::ffff:8.8.8.8', '64:ff9b::808:808'])(
-    'allows public address %s',
-    (address) => {
-      expect(isBlockedAddress(address)).toBe(false);
-    },
-  );
+  it.each([
+    '8.8.8.8',
+    '1.1.1.1',
+    '172.32.0.1',
+    '192.169.0.1',
+    '100.128.0.1',
+    '192.0.3.1',
+    '198.51.101.1',
+    '203.0.114.1',
+    '2606:4700:4700::1111',
+    '2001:4860:4860::8888', // Google DNS: in 2001::/23, outside Teredo's 2001::/32
+    '2001:db9::1',
+    '100:0:0:1::1', // just past 100::/64
+    '64:ff9b::808:808', // well-known NAT64 of a public address
+    '64:ff9b:2::1',
+  ])(
+'allows public address %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(false);
+  });
 });
 
 describe('parsePublicHttpUrl', () => {

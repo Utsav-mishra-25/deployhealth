@@ -21,7 +21,10 @@ export class BlockedUrlError extends Error {
   }
 }
 
-const blockList = new BlockList();
+// One list per family: BlockList also checks an IPv4 address against IPv6 rules (as ::ffff:a.b.c.d),
+// so the IPv4-embedding IPv6 ranges are matched by hand below, never added to a list.
+const blockedV4 = new BlockList();
+const blockedV6 = new BlockList();
 const BLOCKED_V4: Array<[string, number]> = [
   ['0.0.0.0', 8], // "this network"
   ['10.0.0.0', 8], // RFC1918
@@ -30,45 +33,59 @@ const BLOCKED_V4: Array<[string, number]> = [
   ['169.254.0.0', 16], // link-local, incl. the 169.254.169.254 cloud metadata service
   ['172.16.0.0', 12], // RFC1918
   ['192.0.0.0', 24], // IETF protocol assignments
+  ['192.0.2.0', 24], // TEST-NET-1 (documentation)
   ['192.168.0.0', 16], // RFC1918
   ['198.18.0.0', 15], // benchmarking
+  ['198.51.100.0', 24], // TEST-NET-2 (documentation)
+  ['203.0.113.0', 24], // TEST-NET-3 (documentation)
   ['224.0.0.0', 4], // multicast
   ['240.0.0.0', 4], // reserved, incl. 255.255.255.255
 ];
 const BLOCKED_V6: Array<[string, number]> = [
-  ['::', 128], // unspecified
-  ['::1', 128], // loopback
+  ['64:ff9b:1::', 48], // local-use NAT64
+  ['100::', 64], // discard-only
+  ['2001::', 32], // Teredo
+  ['2001:db8::', 32], // documentation
+  ['2002::', 16], // 6to4 (deprecated)
   ['fc00::', 7], // unique local (IPv6 "RFC1918"), incl. AWS IMDS fd00:ec2::254
   ['fe80::', 10], // link-local
+  ['fec0::', 10], // site-local (deprecated)
   ['ff00::', 8], // multicast
 ];
-for (const [net, prefix] of BLOCKED_V4) blockList.addSubnet(net, prefix, 'ipv4');
-for (const [net, prefix] of BLOCKED_V6) blockList.addSubnet(net, prefix, 'ipv6');
+for (const [net, prefix] of BLOCKED_V4) blockedV4.addSubnet(net, prefix, 'ipv4');
+for (const [net, prefix] of BLOCKED_V6) blockedV6.addSubnet(net, prefix, 'ipv6');
 
 /**
- * True for loopback, RFC1918, link-local, metadata, CGNAT, multicast and other reserved ranges.
- * IPv4-mapped IPv6 (`::ffff:10.0.0.1`, any notation) is matched by BlockList itself; NAT64
- * (`64:ff9b::/96`) is unwrapped here.
+ * True for loopback, RFC1918, link-local, metadata, CGNAT, multicast, documentation and other
+ * reserved ranges. In IPv6 that includes every address that embeds or tunnels to an IPv4 one
+ * (IPv4-compatible, IPv4-mapped, 6to4, Teredo, local-use NAT64), blocked outright; the well-known
+ * NAT64 prefix (`64:ff9b::/96`) is unwrapped here and its IPv4 address checked.
  */
 export function isBlockedAddress(address: string): boolean {
   const ip = address.replace(/^\[|\]$/g, '').split('%')[0]!;
   const family = isIP(ip);
-  if (family === 4) return blockList.check(ip, 'ipv4');
+  if (family === 4) return blockedV4.check(ip, 'ipv4');
   if (family === 6) {
-    const nat64 = nat64Embedded(ip);
-    if (nat64) return blockList.check(nat64, 'ipv4');
-    return blockList.check(ip, 'ipv6');
+    const groups = ipv6Groups(ip);
+    // ::/96 (IPv4-compatible, incl. :: and ::1) and ::ffff:0:0/96 (IPv4-mapped).
+    if (groups.slice(0, 5).every((g) => g === 0) && (groups[5] === 0 || groups[5] === 0xffff)) return true;
+    // 64:ff9b::/96, the well-known NAT64 prefix: check the IPv4 address it carries.
+    if (groups[0] === 0x64 && groups[1] === 0xff9b && groups.slice(2, 6).every((g) => g === 0)) {
+      return blockedV4.check([groups[6]! >> 8, groups[6]! & 255, groups[7]! >> 8, groups[7]! & 255].join('.'), 'ipv4');
+    }
+    return blockedV6.check(ip, 'ipv6');
   }
   return true; // not an IP at all: refuse rather than guess
 }
 
-function nat64Embedded(ip: string): string | null {
-  // Let the URL parser canonicalise the notation (e.g. 64:ff9b:0:0:0:0:a9fe:a9fe → 64:ff9b::a9fe:a9fe).
+/** The eight 16-bit groups of an IPv6 address, in any notation (`::`, embedded dotted IPv4). */
+function ipv6Groups(ip: string): number[] {
+  // The URL parser canonicalises the notation (lowercase, hex instead of a dotted quad, one `::`).
   const canonical = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
-  const match = /^64:ff9b::(?:([0-9a-f]{1,4}):)?([0-9a-f]{1,4})$/.exec(canonical);
-  if (!match) return null;
-  const value = (parseInt(match[1] ?? '0', 16) << 16) | parseInt(match[2]!, 16);
-  return [24, 16, 8, 0].map((shift) => (value >>> shift) & 255).join('.');
+  const [head = '', tail] = canonical.split('::') as [string, string | undefined];
+  const parse = (part: string) => (part === '' ? [] : part.split(':').map((g) => parseInt(g, 16)));
+  const [left, right] = [parse(head), parse(tail ?? '')];
+  return tail === undefined ? left : [...left, ...Array<number>(8 - left.length - right.length).fill(0), ...right];
 }
 
 /** Hostname without IPv6 brackets. */
