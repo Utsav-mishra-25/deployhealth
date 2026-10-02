@@ -12,6 +12,14 @@ It scans JavaScript/TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.
 Python (including pydantic-settings classes), Go and Ruby, respects `.gitignore`, and treats each
 folder with its own env files as a separate scope (monorepos). One file, no dependencies, Node 20+.
 
+Reads JS/TS, Python, Go and Ruby. Java/Kotlin, PHP, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+
+On a directory with no such source file (after the rules below), it prints
+`No JS/TS, Python, Go or Ruby source files found: deployhealth can't check this directory yet.`,
+reports no UNUSED variables (nothing it reads could use them), still reports MISMATCH, and exits
+`0`. With `--json` the line goes to stderr, and the JSON says `"can_check": false` with
+`"source_files": 0`.
+
 Env files it reads: `.env`, `.env.local`, `.env.development`, `.env.production`, `.env.test` and
 their `.local` variants, plus **declaration files**: `.env.example`, `.env.sample`,
 `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`, `env.example` and
@@ -77,16 +85,17 @@ Same-line, regex-based scanning misses some things on purpose:
 ## Try it locally
 
 ```sh
-npx deployhealth-scan@0.3.1 --dry-run          # grouped findings with file:line
-npx deployhealth-scan@0.3.1 --dry-run --json   # the same, as JSON
+npx deployhealth-scan@0.3.2 --dry-run          # grouped findings with file:line
+npx deployhealth-scan@0.3.2 --dry-run --json   # the same, as JSON
 ```
 
 With `--dry-run` nothing leaves your machine.
 
 ## Report every push from GitHub Actions
 
-Create a project in deployhealth, add its ingest token as the repository secret
-`DEPLOYHEALTH_TOKEN`, then add `.github/workflows/deployhealth.yml`:
+Create a project in deployhealth, add its ingest token as a repository secret named
+`DEPLOYHEALTH_TOKEN` (Settings → Secrets and variables → Actions → Secrets tab → New repository
+secret; not a Variable, not an environment secret), then add `.github/workflows/deployhealth.yml`:
 
 ```yaml
 name: deployhealth
@@ -113,14 +122,14 @@ jobs:
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
         run: |
-          npx --yes deployhealth-scan@0.3.1 \
+          npx --yes deployhealth-scan@0.3.2 \
             --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
             --branch "$GITHUB_REF_NAME"
 ```
 
-Pin the version (`@0.3.1`) so an update never runs in your CI unreviewed. For a self-hosted
+Pin the version (`@0.3.2`) so an update never runs in your CI unreviewed. For a self-hosted
 deployhealth, change `--url` to your instance.
 
 ## What it sends
