@@ -61,6 +61,7 @@ never match a real GitHub account) owns, in **one transaction**, with:
   `DEMO_ENDPOINT_IDS`). A /demo request that resolved the demo owner before a reseed committed
   still finds the same data after it, and never renders empty or 404s. Deploy ids do change, so a
   `?deploy=` that isn't the project's shows the latest deploy.
+- The demo also gets a GitHub App installation (`DEMO_INSTALLATION_ID = -1`) and four checked PRs.
 
 `DEMO_BASE_URL` (packages/db `.env`, default `http://localhost:3000`) is the web app's public URL.
 Locally the worker's SSRF guard blocks localhost, so Acme API keeps failing either way. The seed

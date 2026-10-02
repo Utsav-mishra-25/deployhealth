@@ -19,7 +19,10 @@ apps/
                       dedupe, per-installation limit, events), jobs.ts (send-only pg-boss client),
                       read-body.ts (capped streaming body reader), legal.ts (operator, hosting,
                       subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts,
-                      worker-health.ts (the deep health check's response)
+                      worker-health.ts (the deep health check's response), github-app.ts (project
+                      prefill and safe return paths for the App's next steps), security.ts
+                      (security.txt and the security contact), app-url.ts (the public base URL from
+                      the request's headers), db.ts (the shared database handle)
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
                       project, handoff, report (props: ownerId/data, paths, readOnly)
     src/app/          / (landing when signed out, else → /clients), /login, /clients, /clients/new,

@@ -15,7 +15,7 @@ query (authorization rules for queries are in [security.md](security.md)).
     src/monitoring.ts endpoints CRUD, claimDueEndpoints(), recordCheck() (+ alert lifecycle), stats,
                       uptimeBetween() (rollups + raw), rollupChecks(), prune
     src/handoff.ts    getHandoffData() (owner-scoped)
-    src/reports.ts    getClientReport() (by client id; see Authorization)
+    src/reports.ts    getClientReport() (by client id; see Authorization in security.md)
     src/github.ts     installations, installation repos, webhook deliveries, pr_checks (worker upserts;
                       owner-scoped reads for the UI: status, PR list, agent stats)
     src/heartbeat.ts  recordHeartbeat() / workerIsHealthy(): the deep health check's one row
@@ -26,4 +26,4 @@ query (authorization rules for queries are in [security.md](security.md)).
 
 - **Schema changes:** edit `packages/db/src/schema.ts`, then `pnpm db:generate` and commit the new SQL in
   `packages/db/drizzle/`. Never edit a migration that has been applied. Only web's pre-deploy step
-  applies migrations; the worker bundles the journal and waits for them (Worker jobs).
+  applies migrations; the worker bundles the journal and waits for them (Worker jobs in [worker.md](worker.md)).
