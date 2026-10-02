@@ -1,4 +1,4 @@
-import { CLI_BUNDLE_KB } from '@deployhealth/core';
+import { CLI_BUNDLE_KB, LANGUAGES_SENTENCE } from '@deployhealth/core';
 import { DEMO_PROJECT_IDS } from '@deployhealth/db';
 import Link from 'next/link';
 import { landingAlertMessage } from '@/lib/landing';
@@ -43,6 +43,9 @@ export function Landing({ demo }: { demo: boolean }) {
           deployhealth checks your env vars on every push and pull request, watches your endpoints, and tells you which deploy
           broke what.
         </h1>
+        <p className="max-w-3xl text-sm text-gray-600" data-testid="landing-languages">
+          {LANGUAGES_SENTENCE}
+        </p>
         <div className="flex flex-wrap items-center gap-3">
           {demo && (
             <Link href={DEMO_PATHS.clients} className={`${button} bg-emerald-600 text-white hover:bg-emerald-500`}>
