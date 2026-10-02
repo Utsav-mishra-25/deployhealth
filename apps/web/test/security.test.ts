@@ -48,6 +48,8 @@ describe('security.txt (RFC 9116)', () => {
     const { GET } = await import('@/app/.well-known/security.txt/route');
     const response = GET(new Request('http://internal:8080/.well-known/security.txt', { headers: { 'x-forwarded-host': 'dh.example', 'x-forwarded-proto': 'https' } }));
     expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    // Built from the request's host headers, so no shared cache may keep it.
+    expect(response.headers.get('cache-control')).toBe('no-store');
     const body = await response.text();
     expect(body).toContain(`Contact: ${SECURITY_ADVISORY_URL}\n`);
     expect(body).toContain('Policy: https://dh.example/security\n');
