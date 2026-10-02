@@ -1,4 +1,4 @@
-import { hashToken, ingestPayloadSchema, MAX_INGEST_BODY_BYTES, parseBearer, type IngestResponse } from '@deployhealth/core';
+import { hashToken, ingestPayloadSchema, isStorableFinding, MAX_INGEST_BODY_BYTES, parseBearer, type IngestResponse } from '@deployhealth/core';
 import type { RecordScanInput, RecordScanResult } from '@deployhealth/db';
 import { readBodyUpTo } from './read-body';
 
@@ -8,11 +8,15 @@ export const MAX_BODY_BYTES = MAX_INGEST_BODY_BYTES;
 export interface IngestDeps {
   findProjectByTokenHash: (hash: string) => Promise<{ id: string } | null>;
   recordScan: (input: RecordScanInput) => Promise<RecordScanResult>;
+  /** One line when rows are dropped: the count only, never names. */
+  log?: (message: string) => void;
 }
 
 /**
  * POST /api/ingest/scan. Authenticates the bearer token before reading the body, validates the
- * payload with the schema shared with the CLI, then stores deploy + scan + findings.
+ * payload with the schema shared with the CLI, then stores deploy + scan + findings. Finding
+ * rows whose variable isn't a possible env name, or whose env file isn't one the scanner reads,
+ * are dropped (`isStorableFinding`), and the counts come from what's stored.
  */
 export async function handleIngest(request: Request, deps: IngestDeps): Promise<Response> {
   const token = parseBearer(request.headers.get('authorization'));
@@ -38,7 +42,10 @@ export async function handleIngest(request: Request, deps: IngestDeps): Promise<
     return Response.json({ error: 'Invalid payload', issues }, { status: 400 });
   }
 
-  const { sha, branch, timestamp, findings, variables, env_scopes } = parsed.data;
+  const { sha, branch, timestamp, variables, env_scopes } = parsed.data;
+  const findings = parsed.data.findings.filter(isStorableFinding);
+  const dropped = parsed.data.findings.length - findings.length;
+  if (dropped > 0) deps.log?.(`[ingest] dropped ${dropped} finding rows with an invalid variable or env file name`);
   const result = await deps.recordScan({
     projectId: project.id,
     sha: sha.toLowerCase(),

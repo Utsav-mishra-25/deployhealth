@@ -108,6 +108,26 @@ describe('handleIngest', () => {
     expect(recorded).toEqual([]);
   });
 
+  it('drops finding rows whose name an env parser could never produce, or whose env file is not one, and stores the rest', async () => {
+    const { deps, recorded } = setup();
+    const logs: string[] = [];
+    // An older CLI could read part of a value as a key; built at run time, never a real value.
+    const fragment = ['abc', 'DEF+/', 'ghi='].join('');
+    const rows: FindingRow[] = [
+      FINDING,
+      { kind: 'unused', var_name: 'app.port-number', file: 'apps/web/.env', line: 2, env_file: 'apps/web/.env' },
+      { kind: 'unused', var_name: fragment, file: '.env', line: 3, env_file: '.env' },
+      { kind: 'unused', var_name: '9STARTS_WITH_DIGIT', file: '.env', line: 4, env_file: '.env' },
+      { kind: 'mismatch', var_name: 'OK_NAME', file: '.env', line: 5, env_file: 'config/secrets.txt' },
+      { kind: 'mismatch', var_name: 'OK_NAME', file: '.env', line: 5, env_file: '.env.example' },
+    ];
+    const res = await handleIngest(post({ ...PAYLOAD, findings: rows }), { ...deps, log: (m) => void logs.push(m) });
+    expect(res.status).toBe(201);
+    expect(recorded[0]!.findings).toEqual([rows[0], rows[1], rows[5]]);
+    expect(logs).toEqual(['[ingest] dropped 3 finding rows with an invalid variable or env file name']);
+    expect(logs.join()).not.toContain(fragment);
+  });
+
   it('returns 400 for invalid JSON', async () => {
     const response = await handleIngest(post('{not json'), setup().deps);
     expect(response.status).toBe(400);
