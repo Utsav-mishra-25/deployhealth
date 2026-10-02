@@ -5,7 +5,7 @@ import { githubApi } from '../src/github/api';
 import { prCheck, type PrCheckDeps } from '../src/jobs';
 import { openPrCheckIsolate } from '../src/pr-check/isolate';
 import { COMMENT_MARKER, UNCHECKABLE_SUMMARY, UNCHECKABLE_TITLE } from '../src/pr-check/report';
-import { mockOctokit, type MockRepo } from './mock-octokit';
+import { MOCK_APP_ID, mockOctokit, type MockRepo } from './mock-octokit';
 
 const ENV = ['process', 'env'].join('.');
 const JOB = { installationId: 7, repoFullName: 'acme/shop', prNumber: 42 };
@@ -44,7 +44,7 @@ function harness(mock: ReturnType<typeof mockOctokit>, { mode = 'comment', targe
       return row;
     },
     setGithubIds: async (id, ids) => void Object.assign(rows.find((r) => r.id === id)!, ids),
-    api: (_installationId, repoName) => githubApi(mock.octokit, repoName),
+    api: (_installationId, repoName) => githubApi(mock.octokit, repoName, { appId: MOCK_APP_ID }),
     log: (m) => void logs.push(m),
   };
   return { deps, rows, logs };
@@ -176,6 +176,17 @@ describe('prCheck against a mocked Octokit', () => {
     await prCheck(JOB, deps);
     expect(mock.state.comments.size).toBe(1);
     expect([...mock.state.comments.keys()][0]).not.toBe(id);
+  });
+
+  it("never reuses a marked comment this App didn't post: another bot's, or a person's", async () => {
+    const mock = mockOctokit(repo());
+    mock.state.comments.set(1, { body: `${COMMENT_MARKER}\nplanted by a person`, bot: false });
+    mock.state.comments.set(2, { body: `${COMMENT_MARKER}\nplanted by another app`, bot: true, appId: MOCK_APP_ID + 1 });
+    await prCheck(JOB, harness(mock).deps);
+    expect(mock.state.comments.get(1)!.body).toContain('planted by a person');
+    expect(mock.state.comments.get(2)!.body).toContain('planted by another app');
+    expect(mock.calls.filter((c) => c.startsWith('issues.updateComment'))).toEqual([]);
+    expect(mock.state.comments.size).toBe(3);
   });
 
   it('posts no comment when a pull request changes no env vars, but still adds the check run', async () => {

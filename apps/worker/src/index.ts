@@ -96,7 +96,7 @@ async function main(): Promise<void> {
         findCommentId: (projectId, prNumber) => findPrCommentId(db, projectId, prNumber),
         saveCheck: (row) => upsertPrCheck(db, row),
         setGithubIds: (id, ids) => setPrCheckGithubIds(db, id, ids),
-        api: (installationId, repo) => githubApi(app.forInstallation(installationId), repo),
+        api: (installationId, repo) => githubApi(app.forInstallation(installationId), repo, { appId: GITHUB_APP.appId }),
         log,
       });
     await boss.work<PrCheckJobData>(PR_CHECK_QUEUE, { localConcurrency: 2 }, async ([job]) => {

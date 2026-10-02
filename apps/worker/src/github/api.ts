@@ -34,8 +34,11 @@ const MAX_PULL_FILES = 3_000;
 const MAX_PULL_COMMITS = 250;
 export const CHECK_RUN_NAME = 'deployhealth / env';
 
-/** The GitHub calls a pull request check makes, for one repository. */
-export function githubApi(octokit: Octokit, repoFullName: string) {
+/**
+ * The GitHub calls a pull request check makes, for one repository. `appId` is this GitHub App's
+ * id: only comments it posted are ever reused.
+ */
+export function githubApi(octokit: Octokit, repoFullName: string, { appId }: { appId: number }) {
   const [owner, repo] = repoFullName.split('/') as [string, string];
 
   return {
@@ -88,10 +91,14 @@ export function githubApi(octokit: Octokit, repoFullName: string) {
       return messages;
     },
 
-    /** The App's own comment carrying `marker`, if one exists (state lost, or an older head). */
+    /**
+     * This App's own comment carrying `marker`, if one exists (state lost, or an older head). A
+     * comment counts only if this App posted it (`performed_via_github_app`): anyone can paste
+     * the marker into a comment of their own.
+     */
     async findMarkedComment(issueNumber: number, marker: string): Promise<number | null> {
       for await (const { data } of octokit.paginate.iterator(octokit.rest.issues.listComments, { owner, repo, issue_number: issueNumber, per_page: 100 })) {
-        const mine = data.find((c) => c.user?.type === 'Bot' && c.body?.includes(marker));
+        const mine = data.find((c) => c.performed_via_github_app?.id === appId && c.body?.includes(marker));
         if (mine) return mine.id;
       }
       return null;

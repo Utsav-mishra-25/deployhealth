@@ -15,6 +15,8 @@ export interface MockRepo {
 
 const blobSha = (content: string) => createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0${content}`).digest('hex');
 const notFound = () => Object.assign(new Error('Not Found'), { status: 404 });
+/** The App the mock acts as: comments it creates carry this id in `performed_via_github_app`. */
+export const MOCK_APP_ID = 4242;
 
 /**
  * Just enough of Octokit's REST client for githubApi(): the calls a pull request check makes,
@@ -24,7 +26,7 @@ export function mockOctokit(repo: MockRepo) {
   const calls: string[] = [];
   const blobs = new Map<string, string>();
   const state = {
-    comments: new Map<number, { body: string; bot: boolean }>(),
+    comments: new Map<number, { body: string; bot: boolean; appId?: number }>(),
     checkRuns: new Map<number, { headSha: string; conclusion: string; title: string; summary: string; text?: string }>(),
     nextId: 1000,
   };
@@ -75,18 +77,18 @@ export function mockOctokit(repo: MockRepo) {
     issues: {
       listComments: async () => {
         calls.push('issues.listComments');
-        return { data: [...state.comments].map(([id, c]) => ({ id, body: c.body, user: { type: c.bot ? 'Bot' : 'User' } })) };
+        return { data: [...state.comments].map(([id, c]) => ({ id, body: c.body, user: { type: c.bot ? 'Bot' : 'User' }, performed_via_github_app: c.appId ? { id: c.appId } : null })) };
       },
       createComment: async ({ body }: { body: string }) => {
         const id = ++state.nextId;
         calls.push(`issues.createComment ${id}`);
-        state.comments.set(id, { body, bot: true });
+        state.comments.set(id, { body, bot: true, appId: MOCK_APP_ID });
         return { data: { id } };
       },
       updateComment: async ({ comment_id, body }: { comment_id: number; body: string }) => {
         calls.push(`issues.updateComment ${comment_id}`);
         if (!state.comments.has(comment_id)) throw notFound();
-        state.comments.set(comment_id, { body, bot: true });
+        state.comments.set(comment_id, { ...state.comments.get(comment_id)!, body });
         return { data: {} };
       },
     },
