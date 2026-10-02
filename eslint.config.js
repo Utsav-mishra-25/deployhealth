@@ -36,3 +36,4 @@ export default tseslint.config(
     },
   },
 );
+const x = process.env.SOME_NEW_VAR;
