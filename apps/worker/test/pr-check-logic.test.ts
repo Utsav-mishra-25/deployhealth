@@ -270,6 +270,19 @@ describe("GitHub's size limits", () => {
     expect(comment).not.toContain(longName);
   });
 
+  it('states exact totals when the lists were cut short in the isolate', () => {
+    const report: PrReport = {
+      ...emptyReport(),
+      added: [{ name: 'A', refs: [{ file: 'a.ts', line: 1 }], total: 1, declared: false }],
+      undeclared: ['A'],
+      counts: { added: 5_000, addedUndeclared: 4_000, removed: 0, renamed: 0, renamedUndeclared: 0, undeclared: 4_000, envFiles: 0, secrets: 0 },
+    };
+    expect(renderComment(report, { mode: 'comment', headSha: 'a'.repeat(40) })).toContain('**5000 env vars added (4000 not in .env.example).**');
+    const output = checkRunOutput(report, 'neutral');
+    expect(output.summary).toBe('5000 env vars added (4000 not in .env.example). Not in .env.example: `A` and 3999 more.');
+    expect(output.text).toContain('- …and 3999 more');
+  });
+
   it('cuts at whole lines with a note, keeping the tail', () => {
     const lines = Array.from({ length: 100 }, (_, i) => `line ${i} ${'x'.repeat(90)}`);
     const out = fitLines(lines, 2_000, ['', 'TAIL']);

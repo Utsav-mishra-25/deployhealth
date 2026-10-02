@@ -11,6 +11,7 @@ import {
   conclusionFor,
   emptyReport,
   renderComment,
+  totals,
   uncheckableOutput,
   worthCommenting,
   type PrReport,
@@ -219,7 +220,7 @@ export async function prCheck(job: PrCheckJobData, deps: PrCheckDeps): Promise<P
     renamedVars: report.renamed,
     undeclaredVars: report.undeclared,
     committedEnvFiles: report.envFiles,
-    secretHits: report.secrets.length,
+    secretHits: totals(report).secrets,
     conclusion,
   });
 
@@ -250,9 +251,10 @@ export async function prCheck(job: PrCheckJobData, deps: PrCheckDeps): Promise<P
   checkRunId ??= await api.createCheckRun(pr.headSha, output);
 
   await deps.setGithubIds(row.id, { commentId, checkRunId });
+  const n = totals(report);
   deps.log(
-    `[pr-check] ${where} ${pr.headSha.slice(0, 7)}: ${conclusion} (+${report.added.length} -${report.removed.length} ~${report.renamed.length}, ` +
-      `${report.undeclared.length} undeclared, ${report.envFiles.length} env files, ${report.secrets.length} possible secrets${agent.name ? `, agent ${agent.name}` : ''})`,
+    `[pr-check] ${where} ${pr.headSha.slice(0, 7)}: ${conclusion} (+${n.added} -${n.removed} ~${n.renamed}, ` +
+      `${n.undeclared} undeclared, ${n.envFiles} env files, ${n.secrets} possible secrets${agent.name ? `, agent ${agent.name}` : ''})`,
   );
   return conclusion;
 }
