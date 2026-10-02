@@ -21,6 +21,10 @@ export interface BuildOptions {
  *
  * Only GitHub calls happen here, on the main thread; choosing files and everything after the
  * downloads runs in the isolate, which throws UncheckableError when it can't finish.
+ *
+ * The outcome is decided from the tree listings, before any blob is downloaded: `cant-check`
+ * when head holds no source file in a language the scanner reads, `nothing-changed` when the
+ * pull request changes no file the check reads, else `checked`. The first two download no blobs.
  */
 export async function buildReport(api: GithubApi, pr: PullRequestInfo, { budget = createFetchBudget(), openIsolate = openPrCheckIsolate }: BuildOptions = {}): Promise<PrReport> {
   const [baseTree, headTree] = await Promise.all([api.tree(pr.baseSha), api.tree(pr.headSha)]);
@@ -31,8 +35,21 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, { budget 
   const isolate = await openIsolate();
   try {
     // Choose the files each side would scan. Tracked files are never gitignored, so no .gitignore is read.
-    const strip = (blobs: readonly TreeBlob[]) => blobs.map(({ path, size }) => ({ path, size }));
+    const strip = (blobs: readonly TreeBlob[]) => blobs.map(({ path, sha, size }) => ({ path, sha, size }));
     const chosen = await isolate.run('select', { base: strip(baseTree.blobs), head: strip(headTree.blobs) });
+    const { coverage } = chosen;
+    const tree = (blobs: readonly TreeBlob[]) => blobs.map(({ path, sha }) => ({ path, sha }));
+
+    // No supported source file in head (can't check), or no file the check reads changed: no file
+    // contents are needed. The checks that don't depend on a language still run: secrets on the
+    // pull request's added lines, and committed env files from the tree paths.
+    if (coverage.sourceFiles === 0 || coverage.changedRead === 0) {
+      const pullFiles = await api.pullFiles(pr.number);
+      for (const file of pullFiles) budget.take(Buffer.byteLength(file.patch ?? ''));
+      const analysis = await isolate.run('analyze', { base: [], head: [], baseTree: tree(baseTree.blobs), headTree: tree(headTree.blobs), pullFiles });
+      return { ...analysis, tooLarge: null, coverage, outcome: coverage.sourceFiles === 0 ? 'cant-check' : 'nothing-changed' };
+    }
+
     const pick = (blobs: readonly TreeBlob[], paths: readonly string[]) => {
       const byPath = new Map(blobs.map((b) => [b.path, b]));
       return paths.map((path) => byPath.get(path)!);
@@ -74,7 +91,6 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, { budget 
     await forEachLimited([...new Map([...baseFiles, ...headFiles].map((b) => [b.sha, b])).values()], DOWNLOAD_CONCURRENCY, download);
 
     const read = async (files: readonly TreeBlob[]) => Promise.all(files.map(async (b) => [b.path, await download(b)] as const));
-    const tree = (blobs: readonly TreeBlob[]) => blobs.map(({ path, sha }) => ({ path, sha }));
     const analysis = await isolate.run('analyze', {
       base: await read(baseFiles),
       head: await read(headFiles),
@@ -82,7 +98,7 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, { budget 
       headTree: tree(headTree.blobs),
       pullFiles,
     });
-    return { ...analysis, tooLarge: null };
+    return { ...analysis, tooLarge: null, coverage, outcome: 'checked' };
   } finally {
     await isolate.close();
   }

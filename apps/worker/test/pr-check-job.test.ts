@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { githubApi } from '../src/github/api';
 import { prCheck, type PrCheckDeps } from '../src/jobs';
 import { openPrCheckIsolate } from '../src/pr-check/isolate';
-import { COMMENT_MARKER, UNCHECKABLE_SUMMARY, UNCHECKABLE_TITLE } from '../src/pr-check/report';
+import { CANT_CHECK_TITLE, COMMENT_MARKER, NOTHING_CHANGED_TITLE, UNCHECKABLE_SUMMARY, UNCHECKABLE_TITLE } from '../src/pr-check/report';
 import { MOCK_APP_ID, mockOctokit, type MockRepo } from './mock-octokit';
 
 const ENV = ['process', 'env'].join('.');
@@ -193,7 +193,8 @@ describe('prCheck against a mocked Octokit', () => {
     const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, 'src/db.ts': `connect(${ENV}.DATABASE_URL, { pool: 5 });` } } }));
     expect(await prCheck(JOB, harness(mock).deps)).toBe('success');
     expect(mock.state.comments.size).toBe(0);
-    expect([...mock.state.checkRuns.values()][0]).toMatchObject({ conclusion: 'success', title: 'No env var changes' });
+    // A clean pass says what it read: .env.example, src/db.ts, generated/client.ts; one of them changed.
+    expect([...mock.state.checkRuns.values()][0]).toMatchObject({ conclusion: 'success', title: 'Checked 3 files (JS/TS), 1 changed: no undeclared env vars' });
   });
 
   it("does nothing in 'off' mode, for a closed pull request, or when no project matches", async () => {
@@ -310,3 +311,141 @@ describe("a check the isolate can't finish", () => {
   });
 });
 
+describe('what the check read: repos it can\'t read, pull requests that change nothing it reads', () => {
+  const JAVA = {
+    'pom.xml': '<project/>',
+    'src/main/java/app/App.java': 'class App { String url = System.getenv("DATABASE_URL"); }',
+    'src/main/java/app/Config.java': 'class Config {}',
+    'src/main/kotlin/app/Util.kt': 'object Util',
+    'src/main/resources/application.properties': 'spring.datasource.url=${DATABASE_URL}',
+  };
+  const PR = repo().pulls[42]!;
+  const javaRepo = (head: Record<string, string>, files: Array<{ filename: string; patch?: string }> = []) =>
+    repo({ commits: { base1: JAVA, head1: head }, pulls: { 42: { ...PR, author: 'octocat', files } } });
+  const runs = (mock: ReturnType<typeof mockOctokit>) => [...mock.state.checkRuns.values()];
+  const blobs = (mock: ReturnType<typeof mockOctokit>) => mock.calls.filter((c) => c.startsWith('git.getBlob'));
+
+  it('a Java/Kotlin repo: neutral, the can\'t-check title, no comment, no blob downloads; strict mode too', async () => {
+    const head = { ...JAVA, 'src/main/java/app/Feature.java': 'class Feature { String k = System.getenv("NEW_KEY"); }' };
+    for (const mode of ['comment', 'strict'] as const) {
+      const mock = mockOctokit(javaRepo(head, [{ filename: 'src/main/java/app/Feature.java', patch: '@@ -0,0 +1 @@\n+class Feature {}' }]));
+      const { deps, rows } = harness(mock, { mode });
+      expect(await prCheck(JOB, deps)).toBe('neutral');
+      expect(runs(mock)).toEqual([expect.objectContaining({ conclusion: 'neutral', title: CANT_CHECK_TITLE })]);
+      expect(CANT_CHECK_TITLE).toBe("deployhealth can't check this repo yet: no JS/TS, Python, Go or Ruby files found");
+      const summary = runs(mock)[0]!.summary;
+      expect(summary).toContain('deployhealth reads JS/TS, Python, Go and Ruby. Java/Kotlin, PHP, Rust, C# and others aren\'t read yet');
+      expect(summary).toContain('It holds 3 .java, 1 .kt, 1 .properties files that deployhealth doesn\'t read.');
+      expect(summary).toContain('https://github.com/Utsav-mishra-25/deployhealth#known-limitations');
+      expect(summary).not.toContain('src/main'); // counts only, never paths
+      expect(mock.state.comments.size).toBe(0);
+      expect(blobs(mock)).toEqual([]);
+      expect(rows[0]).toMatchObject({ conclusion: 'neutral', addedVars: [], undeclaredVars: [], committedEnvFiles: [], secretHits: 0 });
+    }
+  });
+
+  it('is still can\'t check with a .env.example, or when the only JS is tests and vendored code', async () => {
+    const extras: Array<Record<string, string>> = [
+      { '.env.example': 'DATABASE_URL=\n' },
+      { 'web/app.test.ts': `${ENV}.A`, 'node_modules/lib/index.js': `${ENV}.B`, 'vendor/x.min.js': `${ENV}.C`, 'e2e/login.spec.ts': `${ENV}.D` },
+    ];
+    for (const extra of extras) {
+      const mock = mockOctokit(javaRepo({ ...JAVA, ...extra }));
+      const { deps } = harness(mock, { mode: 'strict' });
+      expect(await prCheck(JOB, deps)).toBe('neutral');
+      expect(runs(mock)[0]).toMatchObject({ conclusion: 'neutral', title: CANT_CHECK_TITLE });
+      expect(mock.state.comments.size).toBe(0);
+      expect(blobs(mock)).toEqual([]);
+    }
+  });
+
+  it('a Java repo whose pull request commits a .env: flagged as today, and the title says both', async () => {
+    const mock = mockOctokit(javaRepo({ ...JAVA, '.env': 'DATABASE_URL=postgres://x' }));
+    const { deps, rows } = harness(mock, { mode: 'strict' });
+    expect(await prCheck(JOB, deps)).toBe('failure');
+    expect(rows[0]).toMatchObject({ committedEnvFiles: [{ path: '.env', added: true }] });
+    expect(runs(mock)[0]).toMatchObject({
+      conclusion: 'failure',
+      title: "1 committed env file; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go or Ruby files)",
+    });
+    const comment = [...mock.state.comments.values()][0]!.body;
+    expect(comment).toContain('#### Committed env files');
+    expect(comment).toContain("deployhealth reads JS/TS, Python, Go and Ruby; Java/Kotlin, PHP, Rust, C# and others aren't read yet");
+    expect(blobs(mock)).toEqual([]);
+  });
+
+  it('a Java repo whose pull request adds a secret-shaped string: flagged as today', async () => {
+    const token = ['gh', 'p_', 'y'.repeat(36)].join('');
+    const mock = mockOctokit(javaRepo(JAVA, [{ filename: 'src/main/java/app/App.java', patch: `@@ -0,0 +1 @@\n+String t = "${token}";` }]));
+    const { deps, rows } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]).toMatchObject({ secretHits: 1 });
+    expect(runs(mock)[0]!.title).toBe("1 possible secret; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go or Ruby files)");
+    expect(mock.state.comments.size).toBe(1);
+    expect(JSON.stringify([...mock.state.comments.values(), ...runs(mock)])).not.toContain(token);
+  });
+
+  it('a JS repo whose pull request changes only README.md: the nothing-changed title, success, no comment', async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, 'README.md': 'changed' } } }));
+    const { deps } = harness(mock, { mode: 'strict' });
+    expect(await prCheck(JOB, deps)).toBe('success');
+    expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
+    expect(NOTHING_CHANGED_TITLE).toBe('No JS/TS, Python, Go or Ruby files or env files changed');
+    expect(runs(mock)[0]!.summary).toContain('Read 3 files (JS/TS 2, 1 env or Compose file)');
+    expect(mock.state.comments.size).toBe(0);
+    expect(blobs(mock)).toEqual([]);
+  });
+
+  it('a JS repo whose pull request changes only a .java file: the nothing-changed title, counting the .java file', async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, 'tools/Gen.java': 'class Gen {}' } } }));
+    const { deps } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('success');
+    expect(runs(mock)[0]!.title).toBe(NOTHING_CHANGED_TITLE);
+    expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .java file, which deployhealth doesn't read yet.");
+  });
+
+  it('a JS repo whose pull request adds a secret in a .java file: still flagged as today', async () => {
+    const token = ['gh', 'p_', 'z'.repeat(36)].join('');
+    const mock = mockOctokit(
+      repo({
+        commits: { base1: BASE, head1: { ...BASE, 'tools/Gen.java': 'class Gen {}' } },
+        pulls: { 42: { ...PR, author: 'octocat', files: [{ filename: 'tools/Gen.java', patch: `@@ -0,0 +1 @@\n+String t = "${token}";` }] } },
+      }),
+    );
+    const { deps, rows } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]).toMatchObject({ secretHits: 1 });
+    expect(runs(mock)[0]!.title).toBe('1 possible secret');
+    expect([...mock.state.comments.values()][0]!.body).toContain('**1 possible secret in added lines**');
+  });
+
+  it('a clean pass says what it read, per language, and stays under 255 characters with every language', async () => {
+    const all = { ...BASE, 'svc/main.go': 'package main', 'api/app.py': 'import os', 'lib/task.rb': 'puts 1', 'src/new.ts': 'export const x = 1;' };
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: all } }));
+    const { deps } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('success');
+    const run = runs(mock)[0]!;
+    expect(run.title).toBe('Checked 7 files (JS/TS, Python, Go, Ruby), 4 changed: no undeclared env vars');
+    expect(run.title.length).toBeLessThan(255);
+    expect(run.summary).toContain('Read 7 files (JS/TS 3, Python 1, Go 1, Ruby 1, 1 env or Compose file), 4 changed in this pull request.');
+  });
+
+  it('keeps today\'s comment and conclusion for a pull request that adds an undeclared var', async () => {
+    const mock = mockOctokit(repo());
+    const { deps } = harness(mock, { mode: 'strict' });
+    expect(await prCheck(JOB, deps)).toBe('failure');
+    expect(runs(mock)[0]).toMatchObject({ conclusion: 'failure', title: '1 env var added (1 not in .env.example)' });
+    expect([...mock.state.comments.values()][0]!.body).toContain('❌ **1 env var added (1 not in .env.example).**');
+  });
+
+  it('rewrites an earlier head\'s comment when a later head can\'t be checked, and never creates one', async () => {
+    // An earlier head of this pull request got a comment; the current head holds no source file it reads.
+    const mock = mockOctokit(javaRepo(JAVA));
+    mock.state.comments.set(7, { body: `${COMMENT_MARKER}\n⚠️ **1 env var added (1 not in .env.example).**`, bot: true, appId: MOCK_APP_ID });
+    const { deps } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect([...mock.state.comments.keys()]).toEqual([7]);
+    expect(mock.state.comments.get(7)!.body).toContain(`ℹ️ **${CANT_CHECK_TITLE}.**`);
+    expect(mock.state.comments.get(7)!.body).not.toContain('env var added');
+  });
+});

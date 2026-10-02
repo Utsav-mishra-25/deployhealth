@@ -253,7 +253,7 @@ export async function prCheck(job: PrCheckJobData, deps: PrCheckDeps): Promise<P
   await deps.setGithubIds(row.id, { commentId, checkRunId });
   const n = totals(report);
   deps.log(
-    `[pr-check] ${where} ${pr.headSha.slice(0, 7)}: ${conclusion} (+${n.added} -${n.removed} ~${n.renamed}, ` +
+    `[pr-check] ${where} ${pr.headSha.slice(0, 7)}: ${conclusion}${report.outcome && report.outcome !== 'checked' ? ` ${report.outcome}` : ''} (+${n.added} -${n.removed} ~${n.renamed}, ` +
       `${n.undeclared} undeclared, ${n.envFiles} env files, ${n.secrets} possible secrets${agent.name ? `, agent ${agent.name}` : ''})`,
   );
   return conclusion;
