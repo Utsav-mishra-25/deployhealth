@@ -1,6 +1,6 @@
 {
   "name": "deployhealth-scan",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Find env var drift in a repo (read in code but never defined, defined but never read, out of sync between env files) and report it to deployhealth.",
   "license": "MIT",
   "author": "Utsav Mishra",

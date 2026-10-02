@@ -77,8 +77,8 @@ Same-line, regex-based scanning misses some things on purpose:
 ## Try it locally
 
 ```sh
-npx deployhealth-scan@0.3.0 --dry-run          # grouped findings with file:line
-npx deployhealth-scan@0.3.0 --dry-run --json   # the same, as JSON
+npx deployhealth-scan@0.3.1 --dry-run          # grouped findings with file:line
+npx deployhealth-scan@0.3.1 --dry-run --json   # the same, as JSON
 ```
 
 With `--dry-run` nothing leaves your machine.
@@ -113,14 +113,14 @@ jobs:
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
         run: |
-          npx --yes deployhealth-scan@0.3.0 \
+          npx --yes deployhealth-scan@0.3.1 \
             --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
             --branch "$GITHUB_REF_NAME"
 ```
 
-Pin the version (`@0.3.0`) so an update never runs in your CI unreviewed. For a self-hosted
+Pin the version (`@0.3.1`) so an update never runs in your CI unreviewed. For a self-hosted
 deployhealth, change `--url` to your instance.
 
 ## What it sends
@@ -134,7 +134,8 @@ names they define; values are neither sent nor printed.
 
 ```
 --url <url>          deployhealth base URL (required unless --dry-run)
---token <token>      the project's ingest token, dh_... (required unless --dry-run)
+--token <token>      the project's ingest token, dh_... (required unless --dry-run;
+                     default: the DEPLOYHEALTH_TOKEN environment variable)
 --sha <sha>          commit being deployed (default: git rev-parse HEAD)
 --branch <name>      branch being deployed (default: current git branch)
 --dir <path>         directory to scan (default: current directory)
@@ -150,6 +151,10 @@ names they define; values are neither sent nor printed.
 -v, --version        print the version
 -h, --help           show this help
 ```
+
+The token can come from the `DEPLOYHEALTH_TOKEN` environment variable instead of `--token`, which
+keeps it out of process listings. A `--url` that is plain `http:` to anything but this machine
+prints a warning: the token and the report would travel unencrypted.
 
 Exit codes: `0` success, `1` the report failed (network or HTTP error), `2` usage error.
 
