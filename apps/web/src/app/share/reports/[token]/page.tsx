@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { PrintButton } from '@/components/print-button';
 import { serverEnv } from '@/env';
 import { getDb } from '@/lib/db';
-import { reportShareKey, verifyReportShare } from '@/lib/share-link';
+import { reportShareKey, shareTokenFromParam, verifyReportShare } from '@/lib/share-link';
 import { ReportView } from '@/views/report-view';
 
 export const dynamic = 'force-dynamic';
@@ -16,9 +16,10 @@ export const metadata: Metadata = { title: 'Monthly report · deployhealth', rob
  * one month; getClientReport reads nothing else. Rate-limited per IP in middleware.ts.
  */
 export default async function SharedReportPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+  const token = shareTokenFromParam((await params).token);
+  if (token === null) notFound();
   const now = new Date();
-  const verified = verifyReportShare(decodeURIComponent(token), reportShareKey(serverEnv()), now);
+  const verified = verifyReportShare(token, reportShareKey(serverEnv()), now);
 
   if (!verified.ok && verified.reason === 'expired') {
     return (
