@@ -1,6 +1,15 @@
-import { plural, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
+import {
+  LANGUAGES_DOC_URL,
+  plural,
+  PR_CHECK_TIME_LIMIT_MS,
+  SUPPORTED_LANGUAGES,
+  SUPPORTED_LANGUAGES_AND,
+  SUPPORTED_LANGUAGES_OR,
+  UNREAD_LANGUAGES_TEXT,
+} from '@deployhealth/core';
 import type { PrCheck, PrCheckMode, PrEnvFile } from '@deployhealth/db';
 import type { CheckRunOutput } from '../github/api';
+import { describeExtensionCounts, type Coverage } from './coverage';
 import type { EnvVarDiff } from './diff';
 import { secretRuleLabel, type SecretHit } from './secrets';
 
@@ -30,7 +39,19 @@ export interface PrReport extends EnvVarDiff {
   tooLarge: string | null;
   /** Exact totals when the lists above were cut short (analysis.ts); else the lists' lengths. */
   counts?: ReportCounts;
+  /**
+   * Decided from the tree listings (build.ts): `cant-check` (no source file in a language the
+   * scanner reads), `nothing-changed` (the pull request changes no file the check reads), or
+   * `checked`. Absent when a cap stopped the check.
+   */
+  outcome?: 'cant-check' | 'nothing-changed' | 'checked';
+  coverage?: Coverage;
 }
+
+/** The check run's title when the repo holds nothing the scanner reads and nothing else was found. */
+export const CANT_CHECK_TITLE = `deployhealth can't check this repo yet: no ${SUPPORTED_LANGUAGES_OR} files found`;
+/** The check run's title when the pull request changes no file the check reads. */
+export const NOTHING_CHANGED_TITLE = `No ${SUPPORTED_LANGUAGES_OR} files or env files changed`;
 
 export interface ReportCounts {
   added: number;
@@ -77,7 +98,9 @@ const hasFindings = (r: PrReport) => r.undeclared.length > 0 || r.envFiles.lengt
  */
 export function conclusionFor(report: PrReport, mode: Exclude<PrCheckMode, 'off'>): PrCheck['conclusion'] {
   if (report.tooLarge) return 'neutral';
-  if (!hasFindings(report)) return 'success';
+  // A repo it can't read is never a pass, nor a reason to block a merge, unless something it can
+  // check without reading code (a committed env file, a secret) was found.
+  if (!hasFindings(report)) return report.outcome === 'cant-check' ? 'neutral' : 'success';
   return mode === 'strict' ? 'failure' : 'neutral';
 }
 
@@ -88,6 +111,11 @@ export const worthCommenting = (r: PrReport) =>
 /** One line: "2 env vars added (1 not in .env.example), 1 removed, 1 renamed". */
 export function summaryLine(r: PrReport): string {
   if (r.tooLarge) return r.tooLarge;
+  return changesLine(r) || 'No env var changes';
+}
+
+/** What the pull request does to env vars, env files and secrets, or '' when nothing. */
+function changesLine(r: PrReport): string {
   const n = totals(r);
   const parts: string[] = [];
   if (n.added) parts.push(`${plural(n.added, 'env var')} added${n.addedUndeclared ? ` (${n.addedUndeclared} not in .env.example)` : ''}`);
@@ -95,7 +123,58 @@ export function summaryLine(r: PrReport): string {
   if (n.renamed) parts.push(`${n.renamed} renamed${n.renamedUndeclared ? ` (${n.renamedUndeclared} not in .env.example)` : ''}`);
   if (n.envFiles) parts.push(plural(n.envFiles, 'committed env file'));
   if (n.secrets) parts.push(plural(n.secrets, 'possible secret'));
-  return parts.length ? parts.join(', ') : 'No env var changes';
+  return parts.join(', ');
+}
+
+/**
+ * The check run's title: the can't-check and nothing-changed titles, a clean pass saying what was
+ * read ("Checked 42 files (JS/TS, Python), 3 changed: no undeclared env vars"), else today's line.
+ * Never over MAX_TITLE: the language list is shortened, never the counts.
+ */
+export function titleFor(r: PrReport): string {
+  if (r.tooLarge) return r.tooLarge;
+  const changes = changesLine(r);
+  if (r.outcome === 'cant-check') {
+    return changes ? `${capitalize(changes)}; deployhealth can't check env vars in this repo yet (no ${SUPPORTED_LANGUAGES_OR} files)` : CANT_CHECK_TITLE;
+  }
+  if (r.outcome === 'nothing-changed') return changes ? capitalize(changes) : NOTHING_CHANGED_TITLE;
+  if (hasFindings(r) || !r.coverage) return summaryLine(r);
+  const c = r.coverage;
+  const labels = SUPPORTED_LANGUAGES.filter((l) => c.sourceByLanguage[l.id] > 0).map((l) => l.label);
+  const title = (langs: string) => `Checked ${plural(c.readFiles, 'file')} (${langs}), ${c.changedRead} changed: no undeclared env vars`;
+  const full = title(labels.join(', '));
+  return full.length <= MAX_TITLE ? full : shorten(title(`${labels[0]} +${labels.length - 1}`), MAX_TITLE);
+}
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** "JS/TS 30, Python 10 and 2 env or Compose files" */
+function readBreakdown(c: Coverage): string {
+  const parts = SUPPORTED_LANGUAGES.filter((l) => c.sourceByLanguage[l.id] > 0).map((l) => `${l.label} ${c.sourceByLanguage[l.id]}`);
+  const other = c.readFiles - c.sourceFiles;
+  if (other > 0) parts.push(plural(other, 'env or Compose file'));
+  return parts.join(', ');
+}
+
+/** The coverage lines of the check run's summary, per outcome. */
+function coverageLines(r: PrReport): string[] {
+  const c = r.coverage;
+  if (!c) return [];
+  const changedUnread = describeExtensionCounts(c.unsupportedChanged);
+  const alsoChanged = changedUnread ? [`This pull request also changed ${changedUnread}, which deployhealth doesn't read yet.`] : [];
+  if (r.outcome === 'cant-check') {
+    const found = describeExtensionCounts(c.unsupported);
+    return [
+      `deployhealth reads ${SUPPORTED_LANGUAGES_AND}. ${UNREAD_LANGUAGES_TEXT} aren't read yet, so this repository's env vars can't be checked.`,
+      ...(found ? [`It holds ${found} that deployhealth doesn't read.`] : []),
+      'Committed env files and secret-shaped strings on added lines are still checked.',
+      `Which languages are read: ${LANGUAGES_DOC_URL}`,
+    ];
+  }
+  if (r.outcome === 'nothing-changed') {
+    return [`This pull request changes no ${SUPPORTED_LANGUAGES_OR} file and no env file, so no env var changed. Read ${plural(c.readFiles, 'file')} (${readBreakdown(c)}).`, ...alsoChanged];
+  }
+  return [`Read ${plural(c.readFiles, 'file')} (${readBreakdown(c)}), ${c.changedRead} changed in this pull request.`, ...alsoChanged];
 }
 
 /** `text` cut to `max` characters: its start, an ellipsis, and its end (the more telling part of a path). */
@@ -155,7 +234,12 @@ const where = (refs: ReadonlyArray<{ file: string; line: number }>, total: numbe
 export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<PrCheckMode, 'off'>; headSha: string }): string {
   const status = hasFindings(r) ? (mode === 'strict' ? '❌' : '⚠️') : '✅';
   const n = totals(r);
-  const lines = [COMMENT_MARKER, `### ${COMMENT_TITLE}`, '', `${r.tooLarge ? 'ℹ️' : status} **${summaryLine(r)}.**`];
+  const cantCheck = r.outcome === 'cant-check';
+  const headline = cantCheck ? titleFor(r) : summaryLine(r);
+  const lines = [COMMENT_MARKER, `### ${COMMENT_TITLE}`, '', `${r.tooLarge || (cantCheck && !hasFindings(r)) ? 'ℹ️' : status} **${headline}.**`];
+  if (cantCheck) {
+    lines.push('', `deployhealth reads ${SUPPORTED_LANGUAGES_AND}; ${UNREAD_LANGUAGES_TEXT} aren't read yet ([which languages](${LANGUAGES_DOC_URL})).`);
+  }
 
   if (!r.tooLarge) {
     if (r.added.length) {
@@ -194,10 +278,18 @@ export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): 
   }
   const inline = r.undeclared.slice(0, MAX_INLINE).map((v) => `\`${name(v)}\``);
   const more = n.undeclared > inline.length ? ` and ${n.undeclared - inline.length} more` : '';
+  const changes = changesLine(r);
+  const first = r.tooLarge
+    ? [r.tooLarge]
+    : r.outcome === 'cant-check' || r.outcome === 'nothing-changed'
+      ? changes
+        ? [`${capitalize(changes)}.`]
+        : []
+      : [`${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${inline.join(', ')}${more}.` : ''}`];
   return {
     conclusion,
-    title: shorten(summaryLine(r), MAX_TITLE),
-    summary: fitLines([r.tooLarge ? r.tooLarge : `${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${inline.join(', ')}${more}.` : ''}`], MAX_GITHUB_TEXT),
+    title: shorten(titleFor(r), MAX_TITLE),
+    summary: fitLines([...first, ...coverageLines(r)].join('\n\n').split('\n'), MAX_GITHUB_TEXT),
     text: text.length ? fitLines(text, MAX_GITHUB_TEXT) : undefined,
   };
 }
