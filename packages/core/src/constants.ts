@@ -8,7 +8,7 @@ export const TOKEN_SECRET_NAME = 'DEPLOYHEALTH_TOKEN';
 /** The CLI's npm package, and the exact version snippets and docs pin. */
 export const CLI_NPM_PACKAGE = 'deployhealth-scan';
 /** Bump only after that version is on npm (it can trail src/version.ts while a release is pending). */
-export const PUBLISHED_CLI_VERSION = '0.3.0';
+export const PUBLISHED_CLI_VERSION = '0.3.1';
 
 /**
  * Deprecated: the single-file CLI bundle the web app still serves at this path, for workflows
