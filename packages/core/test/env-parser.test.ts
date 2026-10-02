@@ -73,12 +73,49 @@ describe('parseEnv', () => {
     expect(entries[1]?.value).toBe('-----BEGIN-----\nabc\nNOT_A_KEY=inside\n-----END-----');
   });
 
-  it('treats an unterminated quote as a literal value and keeps parsing', () => {
-    const { entries } = parseEnv('A="oops\nB=2');
-    expect(entries).toEqual([
-      { key: 'A', value: '"oops', line: 1 },
-      { key: 'B', value: '2', line: 2 },
+  // Values that look like key material are assembled at run time.
+  const base64Line = () => Array.from({ length: 64 }, (_, i) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[(i * 7 + 3) % 62]).join('');
+  const dashes = '-'.repeat(5);
+
+  it('reads the rest of the file as the value of a quote that never closes, and stops there', () => {
+    const result = parseEnv(`KEY="abc\n${base64Line()}=\nOTHER=1\n`);
+    expect(result.entries.map((e) => e.key)).toEqual(['KEY']);
+    expect(result.entries[0]!.value).toBe(`abc\n${base64Line()}=\nOTHER=1\n`);
+    expect(result.unterminated).toEqual({ line: 1, kind: 'quote' });
+    expect(result.invalid).toEqual([]);
+  });
+
+  it('keeps parsing after a multi-line quote that does close', () => {
+    const result = parseEnv(`KEY="abc\n${base64Line()}="\nOTHER=1\n`);
+    expect(result.entries.map((e) => e.key)).toEqual(['KEY', 'OTHER']);
+    expect(result.unterminated).toBeNull();
+  });
+
+  it('skips an unquoted PEM block, on its own or as a value, through its END line', () => {
+    const block = [`${dashes}BEGIN PRIVATE KEY${dashes}`, `${base64Line()}=`, `${base64Line()}==`, `${dashes}END PRIVATE KEY${dashes}`];
+    const asValue = parseEnv(['A=1', `PRIVATE_KEY=${block[0]}`, ...block.slice(1), 'B=2'].join('\n'));
+    expect(asValue.entries).toEqual([
+      { key: 'A', value: '1', line: 1 },
+      { key: 'PRIVATE_KEY', value: block[0], line: 2 },
+      { key: 'B', value: '2', line: 6 },
     ]);
+    expect(asValue.invalid).toEqual([]);
+    const bare = parseEnv(['A=1', ...block, 'B=2'].join('\n'));
+    expect(bare.entries.map((e) => e.key)).toEqual(['A', 'B']);
+    expect(bare.unterminated).toBeNull();
+  });
+
+  it('skips the rest of the file after a PEM block with no END line', () => {
+    const result = parseEnv(['A=1', `K=${dashes}BEGIN RSA PRIVATE KEY${dashes}`, `${base64Line()}=`, 'B=2'].join('\n'));
+    expect(result.entries.map((e) => e.key)).toEqual(['A', 'K']);
+    expect(result.unterminated).toEqual({ line: 2, kind: 'block' });
+  });
+
+  it('reads a quote that never closes over 50,000 lines in linear time', () => {
+    const started = performance.now();
+    const result = parseEnv(`KEY="abc\n${'x\n'.repeat(50_000)}`);
+    expect(result.entries).toHaveLength(1);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   it('handles CRLF line endings and a UTF-8 BOM', () => {
