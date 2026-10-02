@@ -8,9 +8,11 @@ const DOWNLOAD_CONCURRENCY = 8;
 
 /**
  * Read a pull request from GitHub and work out its report, within the hard caps: every file
- * fetched (blobs of both trees, one download per distinct blob, plus the pull request's patches)
- * is reserved against `budget` before it's downloaded, so an oversized pull request is refused
- * before the bulk of the work. Throws LimitExceededError when a cap is hit.
+ * scanned (each distinct path and blob of both trees, plus the pull request's patches) is
+ * reserved against `budget` before anything is downloaded, so an oversized pull request is
+ * refused before the bulk of the work. A file unchanged between base and head counts once; many
+ * paths sharing one blob count once each, since each is scanned. Each distinct blob is still
+ * downloaded once. Throws LimitExceededError when a cap is hit.
  */
 export async function buildReport(api: GithubApi, pr: PullRequestInfo, budget = createFetchBudget()): Promise<PrReport> {
   const [baseTree, headTree] = await Promise.all([api.tree(pr.baseSha), api.tree(pr.headSha)]);
@@ -19,17 +21,22 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, budget = 
   }
 
   const reserved = new Set<string>();
+  /** Reservations per blob, so `verify` corrects the byte count once for each of them. */
+  const copies = new Map<string, number>();
   const contents = new Map<string, Promise<string>>();
   const reserve = (blob: TreeBlob) => {
-    if (reserved.has(blob.sha)) return;
+    const key = `${blob.path}\0${blob.sha}`;
+    if (reserved.has(key)) return;
     budget.take(blob.size);
-    reserved.add(blob.sha);
+    reserved.add(key);
+    copies.set(blob.sha, (copies.get(blob.sha) ?? 0) + 1);
   };
   const download = (blob: TreeBlob) => {
     let text = contents.get(blob.sha);
     if (!text) {
       text = api.blob(blob.sha).then((buffer) => {
-        budget.verify(blob.size, buffer.length);
+        const n = copies.get(blob.sha) ?? 1;
+        budget.verify(blob.size * n, buffer.length * n);
         return buffer.toString('utf8');
       });
       contents.set(blob.sha, text);

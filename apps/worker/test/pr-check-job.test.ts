@@ -228,6 +228,24 @@ describe('hard caps on what a check fetches', () => {
     expect([...mock.state.comments.values()][0]!.body).toContain('needs more than 2000 files; too large to check');
   });
 
+  it('counts every path toward the 2,000-file cap, even when they all share one blob', async () => {
+    const copies = Object.fromEntries(Array.from({ length: MAX_PR_CHECK_FILES + 1 }, (_, i) => [`src/copy${i}.ts`, `${ENV}.SAME_EVERYWHERE`]));
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, ...copies } } }));
+    const { deps, rows } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]).toMatchObject({ addedVars: [], undeclaredVars: [] });
+    expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toEqual([]);
+    expect([...mock.state.comments.values()][0]!.body).toContain('needs more than 2000 files; too large to check');
+  });
+
+  it('counts a file unchanged between base and head once', async () => {
+    const files = Object.fromEntries(Array.from({ length: 1_200 }, (_, i) => [`src/f${i}.ts`, `export const v${i} = ${i};`]));
+    const mock = mockOctokit(repo({ commits: { base1: { ...BASE, ...files }, head1: { ...HEAD, ...files } } }));
+    const { deps, rows } = harness(mock);
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]).toMatchObject({ undeclaredVars: ['REDIS_URL'] });
+  });
+
   it('refuses more than 20 MB, counting the real size when a tree entry understates it', async () => {
     // 45 files just under the 512 KB source limit: 22.5 MB, all of which would be fetched.
     const chunk = 'x'.repeat(500 * 1024);

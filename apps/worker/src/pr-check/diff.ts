@@ -16,8 +16,26 @@ type Ref = ScanResult['references'][number];
 
 function refsByName(scan: ScanResult): Map<string, Ref[]> {
   const byName = new Map<string, Ref[]>();
-  for (const ref of scan.references) byName.set(ref.name, [...(byName.get(ref.name) ?? []), ref]);
+  for (const ref of scan.references) {
+    const list = byName.get(ref.name);
+    if (list) list.push(ref);
+    else byName.set(ref.name, [ref]);
+  }
   return byName;
+}
+
+/** For each of `names`, the files it's read in and its first line in each, by file. */
+function firstLinesByFile(names: readonly string[], refs: ReadonlyMap<string, Ref[]>): Map<string, Map<string, number>> {
+  const byFile = new Map<string, Map<string, number>>();
+  for (const name of names) {
+    for (const ref of refs.get(name)!) {
+      let lines = byFile.get(ref.file);
+      if (!lines) byFile.set(ref.file, (lines = new Map()));
+      const first = lines.get(name);
+      if (first === undefined || ref.line < first) lines.set(name, ref.line);
+    }
+  }
+  return byFile;
 }
 
 const toStored = (refs: readonly Ref[]): PrVarRef[] => refs.slice(0, PR_REFS_PER_VAR).map((r) => ({ file: r.file, line: r.line }));
@@ -37,25 +55,34 @@ export function diffEnvVars(base: ScanResult, head: ScanResult): EnvVarDiff {
   const addedNames = [...headRefs.keys()].filter((n) => !baseRefs.has(n)).sort();
   const removedNames = [...baseRefs.keys()].filter((n) => !headRefs.has(n)).sort();
 
+  // Every index below is built once, so the diff stays linear in references and variables.
+  const scopesByName = new Map<string, Array<ScanResult['variables'][number]>>();
+  for (const v of head.variables) {
+    const list = scopesByName.get(v.var_name);
+    if (list) list.push(v);
+    else scopesByName.set(v.var_name, [v]);
+  }
   const declared = (name: string) => {
-    const scopes = head.variables.filter((v) => v.var_name === name);
+    const scopes = scopesByName.get(name) ?? [];
     return scopes.length > 0 && scopes.every((v) => v.optional || v.defined_in.some(isDeclarationFile));
   };
-  const firstLineIn = (refs: readonly Ref[], file: string) => Math.min(...refs.filter((r) => r.file === file).map((r) => r.line));
 
-  // Renames: pair removed and added variables that share a file.
+  // Renames: pair removed and added variables that share a file, in order of first appearance there.
   const renamed: PrRenamedVar[] = [];
   const paired = new Set<string>();
-  const files = [...new Set([...removedNames.flatMap((n) => baseRefs.get(n)!.map((r) => r.file))])].sort();
-  for (const file of files) {
-    const gone = removedNames.filter((n) => !paired.has(n) && baseRefs.get(n)!.some((r) => r.file === file));
-    const fresh = addedNames.filter((n) => !paired.has(n) && headRefs.get(n)!.some((r) => r.file === file));
-    gone.sort((a, b) => firstLineIn(baseRefs.get(a)!, file) - firstLineIn(baseRefs.get(b)!, file));
-    fresh.sort((a, b) => firstLineIn(headRefs.get(a)!, file) - firstLineIn(headRefs.get(b)!, file));
+  const goneByFile = firstLinesByFile(removedNames, baseRefs);
+  const freshByFile = firstLinesByFile(addedNames, headRefs);
+  const byFirstLine = (lines: ReadonlyMap<string, number>) => (a: string, b: string) => lines.get(a)! - lines.get(b)! || (a < b ? -1 : a > b ? 1 : 0);
+  for (const file of [...goneByFile.keys()].sort()) {
+    const freshLines = freshByFile.get(file);
+    if (!freshLines) continue;
+    const goneLines = goneByFile.get(file)!;
+    const gone = [...goneLines.keys()].filter((n) => !paired.has(n)).sort(byFirstLine(goneLines));
+    const fresh = [...freshLines.keys()].filter((n) => !paired.has(n)).sort(byFirstLine(freshLines));
     for (let i = 0; i < Math.min(gone.length, fresh.length); i++) {
       const [from, to] = [gone[i]!, fresh[i]!];
       paired.add(from).add(to);
-      renamed.push({ from, to, file, line: firstLineIn(headRefs.get(to)!, file), declared: declared(to) });
+      renamed.push({ from, to, file, line: freshLines.get(to)!, declared: declared(to) });
     }
   }
 
