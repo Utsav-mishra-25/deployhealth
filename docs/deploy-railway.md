@@ -267,6 +267,9 @@ when the site or the worker goes down. Use [Better Stack](https://betterstack.co
   "alert after" (UptimeRobot) to a few minutes if that's noisy.
 - If Cloudflare's **Bot Fight Mode** is on, monitors may get a challenge page (403) instead of the
   app. Add a WAF custom rule that skips it for `URI Path starts with /api/health`.
+- If web's CPU sits at 100% under traffic (its **Metrics** tab), add a second replica (**Settings →
+  Deploy → Replicas**). The in-memory rate limits (`/share/*`, `/api/health/worker`) then count per
+  replica.
 
 ## Troubleshooting
 
