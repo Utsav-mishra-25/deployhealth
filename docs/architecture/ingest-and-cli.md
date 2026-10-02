@@ -8,7 +8,7 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
 
 ```
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 28 KB file, served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 29 KB file, `CLI_BUNDLE_KB`; served by web)
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
     npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
                       `build:npm` adds dist/ and LICENSE (gitignored)
@@ -34,6 +34,17 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   before publishing a CLI that sends new values (an older server rejects 0.2.0's and 0.3.0's new
   env file names). `test/ingest-handler.test.ts` pins a 0.1.0 payload.
 
+## A directory it can't check (0.3.2)
+
+- When the scan reads no supported source file (after the skip, vendored and test rules), the CLI
+  prints `NO_SOURCE_FILES_LINE` (core `languages.ts`): "No JS/TS, Python, Go or Ruby source files
+  found: deployhealth can't check this directory yet." In `--dry-run` text it follows the header;
+  with `--json` it goes to stderr and the JSON gains `"source_files": <n>` and `"can_check":
+  <bool>` (always present; `can_check` is `source_files > 0`); without `--dry-run` it is printed
+  and the scan is **still sent**, so the deploy is recorded and the project page's no-references
+  notice explains it. Always exit 0 for this (never break anyone's CI). The ingest payload is
+  unchanged: such a scan simply has no UNUSED rows (scanner.md, decision 18).
+
 ## Releasing the CLI (`deployhealth-scan` on npm)
 
 - The package is `packages/core/npm`, outside the pnpm workspace (MIT, no dependencies, one bin).
@@ -43,7 +54,9 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   and `PUBLISHED_CLI_VERSION` (`src/constants.ts`, what the Action snippet, the settings page and
   this repo's `.github/workflows/deployhealth.yml` pin). Tests keep each group in sync, and the
   first never behind the second. 0.3.1 (the 4.8 parser and matcher fixes, `DEPLOYHEALTH_TOKEN` as
-  `--token`'s default, a warning for plain-http `--url` to another machine) is on npm.
+  `--token`'s default, a warning for plain-http `--url` to another machine) is on npm. 0.3.2 (the
+  can't-check line, `source_files` / `can_check` in `--json`, no UNUSED without supported source)
+  is `CLI_VERSION` until it's published; `PUBLISHED_CLI_VERSION` and every pin stay 0.3.1 until then.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow

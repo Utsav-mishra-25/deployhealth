@@ -14,7 +14,9 @@ Phase 4.6 (scanner accuracy on real repos, CLI 0.3.0), Phase 4.7 (launch-week ha
 worker waits for migrations, a deep health check that sees the worker, capped alert lists) and
 Phase 4.8 (security fixes: the PR check runs isolated with a time limit, linear-time scanning and
 gitignore matching, an env parser that never reads a value as a name, more SSRF ranges, fair
-claims, CLI 0.3.1) are built.
+claims, CLI 0.3.1) and Phase 4.9 (unsupported stacks say so: the PR check and the CLI say what
+they read and "can't check" a repo in a language they don't read, setup split into pull request
+checks and deploy history, CLI 0.3.2) are built.
 
 ## Repository files
 

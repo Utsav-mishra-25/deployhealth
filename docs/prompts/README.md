@@ -4,6 +4,7 @@ The prompts deployhealth's phases were built from, exactly as they were given to
 
 - [Phase 4.5 — Launch polish](phase-4-5-launch-polish.md)
 - [Phase 4.6 — Scanner accuracy on real repos](phase-4-6-scanner-accuracy.md)
+- [Phase 4.9 — Unsupported stacks say so](phase-4-9-unsupported-stacks.md)
 
 Earlier phases followed the same structure, but their prompts weren't kept.
 

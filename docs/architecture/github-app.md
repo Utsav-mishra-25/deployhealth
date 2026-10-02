@@ -13,7 +13,8 @@ before changing `apps/web/src/lib/github-webhook.ts`, `apps/worker/src/github/` 
                       thread + time limit; UncheckableError), isolate-worker.ts (its entry, bundled
                       as dist/pr-check-isolate.js), analysis.ts (select files, scan, diff, secrets:
                       what runs in the thread), diff.ts, secrets.ts, agents.ts, report.ts
-                      (conclusion, the comment, the check run, GitHub's size limits)
+                      (conclusion, the comment, the check run, GitHub's size limits),
+                      coverage.ts (what a check reads, from the tree listings alone)
 ```
 
 ## The PR check runs isolated with a time limit
@@ -28,6 +29,47 @@ before changing `apps/web/src/lib/github-webhook.ts`, `apps/worker/src/github/` 
   undeclared names, with exact totals in `counts`, so copying, storing and rendering a result
   stays cheap. `test/isolate.test.ts` checks the event loop and check-endpoints stay on time while
   a check runs out its limit, and that a huge result doesn't stall the loop either.
+
+## Every check says what it read
+
+`coverage.ts#treeCoverage` runs in the isolate with the file selection (task `select`) and works
+only from the two tree listings (path, blob sha, size): the supported source files read in head per
+language (`SUPPORTED_LANGUAGES`, core `languages.ts`), all files read (source, env and declaration
+files, Compose files), how many of them the pull request changes (added, deleted, or a different
+sha between merge base and head), and the source files it doesn't read (`UNREAD_SOURCE_EXTENSIONS`,
+counts by extension only, never paths; same skip, vendored and test rules). Each pass is linear,
+with Maps; `test/coverage.test.ts` holds a 6 s bound on 100k entries a side (about 0.8 s on a
+laptop; a quadratic version ran past 98 s). `build.ts` decides the outcome from it **before any
+blob is downloaded**. The outcomes, in order:
+
+1. Mode `off` → nothing at all.
+2. A tree GitHub truncated → neutral "too large to check".
+3. The isolate fails during selection → neutral "Couldn't be checked", no comment, no retry.
+4. **Can't check:** head holds no supported source file (env and declaration files don't count;
+   tests and vendored code don't either) → no blob downloads; only the checks that don't depend on
+   a language run: secrets on the pull request's added lines, and committed env files from the
+   tree paths. Nothing flagged → neutral in every mode, strict included, titled
+   `deployhealth can't check this repo yet: no JS/TS, Python, Go or Ruby files found`, with a
+   summary naming the languages read and the unread ones found by extension, and a README link;
+   no comment is created (an earlier comment on the pull request is rewritten to say so, since its
+   findings no longer describe the head). Something flagged → today's conclusion and comment
+   (strict fails), titled e.g. `Committed env file found; deployhealth can't check env vars in this
+   repo yet (no JS/TS, Python, Go or Ruby files)`.
+5. The fetch caps (2,000 files / 20 MB) → neutral "too large to check".
+6. The isolate fails during the analysis → "Couldn't be checked", as 3.
+7. **Nothing changed that it reads:** the pull request changes no read file → no blob downloads,
+   the secret search still runs; nothing flagged → success, titled
+   `No JS/TS, Python, Go or Ruby files or env files changed`, the summary counting unread source
+   files the pull request changed (e.g. "This pull request also changed 3 .java files, which
+   deployhealth doesn't read yet."); no comment is created (an earlier one is updated, as for any
+   clean head).
+8. **Checked:** as before. A clean pass is titled with both counts, e.g. `Checked 42 files (JS/TS,
+   Python), 3 changed: no undeclared env vars` (the language list is shortened to `JS/TS +3`
+   past 255 characters, never the counts), and its summary gives the count per language.
+
+`PrReport.outcome` and `coverage` carry this to `report.ts` (`titleFor`, `coverageLines`); the
+worker's log line names the outcome when it isn't `checked`. On `/projects/[id]`, a neutral run
+that flagged nothing reads "Not checked" (`prResult` in `components/pr-checks.tsx`).
 
 ## How it works
 
