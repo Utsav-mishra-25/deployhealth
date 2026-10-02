@@ -273,6 +273,8 @@ export interface PrCheckListItem {
   agentName: string | null;
   conclusion: PrCheck['conclusion'];
   undeclared: number;
+  /** Committed env files the check flagged. */
+  envFiles: number;
   secretHits: number;
   closed: boolean;
   checkedAt: Date;
@@ -288,13 +290,15 @@ export async function listPrChecksForOwner(db: Db, ownerId: string, projectId: s
     agent_name: string | null;
     conclusion: PrCheck['conclusion'];
     undeclared: number;
+    env_files: number;
     secret_hits: number;
     closed_at: string | null;
     updated_at: string;
   }>(sql`
     select * from (
       select distinct on (pc.pr_number) pc.pr_number, pc.head_sha, pc.author_login, pc.author_is_agent, pc.agent_name,
-             pc.conclusion, jsonb_array_length(pc.undeclared_vars)::int as undeclared, pc.secret_hits, pc.closed_at, pc.updated_at
+             pc.conclusion, jsonb_array_length(pc.undeclared_vars)::int as undeclared,
+             jsonb_array_length(pc.committed_env_files)::int as env_files, pc.secret_hits, pc.closed_at, pc.updated_at
       from ${prChecks} pc
       join ${projects} p on p.id = pc.project_id
       where pc.project_id = ${projectId} and p.owner_id = ${ownerId}
@@ -311,6 +315,7 @@ export async function listPrChecksForOwner(db: Db, ownerId: string, projectId: s
     agentName: r.agent_name,
     conclusion: r.conclusion,
     undeclared: r.undeclared,
+    envFiles: r.env_files,
     secretHits: r.secret_hits,
     closed: r.closed_at !== null,
     checkedAt: new Date(r.updated_at),

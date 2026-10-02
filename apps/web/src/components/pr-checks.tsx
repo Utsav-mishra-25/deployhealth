@@ -6,7 +6,17 @@ const RESULT = {
   success: ['bg-emerald-50 text-emerald-700 ring-emerald-200', 'Passed'],
   neutral: ['bg-amber-50 text-amber-800 ring-amber-200', 'Flagged'],
   failure: ['bg-red-50 text-red-700 ring-red-200', 'Failed'],
+  unchecked: ['bg-gray-100 text-gray-700 ring-gray-200', 'Not checked'],
 } as const;
+
+/**
+ * The result shown for a check. A neutral check that flagged nothing wasn't a finding: the repo
+ * couldn't be read (no supported language), was too large, or the check couldn't finish.
+ */
+export function prResult(c: Pick<PrCheckListItem, 'conclusion' | 'undeclared' | 'envFiles' | 'secretHits'>): keyof typeof RESULT {
+  if (c.conclusion === 'neutral' && c.undeclared === 0 && c.envFiles === 0 && c.secretHits === 0) return 'unchecked';
+  return c.conclusion;
+}
 
 /** "Claude", "Copilot", …: the pull request came from a coding agent. */
 export function AgentBadge({ name }: { name: string }) {
@@ -60,7 +70,7 @@ export function PrChecksSection({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {checks.map((c) => {
-                const [tone, label] = RESULT[c.conclusion];
+                const [tone, label] = RESULT[prResult(c)];
                 return (
                   <tr key={c.prNumber} data-testid="pr-check-row">
                     <td className="py-2 pr-3 pl-4">
