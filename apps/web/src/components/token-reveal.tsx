@@ -1,6 +1,7 @@
-import { TOKEN_SECRET_NAME } from '@deployhealth/core/browser';
+import { DEPLOY_HISTORY_OPTION, PR_CHECKS_OPTION } from '@/lib/setup-copy';
 import { CodeBlock } from './code-block';
 import { CopyButton } from './copy-button';
+import { SecretSteps } from './secret-steps';
 
 /** Shown exactly once after a token is created or regenerated. */
 export function TokenReveal({ token, snippet }: { token: string; snippet: string }) {
@@ -16,19 +17,27 @@ export function TokenReveal({ token, snippet }: { token: string; snippet: string
         </div>
       </div>
 
-      <ol className="list-decimal space-y-4 pl-5 text-sm text-gray-700">
-        <li>
-          In your GitHub repo, go to <em>Settings → Secrets and variables → Actions</em> and add a secret named{' '}
-          <code className="font-mono font-semibold">{TOKEN_SECRET_NAME}</code> with the token above.
-        </li>
-        <li>
-          Add this workflow. It scans the repo on every push to <code>main</code> and reports here:
-          <div className="mt-2">
-            <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
-          </div>
-        </li>
-        <li>Push. The deploy shows up on the project page within seconds.</li>
-      </ol>
+      <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700" data-testid="pr-checks-option">
+        <h3 className="font-semibold text-gray-900">{PR_CHECKS_OPTION.title}</h3>
+        <p className="mt-1">{PR_CHECKS_OPTION.body} Install it from this project&apos;s settings.</p>
+      </div>
+
+      <div className="text-sm text-gray-700" data-testid="deploy-history-option">
+        <h3 className="font-semibold text-gray-900">{DEPLOY_HISTORY_OPTION.title}</h3>
+        <ol className="mt-2 list-decimal space-y-4 pl-5">
+          <li>
+            Save the token above as a repository secret:
+            <SecretSteps />
+          </li>
+          <li>
+            Add this workflow. It scans the repo on every push to <code>main</code> and reports here:
+            <div className="mt-2">
+              <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
+            </div>
+          </li>
+          <li>Push. The deploy shows up on the project page within seconds.</li>
+        </ol>
+      </div>
     </div>
   );
 }
