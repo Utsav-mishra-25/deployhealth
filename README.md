@@ -3,6 +3,8 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
+Reads JS/TS, Python, Go and Ruby. Java/Kotlin, PHP, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 
 The hosted version at deployhealth.dev is free while in beta. Its home page explains the product in
@@ -37,15 +39,16 @@ with `file:line` for every finding and a history per deploy.
 
 ![Findings grouped by kind with file:line, and the deploy history with each deploy's counts](docs/screenshots/findings-and-deploys.png)
 
-Setup is one token and one workflow file. The scanner is the MIT-licensed npm package
+Setup is one repository secret and one workflow file ([setup](#setup-two-options)). The scanner is the MIT-licensed npm package
 [`deployhealth-scan`](https://www.npmjs.com/package/deployhealth-scan), pinned to an exact version:
 
 ![Creating a project: the one-time ingest token and the GitHub Action to commit](docs/screenshots/create-project.png)
 
 ### Pull request checks
 
-Install the deployhealth GitHub App on a repository and every pull request gets one comment,
-updated on each push, headed **deployhealth · env check**:
+Install the deployhealth GitHub App on a repository and add a project for it (no token, no secret,
+no variable), and every pull request gets one comment, updated on each push, headed
+**deployhealth · env check**:
 
 - the env vars the pull request **adds, removes or renames**, with `file:line`;
 - new ones **missing from `.env.example`** (in the scope that reads them);
@@ -57,6 +60,19 @@ A `deployhealth / env` check run goes with it. Each project picks a mode: **comm
 neutral when something is flagged), **strict** (it fails, so branch protection can block the
 merge) or **off**. Pull requests from coding agents (Claude, Codex, Copilot, Cursor, Devin) are
 marked, and each client page counts the month's agent pull requests that added undeclared env vars.
+
+Every check run says what it read. A pull request gets one of three outcomes:
+
+- **Checked.** The comment above when something is flagged; otherwise a success titled with what
+  was read, e.g. `Checked 42 files (JS/TS, Python), 3 changed: no undeclared env vars`.
+- **Nothing it reads changed.** `No JS/TS, Python, Go or Ruby files or env files changed`: a
+  success with no comment (the summary counts the other source files it changed, e.g. `.java`).
+- **Can't check this repo.** `deployhealth can't check this repo yet: no JS/TS, Python, Go or Ruby
+  files found`: neutral in every mode, strict included, with no comment, and a summary counting the
+  source files it doesn't read by extension.
+
+In all three, committed `.env` files and secret-shaped strings on added lines are still flagged as
+above, whatever the language, with the usual comment and conclusion (strict mode fails).
 
 ![The pull request comment: variables added, renamed and removed, the ones missing from .env.example, a committed .env.local and a possible secret](docs/screenshots/pr-comment.png)
 
@@ -88,6 +104,18 @@ fixed, and what's open now. A one-line summary at the top is computed from the n
 creates a signed link your client can open without an account, valid for 90 days.
 
 ![A monthly report: the summary line, key numbers, uptime, the incident, and deploys with what each introduced and fixed](docs/screenshots/report.png)
+
+## Setup: two options
+
+Pick either or both, per project:
+
+- **Pull request checks:** install the deployhealth GitHub App on the repository and add a project
+  for its exact `owner/repo`. No token, no secret, no variable.
+- **Deploy history and alerts:** add the GitHub Action to the repository, with the project's ingest
+  token saved as a repository secret named `DEPLOYHEALTH_TOKEN`: the repository's **Settings →
+  Secrets and variables → Actions → Secrets tab → New repository secret**. Not a Variable (the
+  Variables tab shows values in plain text to anyone with access to the repository), and not an
+  environment secret (the workflow declares no environment, so it wouldn't see one).
 
 ## Try the demo
 
@@ -151,6 +179,7 @@ self-host, not to offer as a competing hosted service; converts to MIT two years
 | 4.6 Scanner accuracy | Done | CLI 0.3.0: skips vendored code and test tooling, reads more declaration files, pydantic-settings and Compose interpolation |
 | 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
 | 4.8 Security fixes | Done | Pull request checks run isolated with a time limit, linear-time scanning and gitignore matching, an env parser that never reads values as names, more SSRF ranges, fair endpoint claims, CLI 0.3.1 |
+| 4.9 Unsupported stacks say so | Done | The pull request check and the CLI say what they read, and say "can't check" on a repo in a language they don't read; setup split into pull request checks and deploy history; CLI 0.3.2 |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -206,8 +235,9 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
 ```
 
 1. **Create a project** (optionally under a client). You get an ingest token (`dh_…`, shown once;
-   only its SHA-256 is stored) and a workflow snippet. Save the token as the repo secret
-   `DEPLOYHEALTH_TOKEN` and commit the snippet as `.github/workflows/deployhealth.yml`.
+   only its SHA-256 is stored) and a workflow snippet. Save the token as the repository secret
+   `DEPLOYHEALTH_TOKEN` (Secrets tab, not Variables; see [Setup](#setup-two-options)) and commit
+   the snippet as `.github/workflows/deployhealth.yml`.
 2. **On every push**, the Action runs the CLI from npm, pinned to an exact version
    (`npx --yes deployhealth-scan@0.3.1`: one 28 KB file, no dependencies), on the checkout with the
    commit sha and branch. The job's token is read-only (`permissions: contents: read`), and the
@@ -383,7 +413,9 @@ PR opened / pushed ─▶ GitHub ─▶ POST /api/github/webhook ─▶ pr-check
    scanner reads (the CLI's rules, except `.gitignore`: git never ignores a file it tracks), each
    distinct blob once, plus the pull request's diff for secret patterns. At most 2,000 files and
    20 MB (each path counts); past that the check says so and stays neutral. All of it goes through
-   the SSRF-guarded client, to api.github.com only.
+   the SSRF-guarded client, to api.github.com only. Which of the [three outcomes](#pull-request-checks)
+   applies is worked out from the two tree listings before any file is downloaded: a repo it can't
+   check, or a pull request that changes nothing it reads, downloads no file at all.
 4. **The scanning** (choosing files, scanning both sides, the diff, the secret search) runs in a
    worker thread, apart from uptime checks, and is stopped after 60 seconds of work. A pull
    request it can't finish gets a neutral "Couldn't be checked" check run and no comment, and
@@ -413,6 +445,12 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
 
 ## Known limitations
 
+- **Languages.** The scanner reads JS/TS, Python, Go and Ruby source, plus env, declaration and
+  Compose files. Java/Kotlin, PHP, Rust, C# and others aren't read yet. On a repo with none of the
+  languages it reads, the pull request check says "can't check this repo yet" (neutral, never a
+  failure) and the CLI prints `No JS/TS, Python, Go or Ruby source files found: deployhealth can't
+  check this directory yet.` (exit 0) instead of passing it. Committed `.env` files and
+  secret-shaped strings are still flagged in any language.
 - **Old workflows still download the CLI unpinned.** Workflows written before the npm package fetch
   `/deployhealth-scan.mjs` from your instance on every run, with no version or checksum, so
   whoever controls that instance controls what runs in their CI. New snippets pin an npm version;

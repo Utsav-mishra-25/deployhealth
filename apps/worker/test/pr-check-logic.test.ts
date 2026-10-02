@@ -1,14 +1,17 @@
 import { scanFiles } from '@deployhealth/core';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { detectAgent } from '../src/pr-check/agents';
 import { committedEnvFiles, diffEnvVars, isCommittableSecretEnvFile } from '../src/pr-check/diff';
 import {
+  CANT_CHECK_TITLE,
   checkRunOutput,
   COMMENT_MARKER,
   conclusionFor,
   emptyReport,
   fitLines,
   MAX_GITHUB_TEXT,
+  NOTHING_CHANGED_TITLE,
   renderComment,
   shorten,
   worthCommenting,
@@ -301,3 +304,11 @@ describe("GitHub's size limits", () => {
   });
 });
 
+
+describe("the README's pull request outcomes", () => {
+  it('quote the check run titles exactly', () => {
+    const readme = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+    expect(readme).toContain(`\`${CANT_CHECK_TITLE}\``);
+    expect(readme).toContain(`\`${NOTHING_CHANGED_TITLE}\``);
+  });
+});
