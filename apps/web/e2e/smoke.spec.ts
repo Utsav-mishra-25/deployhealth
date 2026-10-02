@@ -12,6 +12,7 @@ test('landing page for a signed-out visitor, one click to the demo', async ({ pa
   await expect(landing.getByRole('alert')).toContainText(SCRIPTED_ALERT);
   await expect(landing.getByRole('heading', { level: 1 })).toHaveText(/tells you which deploy broke what\.$/);
   await expect(landing).toContainText('Free while in beta.');
+  await expect(landing.getByTestId('landing-languages')).toContainText('Reads JS/TS, Python, Go and Ruby.');
   await expect(landing).not.toContainText(/\$\d|per month|pricing/i);
   await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
@@ -172,6 +173,10 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   await page.getByRole('button', { name: 'Create project' }).click();
   const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
   expect(token).toMatch(/^dh_[A-Za-z0-9_-]{43}$/);
+  // Two setup options: pull request checks need no token; the Action needs it as a repository secret.
+  await expect(page.getByTestId('pr-checks-option')).toContainText('No token, no secret, no variable.');
+  await expect(page.getByTestId('deploy-history-option')).toContainText('Secrets tab → New repository secret, named DEPLOYHEALTH_TOKEN');
+  await expect(page.getByText(token, { exact: true })).toHaveCount(1);
 
   // Report a scan with the new token, as the GitHub Action would, including the variable list.
   const response = await page.request.post('/api/ingest/scan', {
@@ -216,6 +221,11 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   // Deploy notes are untrusted Markdown: no raw HTML, no images in the handoff.
   await page.getByRole('link', { name: /Settings/ }).click();
   await expect(page.locator('pre').filter({ hasText: 'npx --yes deployhealth-scan@' })).toHaveCount(2); // Action + local run
+  await expect(page.getByRole('heading', { level: 2, name: 'Pull request checks' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Deploy history and alerts' })).toBeVisible();
+  await expect(page.getByTestId('secret-steps')).toContainText('In acme/smoke: Settings → Secrets and variables → Actions → Secrets tab');
+  await expect(page.getByTestId('secret-steps')).toContainText('Not a Variable');
+  await expect(page.getByText(token)).toHaveCount(0);
 
   // The GitHub App: install link, status, and the mode.
   await expect(page.getByTestId('install-github-app')).toHaveAttribute('href', 'https://github.com/apps/deployhealth/installations/new');
