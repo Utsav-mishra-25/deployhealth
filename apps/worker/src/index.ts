@@ -15,11 +15,14 @@ import {
   upsertPrCheck,
 } from '@deployhealth/db';
 import { seed } from '@deployhealth/db/seed';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { PgBoss } from 'pg-boss';
 import { runCheck } from './check';
 import { workerEnv } from './env';
 import { githubApi } from './github/api';
 import { createGithubApp } from './github/app';
+import { isolateEntry } from './pr-check/isolate';
 import { CHECK_QUEUE, checkEndpoints, PR_CHECK_QUEUE, prCheck, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
 import { waitForMigrations } from './readiness';
 import { registerQueues, RESEED_INTERVAL_MINUTES } from './schedules';
@@ -84,8 +87,11 @@ async function main(): Promise<void> {
   // Worked only with the GitHub App set up.
   if (GITHUB_APP) {
     const app = createGithubApp(GITHUB_APP);
-    await boss.work<PrCheckJobData>(PR_CHECK_QUEUE, { localConcurrency: 2 }, async ([job]) => {
-      await prCheck(job!.data, {
+    // The isolate's entry is a second file in dist/; without it every check fails (and retries).
+    const isolateFile = fileURLToPath(isolateEntry().file);
+    if (!existsSync(isolateFile)) console.error(`[worker] ERROR: ${isolateFile} is missing; every pull request check will fail. Rebuild the worker.`);
+    const runPrCheck = (data: PrCheckJobData) =>
+      prCheck(data, {
         findTarget: (installationId, repo) => findPrCheckTarget(db, installationId, repo),
         findCommentId: (projectId, prNumber) => findPrCommentId(db, projectId, prNumber),
         saveCheck: (row) => upsertPrCheck(db, row),
@@ -93,6 +99,14 @@ async function main(): Promise<void> {
         api: (installationId, repo) => githubApi(app.forInstallation(installationId), repo),
         log,
       });
+    await boss.work<PrCheckJobData>(PR_CHECK_QUEUE, { localConcurrency: 2 }, async ([job]) => {
+      try {
+        await runPrCheck(job!.data);
+      } catch (error) {
+        const code = (error as { code?: unknown }).code;
+        log(`[pr-check] ${job!.data.repoFullName}#${job!.data.prNumber} failed (the queue retries it up to 6 times): ${(error as Error).name}${typeof code === 'string' ? ` ${code}` : ''}`);
+        throw error;
+      }
     });
   }
 

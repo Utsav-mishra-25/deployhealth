@@ -1,4 +1,4 @@
-import { plural } from '@deployhealth/core';
+import { plural, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
 import type { PrCheck, PrCheckMode, PrEnvFile } from '@deployhealth/db';
 import type { CheckRunOutput } from '../github/api';
 import type { EnvVarDiff } from './diff';
@@ -127,4 +127,14 @@ export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): 
       : `${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${r.undeclared.map((n) => `\`${n}\``).join(', ')}.` : ''}`,
     text: text.length ? text.join('\n') : undefined,
   };
+}
+
+export const UNCHECKABLE_TITLE = "Couldn't be checked";
+export const UNCHECKABLE_SUMMARY =
+  `deployhealth couldn't finish checking this pull request: a check stops after ${PR_CHECK_TIME_LIMIT_MS / 1000} seconds of work, ` +
+  'or when the files it reads can\'t be scanned. Nothing is reported for this commit; pushing again checks the new one.';
+
+/** The check run when the isolate couldn't finish: neutral, a fixed message, never error details. */
+export function uncheckableOutput(): CheckRunOutput {
+  return { conclusion: 'neutral', title: UNCHECKABLE_TITLE, summary: UNCHECKABLE_SUMMARY };
 }

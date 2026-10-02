@@ -4,7 +4,17 @@ import type { CheckResult, CheckTarget } from './check';
 import type { GithubApi } from './github/api';
 import { detectAgent } from './pr-check/agents';
 import { buildReport } from './pr-check/build';
-import { checkRunOutput, COMMENT_MARKER, conclusionFor, emptyReport, renderComment, worthCommenting, type PrReport } from './pr-check/report';
+import { UncheckableError, type PrCheckIsolate } from './pr-check/isolate';
+import {
+  checkRunOutput,
+  COMMENT_MARKER,
+  conclusionFor,
+  emptyReport,
+  renderComment,
+  uncheckableOutput,
+  worthCommenting,
+  type PrReport,
+} from './pr-check/report';
 
 export const CHECK_QUEUE = 'check-endpoints';
 export const PRUNE_QUEUE = 'prune-checks';
@@ -138,6 +148,8 @@ export interface PrCheckDeps {
   /** GitHub calls for one repository, as the installation. */
   api: (installationId: number, repoFullName: string) => GithubApi;
   log: (message: string) => void;
+  /** Starts the isolate for the CPU work; the default is the real one (tests shorten its limit). */
+  openIsolate?: () => Promise<PrCheckIsolate>;
 }
 
 export type PrCheckOutcome = 'no-project' | 'off' | 'closed' | PrCheck['conclusion'];
@@ -167,8 +179,9 @@ export async function prCheck(job: PrCheckJobData, deps: PrCheckDeps): Promise<P
 
   let report: PrReport;
   try {
-    report = await buildReport(api, pr);
+    report = await buildReport(api, pr, { openIsolate: deps.openIsolate });
   } catch (error) {
+    if (error instanceof UncheckableError) return reportUncheckable(job, pr, target, deps, api, error);
     if (!(error instanceof LimitExceededError)) throw error;
     report = emptyReport(error.message);
   }
@@ -225,4 +238,52 @@ export async function prCheck(job: PrCheckJobData, deps: PrCheckDeps): Promise<P
       `${report.undeclared.length} undeclared, ${report.envFiles.length} env files, ${report.secrets.length} possible secrets${agent.name ? `, agent ${agent.name}` : ''})`,
   );
   return conclusion;
+}
+
+/**
+ * The isolate couldn't finish this pull request (time limit, a scanner error, out of memory): the
+ * input is the cause, so running it again would fail the same way. Store a neutral row, report a
+ * neutral check run with a fixed message, leave the comment alone, and return normally so pg-boss
+ * doesn't retry. GitHub and database errors still throw (and retry).
+ */
+async function reportUncheckable(
+  job: PrCheckJobData,
+  pr: Awaited<ReturnType<GithubApi['pullRequest']>>,
+  target: PrCheckTarget,
+  deps: PrCheckDeps,
+  api: GithubApi,
+  error: UncheckableError,
+): Promise<PrCheckOutcome> {
+  const agent = detectAgent(pr.authorLogin, await api.commitMessages(pr.number));
+  const empty = emptyReport();
+  const row = await deps.saveCheck({
+    projectId: target.project.id,
+    installationId: target.installationId,
+    prNumber: pr.number,
+    headSha: pr.headSha,
+    baseSha: pr.baseSha,
+    authorLogin: pr.authorLogin,
+    authorIsAgent: agent.isAgent,
+    agentName: agent.name,
+    addedVars: empty.added,
+    removedVars: empty.removed,
+    renamedVars: empty.renamed,
+    undeclaredVars: empty.undeclared,
+    committedEnvFiles: empty.envFiles,
+    secretHits: 0,
+    conclusion: 'neutral',
+  });
+  let checkRunId = row.checkRunId;
+  if (checkRunId !== null) {
+    try {
+      await api.updateCheckRun(checkRunId, uncheckableOutput());
+    } catch (updateError) {
+      if (status(updateError) !== 404) throw updateError;
+      checkRunId = null;
+    }
+  }
+  checkRunId ??= await api.createCheckRun(pr.headSha, uncheckableOutput());
+  await deps.setGithubIds(row.id, { commentId: row.commentId, checkRunId });
+  deps.log(`[pr-check] ${job.repoFullName}#${job.prNumber} ${pr.headSha.slice(0, 7)}: couldn't be checked (${error.reason}); not retried`);
+  return 'neutral';
 }
