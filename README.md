@@ -184,7 +184,7 @@ minutes later, and an open alert links the two. Acme API points at `<DEMO_BASE_U
 (always 503); the healthy endpoints point at `example.com` and `example.org`.
 
 Tests: `pnpm test` (unit; needs the Postgres from docker compose) and `pnpm e2e` (Playwright
-smoke tests). See [CLAUDE.md](CLAUDE.md) for details.
+smoke tests). See [docs/architecture/development.md](docs/architecture/development.md) for details.
 The prompts the phases were built from, and the review loop they follow, are in [docs/prompts/](docs/prompts/).
 
 ## Deploy to Railway
@@ -466,4 +466,6 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
 
 `apps/web` (Next.js), `apps/worker` (pg-boss), `packages/core` (scanner, CLI, SSRF guard, alert
 rules, handoff and report rendering), `packages/db` (Drizzle schema, migrations, queries, seed).
-See [CLAUDE.md](CLAUDE.md) for the full map and conventions.
+[CLAUDE.md](CLAUDE.md) is the short map and the rules that must never break; each area's detail
+(web, worker, GitHub App, scanner, CLI and ingest, database, demo, alerts and reports, security) is
+in [docs/architecture/](docs/architecture/).
