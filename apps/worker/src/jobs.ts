@@ -97,8 +97,17 @@ async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary
     if (event.webhookUrl) sends.push(deps.notify(event.webhookUrl, webhookPayload(event.type, event.projectName, event.message)).catch(() => false));
   } catch (error) {
     summary.errors++;
-    deps.log(`[check] ${endpoint.url} could not be processed: ${(error as Error).message}`);
+    // The host only, and the error's name and code: never the URL (its path or query may hold a
+    // token) or a message that could quote it.
+    deps.log(`[check] ${endpoint.hostname} could not be processed: ${errorLabel(error)}`);
   }
+}
+
+/** An error's name, plus its code when it has a string one (`ECONNRESET`, a Postgres SQLSTATE). */
+export function errorLabel(error: unknown): string {
+  const name = error instanceof Error ? error.name : 'Error';
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? `${name} ${code}` : name;
 }
 
 /** The nightly `prune-checks` job: delete checks older than the retention window. */
