@@ -16,7 +16,7 @@ its docs, and `AGENTS.md` points other coding agents here.
 - `apps/worker`: Node process on pg-boss: uptime checks, alerts, prune, demo reseed, PR checks.
 - `packages/core`: scanner, CLI, SSRF guard, alert, handoff and report rules (MIT).
 - `packages/db`: Drizzle schema, migrations, queries, seed.
-- `docs`: the Railway deploy guide, the GitHub App manifest, phase prompts, `architecture/`.
+- `docs`: the Railway deploy guide, the GitHub App manifest, `architecture/`.
 - `scripts`: `eval-repos.mjs` (scanner accuracy) and `load-demo.mjs` (load check), both manual.
 
 ## Commands
