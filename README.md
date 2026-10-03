@@ -214,7 +214,6 @@ minutes later, and an open alert links the two. Acme API points at `<DEMO_BASE_U
 
 Tests: `pnpm test` (unit; needs the Postgres from docker compose) and `pnpm e2e` (Playwright
 smoke tests). See [docs/architecture/development.md](docs/architecture/development.md) for details.
-The prompts the phases were built from, and the review loop they follow, are in [docs/prompts/](docs/prompts/).
 
 ## Deploy to Railway
 

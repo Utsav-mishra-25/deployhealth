@@ -29,7 +29,6 @@ LICENSE               FSL-1.1-MIT (everything except packages/core, which has it
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
 scripts/load-demo.mjs      `pnpm load:demo`: p50/p95/errors/rps of the public pages on `next start` (manual)
-docs/prompts/              the phase prompts as given (Phases 4.5 and 4.6) and the review loop
 ```
 
 Workspace packages ship TypeScript source (`exports` → `src/*.ts`). Next transpiles them
