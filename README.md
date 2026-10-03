@@ -507,3 +507,5 @@ rules, handoff and report rendering), `packages/db` (Drizzle schema, migrations,
 [CLAUDE.md](CLAUDE.md) is the short map and the rules that must never break; each area's detail
 (web, worker, GitHub App, scanner, CLI and ingest, database, demo, alerts and reports, security) is
 in [docs/architecture/](docs/architecture/).
+
+<!---test--->
