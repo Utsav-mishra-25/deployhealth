@@ -30,9 +30,10 @@ describe('treeCoverage', () => {
 
   // Tree listings come from the pull request's repository, so they're untrusted input: 100,000
   // entries per side (GitHub's limit for one recursive tree), with deep paths. About 0.8 s alone
-  // (selection included) and about twice that when CI runs every package at once, so 6 s; a version
-  // that looks paths up in arrays instead of maps spends about 100 s in treeCoverage alone.
-  it('is linear in the tree size: 100,000 entries per side in under 6 s', () => {
+  // (selection included) and about twice that with every package running at once, measured in a
+  // sandbox, not on GitHub's runners (where a 3 s bound went flaky before), so 15 s; a version that
+  // looks paths up in arrays instead of maps spends about 100 s in treeCoverage alone, over 6x more.
+  it('is linear in the tree size: 100,000 entries per side in under 15 s', () => {
     const n = 100_000;
     const deep = 'a/b/c/d/e/f/g/h/i/j/';
     const base: TreeEntry[] = [];
@@ -49,6 +50,6 @@ describe('treeCoverage', () => {
     const ms = performance.now() - started;
     expect(coverage.sourceFiles).toBeGreaterThan(50_000);
     expect(coverage.changedRead).toBeGreaterThan(15_000);
-    expect(ms).toBeLessThan(6_000);
+    expect(ms).toBeLessThan(15_000);
   });
 });
