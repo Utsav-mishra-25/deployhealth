@@ -12,6 +12,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "node --env-file-if-exists=.env --import tsx src/migrate.ts",
     "seed": "node --env-file-if-exists=.env --import tsx src/seed-cli.ts",
+    "delete-user": "node --env-file-if-exists=.env --import tsx src/delete-user-cli.ts",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

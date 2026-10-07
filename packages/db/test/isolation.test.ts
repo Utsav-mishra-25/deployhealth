@@ -28,6 +28,7 @@ import {
   recordScan,
   rotateProjectToken,
 } from '../src/queries';
+import { deleteUser } from '../src/delete-user';
 import { getHandoffData } from '../src/handoff';
 import { agentPrStats, getGithubAppStatus, listPrChecksForOwner, updatePrCheckMode, upsertInstallation, upsertPrCheck } from '../src/github';
 import { alerts, clients, endpoints, projects } from '../src/schema';
@@ -148,6 +149,20 @@ describe("user A cannot modify user B's data", () => {
     expect(await deleteEndpoint(db, a.id, bEndpoint.id)).toBe(false);
     const rows = await db.select().from(endpoints).where(eq(endpoints.projectId, bProject.id));
     expect(rows.map((e) => e.url)).toEqual(['https://bob.example/health']);
+  });
+
+  it("deleting user A's account (the operator's delete-user) leaves B's data whole", async () => {
+    const { a, b, bClient, bProject, bDeploy } = await twoUsers();
+    const inst = await upsertInstallation(db, { githubInstallationId: 1, accountLogin: 'bob', accountType: 'User', installerGithubId: b.githubId }, [bProject.repoFullName]);
+    await upsertPrCheck(db, { projectId: bProject.id, installationId: inst.id, prNumber: 1, headSha: 'h', baseSha: 'b', authorLogin: 'bob', conclusion: 'success' });
+    await deleteUser(db, { githubId: a.githubId });
+    expect((await listClients(db, b.id)).map((c) => c.id)).toEqual([bClient.id]);
+    expect(await getProjectForOwner(db, bProject.id, b.id)).not.toBeNull();
+    expect(await getLatestScan(db, bProject.id, bDeploy.deployId)).not.toBeNull();
+    expect(await listEndpointsForOwner(db, b.id, bProject.id)).toHaveLength(1);
+    expect(await listOpenAlerts(db, b.id, bProject.id)).toHaveLength(1);
+    expect(await getGithubAppStatus(db, b.id, bProject.id)).not.toBeNull();
+    expect(await listPrChecksForOwner(db, b.id, bProject.id)).toHaveLength(1);
   });
 
   it('while the owner can do all of it', async () => {
