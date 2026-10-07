@@ -167,6 +167,8 @@ self-host, not to offer as a competing hosted service; converts to MIT two years
 - [`LICENSE`](LICENSE): FSL-1.1-MIT (Functional Source License, MIT future license), for
   `apps/web`, `apps/worker`, `packages/db` and everything else in this repository.
 
+The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; please don't use them for your own product or service.
+
 ## Phases
 
 | Phase | Status | What it adds |
