@@ -20,6 +20,8 @@ query (authorization rules for queries are in [security.md](security.md)).
                       owner-scoped reads for the UI: status, PR list, agent stats)
     src/heartbeat.ts  recordHeartbeat() / workerIsHealthy(): the deep health check's one row
     src/migrations-status.ts  pendingMigrations(): the bundled drizzle journal vs drizzle.__drizzle_migrations
+    src/delete-user.ts  planUserDeletion() / deleteUser(): an account and everything it owns (operator only)
+    src/delete-user-cli.ts  `pnpm --filter @deployhealth/db delete-user`; built to dist/delete-user.js
 ```
 
 ## Schema changes
@@ -27,3 +29,16 @@ query (authorization rules for queries are in [security.md](security.md)).
 - **Schema changes:** edit `packages/db/src/schema.ts`, then `pnpm db:generate` and commit the new SQL in
   `packages/db/drizzle/`. Never edit a migration that has been applied. Only web's pre-deploy step
   applies migrations; the worker bundles the journal and waits for them (Worker jobs in [worker.md](worker.md)).
+
+## Deleting a user on request
+
+- `/privacy` promises an emailed request deletes an account and everything it owns within
+  `DELETION_REQUEST_DAYS` (web `lib/legal.ts`). The operator runs `delete-user` (`--login` or
+  `--github-id`; a dry run of counts per table unless `--confirm`) in the web container: runbook in
+  [docs/deploy-railway.md](../deploy-railway.md) step 10. No route, not exported from the package
+  index. One transaction: the user's row (every owned table cascades from it) and the
+  installations linked to them or installed from their GitHub id (repos and pull request checks
+  cascade). It refuses GitHub ids ≤ 0 (demo, dev) and an ambiguous login, and prints logins, ids
+  and counts only. A table that gets a user's rows without cascading from `users`, `projects` or
+  `installations` must join `DELETION_TABLES` and `countOwned()`; `test/delete-user.test.ts` checks
+  that only the other user's rows remain.
