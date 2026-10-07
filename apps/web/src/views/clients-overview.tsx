@@ -18,7 +18,7 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
             <Link href="/clients/new" className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50">
               New client
             </Link>
-            <Link href="/projects/new" className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">
+            <Link href="/projects/new" className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800">
               New project
             </Link>
           </div>
@@ -49,7 +49,7 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
                 </tr>
                 {client.projects.length === 0 ? (
                   <tr className="max-sm:block">
-                    <td colSpan={4} className="py-3 pl-8 text-sm text-gray-400 max-sm:block max-sm:pl-4">
+                    <td colSpan={4} className="py-3 pl-8 text-sm text-gray-500 max-sm:block max-sm:pl-4">
                       No projects yet
                     </td>
                   </tr>

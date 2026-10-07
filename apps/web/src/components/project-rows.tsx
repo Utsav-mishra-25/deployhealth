@@ -35,7 +35,7 @@ export function ProjectRows({
             <div className="text-xs break-all text-gray-500">{p.repoFullName}</div>
           </td>
           <td className="px-3 py-3 max-sm:col-span-2 max-sm:p-0">
-            {p.counts ? <CountPills counts={p.counts} /> : <span className="text-sm text-gray-400">No scans yet</span>}
+            {p.counts ? <CountPills counts={p.counts} /> : <span className="text-sm text-gray-500">No scans yet</span>}
             {p.openPrsWithUndeclared > 0 && (
               <Link href={`${paths.project(p.id)}#pull-requests`} className="mt-1 block text-xs font-medium text-red-700 hover:underline" data-testid="open-prs-undeclared">
                 {p.openPrsWithUndeclared} open PR{p.openPrsWithUndeclared === 1 ? '' : 's'} with undeclared env vars
@@ -49,7 +49,7 @@ export function ProjectRows({
                 <code className="font-mono">{shortSha(p.lastDeploy.sha)}</code> · <TimeAgo date={p.lastDeploy.deployedAt} />
               </>
             ) : (
-              <span className="text-gray-400">—</span>
+              <span className="text-gray-500">—</span>
             )}
           </td>
           <td className="py-3 pr-4 pl-3 max-sm:col-start-2 max-sm:row-start-1 max-sm:max-w-44 max-sm:p-0">

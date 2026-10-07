@@ -19,7 +19,7 @@ export function LatencyChart({ data }: { data: LatencyPoint[] }) {
   useEffect(() => setMounted(true), []);
 
   if (data.length === 0) {
-    return <p className="flex h-40 items-center justify-center text-sm text-gray-400">No successful checks in the last 24 hours</p>;
+    return <p className="flex h-40 items-center justify-center text-sm text-gray-500">No successful checks in the last 24 hours</p>;
   }
   if (!mounted) return <div className="h-40" />;
 

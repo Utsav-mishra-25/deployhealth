@@ -15,7 +15,7 @@ const th = 'py-1.5 pr-4 text-left text-xs font-medium uppercase tracking-wide te
 const td = 'py-1.5 pr-4 align-top';
 
 function Keys({ keys, tone }: { keys: FindingKey[]; tone: 'red' | 'green' }) {
-  if (keys.length === 0) return <span className="text-gray-400">—</span>;
+  if (keys.length === 0) return <span className="text-gray-500">—</span>;
   const color = tone === 'red' ? 'bg-red-50 text-red-800 ring-red-200' : 'bg-emerald-50 text-emerald-800 ring-emerald-200';
   return (
     <span className="flex flex-wrap gap-1">

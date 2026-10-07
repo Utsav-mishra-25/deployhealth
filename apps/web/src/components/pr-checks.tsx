@@ -102,7 +102,7 @@ export function PrChecksSection({
                       {c.secretHits > 0 && <span className="ml-2 text-xs text-red-700">{c.secretHits} possible secret{c.secretHits === 1 ? '' : 's'}</span>}
                     </td>
                     <td className="px-3 py-2 tabular-nums" data-testid="pr-undeclared">
-                      {c.undeclared > 0 ? <span className="font-medium text-red-700">{c.undeclared}</span> : <span className="text-gray-400">0</span>}
+                      {c.undeclared > 0 ? <span className="font-medium text-red-700">{c.undeclared}</span> : <span className="text-gray-500">0</span>}
                     </td>
                     <td className="py-2 pr-4 pl-3 text-gray-600">
                       <TimeAgo date={c.checkedAt} />

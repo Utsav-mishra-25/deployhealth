@@ -31,7 +31,7 @@ export function NewProjectForm({
         <TokenReveal token={state.token} snippet={state.snippet} />
         <Link
           href={`/projects/${state.projectId}`}
-          className="inline-block rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+          className="inline-block rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800"
         >
           Go to project
         </Link>
@@ -79,7 +79,7 @@ export function NewProjectForm({
       )}
       <button
         disabled={pending}
-        className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+        className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
       >
         {pending ? 'Creating…' : 'Create project'}
       </button>

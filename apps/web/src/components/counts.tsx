@@ -20,7 +20,7 @@ export function CountPills({ counts }: { counts: FindingCounts }) {
             key={kind}
             title={`${n} ${s.label.toLowerCase()}`}
             className={`rounded px-1.5 py-0.5 text-xs font-medium tabular-nums ring-1 ring-inset ${
-              n > 0 ? `${s.bg} ${s.text} ${s.ring}` : 'bg-gray-50 text-gray-400 ring-gray-200'
+              n > 0 ? `${s.bg} ${s.text} ${s.ring}` : 'bg-gray-50 text-gray-500 ring-gray-200'
             }`}
           >
             {n} {s.label.toLowerCase()}
@@ -40,7 +40,7 @@ export function SummaryCards({ counts }: { counts: FindingCounts }) {
         const n = counts[kind];
         return (
           <div key={kind} className={`rounded-lg p-4 ring-1 ring-inset ${n > 0 ? `${s.bg} ${s.ring}` : 'bg-white ring-gray-200'}`}>
-            <div className={`text-3xl font-semibold tabular-nums ${n > 0 ? s.text : 'text-gray-400'}`}>{n}</div>
+            <div className={`text-3xl font-semibold tabular-nums ${n > 0 ? s.text : 'text-gray-500'}`}>{n}</div>
             <div className="mt-1 text-sm text-gray-600">{s.label}</div>
           </div>
         );

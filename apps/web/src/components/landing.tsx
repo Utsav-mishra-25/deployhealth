@@ -48,13 +48,13 @@ export function Landing({ demo }: { demo: boolean }) {
         </p>
         <div className="flex flex-wrap items-center gap-3">
           {demo && (
-            <Link href={DEMO_PATHS.clients} className={`${button} bg-emerald-600 text-white hover:bg-emerald-500`}>
+            <Link href={DEMO_PATHS.clients} className={`${button} bg-emerald-700 text-white hover:bg-emerald-800`}>
               See the live demo
             </Link>
           )}
           <Link
             href="/login"
-            className={demo ? `${button} border border-gray-300 bg-white hover:bg-gray-50` : `${button} bg-emerald-600 text-white hover:bg-emerald-500`}
+            className={demo ? `${button} border border-gray-300 bg-white hover:bg-gray-50` : `${button} bg-emerald-700 text-white hover:bg-emerald-800`}
           >
             Sign in with GitHub
           </Link>
@@ -78,7 +78,7 @@ export function Landing({ demo }: { demo: boolean }) {
         <ol className="grid gap-4 sm:grid-cols-3">
           {STEPS.map((step, i) => (
             <li key={step.title} className="flex gap-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-sm font-semibold text-white">
                 {i + 1}
               </span>
               <div>

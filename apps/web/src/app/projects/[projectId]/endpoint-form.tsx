@@ -32,7 +32,7 @@ export function EndpointForm({
   return (
     <form ref={formRef} action={formAction} className="grid gap-3 sm:grid-cols-6">
       <label className="block sm:col-span-2">
-        <span className="text-sm font-medium">Name</span> <span className="text-sm text-gray-400">(optional)</span>
+        <span className="text-sm font-medium">Name</span> <span className="text-sm text-gray-500">(optional)</span>
         <input name="name" maxLength={60} defaultValue={values.name} placeholder="Acme API" className={input} />
         {fields.name && <span className="mt-1 block text-sm text-red-600">{fields.name}</span>}
       </label>
@@ -71,7 +71,7 @@ export function EndpointForm({
       <div className="flex items-center gap-3 sm:col-span-6">
         <button
           disabled={pending}
-          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
         >
           {pending ? 'Saving…' : submitLabel}
         </button>

@@ -35,19 +35,19 @@ export function ClientForm({
         {fields.name && <span className="mt-1 block text-sm text-red-600">{fields.name}</span>}
       </label>
       <label className="block">
-        <span className="text-sm font-medium">Contact email</span> <span className="text-sm text-gray-400">(optional)</span>
+        <span className="text-sm font-medium">Contact email</span> <span className="text-sm text-gray-500">(optional)</span>
         <input name="contactEmail" type="email" defaultValue={values.contactEmail} placeholder="ops@acme.example" className={input} />
         {fields.contactEmail && <span className="mt-1 block text-sm text-red-600">{fields.contactEmail}</span>}
       </label>
       <label className="block">
-        <span className="text-sm font-medium">Notes</span> <span className="text-sm text-gray-400">(optional)</span>
+        <span className="text-sm font-medium">Notes</span> <span className="text-sm text-gray-500">(optional)</span>
         <textarea name="notes" rows={4} maxLength={2000} defaultValue={values.notes} placeholder="Retainer, hosting, who to call…" className={input} />
         {fields.notes && <span className="mt-1 block text-sm text-red-600">{fields.notes}</span>}
       </label>
       <div className="flex items-center gap-3">
         <button
           disabled={pending}
-          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
         >
           {pending ? 'Saving…' : submitLabel}
         </button>

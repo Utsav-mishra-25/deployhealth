@@ -29,7 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <header className="border-b border-gray-200 bg-white print:hidden">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
             <Link href={session ? '/clients' : '/'} className="font-semibold tracking-tight">
-              deploy<span className="text-emerald-600">health</span>
+              deploy<span className="text-emerald-700">health</span>
             </Link>
             {session?.user && (
               <div className="flex items-center gap-3 text-sm">
