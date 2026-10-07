@@ -36,7 +36,8 @@ apps/
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, print/share buttons, report toolbar, alert card,
                       landing, prose-page (layout of /security, /privacy, /terms)
-    e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link)
+    e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link);
+                      mobile.spec.ts (375 px), a11y.spec.ts (axe)
     railway.json      documentation only: the Railway build/deploy fields set by hand in the dashboard
 ```
 
@@ -54,6 +55,11 @@ And in core, for client components:
   unavoidable, and no sideways scroll at 375 px (`e2e/mobile.spec.ts`; wide tables go inside their
   own `overflow-x-auto` box, or `.doc-scroll` on printable pages, which prints full width; long
   names and paths get `break-all`/`break-words`). No new env vars for them without a decision.
+- **Accessibility:** every public page, the signed-in project settings page and a shared report
+  have no serious or critical axe violations (WCAG 2.1 A/AA tags; `e2e/a11y.spec.ts`; add new
+  public pages there). Small text and buttons with white text use emerald-700, never emerald-600
+  (3.65:1 on white); muted text on white or gray-50 is gray-500, never gray-400. The icon and the
+  OG image keep `BRAND_GREEN` (emerald-600): a graphic and large text need only 3:1.
 - **`/`** is the landing page for signed-out visitors (indexable) and redirects signed-in users to
   /clients. Its example alert is built by `alertOpenedMessage()` with the demo incident's values
   (`lib/landing.ts`, tested against the seed); the demo button shows only with `DEMO_PUBLIC=1`, and

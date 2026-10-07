@@ -83,7 +83,8 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   → scan with variables → named endpoint → SSRF rejection → untrusted deploy notes in the handoff
   → share a report → open the link in a fresh context → tampered link 404s); /privacy and /terms;
   the security headers; and `mobile.spec.ts`, which checks at 375×812 that no public or signed-in
-  page (nor a shared report) scrolls sideways.
+  page (nor a shared report) scrolls sideways; and `a11y.spec.ts`, which runs axe on every public
+  page, the project settings page and a shared report (no serious or critical violations).
   First time:
   `pnpm --filter @deployhealth/web exec playwright install chromium` (or set
   `PLAYWRIGHT_CHROMIUM_PATH` to an existing Chromium).
