@@ -31,6 +31,12 @@ describe('the deployhealth-scan npm package', () => {
     expect(readFileSync(`${NPM}README.md`, 'utf8').split('\n')).toContain(LANGUAGES_SENTENCE);
   });
 
+  it("the name and logo aren't licensed: the same line in this README and the repository's", () => {
+    const line = 'The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; please don\'t use them for your own product or service.';
+    expect(readFileSync(`${NPM}README.md`, 'utf8').split('\n')).toContain(line);
+    expect(readFileSync(fileURLToPath(new URL('../../../README.md', import.meta.url)), 'utf8').split('\n')).toContain(line);
+  });
+
   it("README's workflow is exactly the snippet the settings page generates", () => {
     const readme = readFileSync(`${NPM}README.md`, 'utf8');
     const yaml = /```yaml\n([\s\S]*?)```/.exec(readme)?.[1];

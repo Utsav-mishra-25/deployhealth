@@ -171,3 +171,5 @@ Exit codes: `0` success, `1` the report failed (network or HTTP error), `2` usag
 
 MIT. The deployhealth web app and worker are licensed separately (FSL-1.1-MIT); see the
 [repository](https://github.com/Utsav-mishra-25/deployhealth#licensing).
+
+The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; please don't use them for your own product or service.
