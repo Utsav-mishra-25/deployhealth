@@ -268,6 +268,62 @@ when the site or the worker goes down. Use [Better Stack](https://betterstack.co
   Deploy → Replicas**). The in-memory rate limits (`/share/*`, `/api/health/worker`) then count per
   replica.
 
+## 10. Delete a user on request
+
+`/privacy` promises that a request emailed from the address on someone's GitHub account deletes
+their account and everything it owns within 30 days. There is no route for it: you run one
+command in the web container, where `DATABASE_URL` already points at Postgres over the private
+network, so no secret leaves Railway and none is pasted anywhere.
+
+1. **Check the request.** It must come from the email address on the GitHub account it names
+   (their public profile, or the address their sign-in recorded). If it doesn't, reply asking
+   them to write from that address, and do nothing else.
+2. **Dry run.** With the [Railway CLI](https://docs.railway.com/guides/cli) logged in and linked to
+   the project (`railway link`), open a shell in the web service and run the command without
+   `--confirm`:
+
+   ```sh
+   railway ssh --service web
+   # in the container, from the app directory (the one holding packages/; /app on Railpack):
+   node packages/db/dist/delete-user.js --login <github-login>
+   ```
+
+   It prints the user's login and GitHub id and how many rows each table holds for them, and
+   changes nothing. If the login matches more than one user, it says so: use
+   `--github-id <id>` instead. It refuses the demo (GitHub id -1) and dev (-2) users.
+3. **Delete.** Run it again with `--confirm`. It deletes, in one transaction, the user, their
+   clients, projects, deploys, scans, findings, variables, endpoints, checks, daily totals and
+   alerts, and every GitHub App installation linked to them or installed from their GitHub
+   account (with its repository list and pull request checks). It prints what it deleted.
+4. **Reply** (the command's last line reminds you of the uninstall):
+
+   > Your deployhealth account (GitHub @<login>) and everything it held have been deleted:
+   > clients, projects, deploy and scan history, endpoints and their checks, alerts, and pull
+   > request checks. If you installed the deployhealth GitHub App, please uninstall it on
+   > GitHub (Settings → Applications → Installed GitHub Apps, and on any organization you
+   > installed it on); we can't remove it for you, and until you do, GitHub keeps sending its
+   > events, which we discard. If you're still signed in somewhere, sign out: that session
+   > now shows an empty account. Signing in again would create a new, empty account.
+
+What the command leaves, on purpose: `check_hosts` (one row per monitored hostname, with no link
+to any user, pruned by age), `webhook_deliveries` (delivery ids only, pruned after 24 hours) and
+pg-boss's own job rows (a pull request job holds an installation id, a repository name and a pull
+request number; pg-boss deletes finished jobs on its retention schedule). A session cookie can't be
+revoked (sessions are JWTs): until it expires it shows an empty account, and nothing written
+through it can succeed, because every row needs the deleted user.
+
+**Last resort, only if `railway ssh` is unavailable:** run the command from a checkout of this
+repository through Postgres's public TCP proxy. Enable the proxy (Postgres → **Settings →
+Networking → TCP Proxy**), run the dry run and the delete with the CLI injecting the variable,
+then **disable the proxy immediately**:
+
+```sh
+railway run --service Postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" pnpm --filter @deployhealth/db delete-user --login <github-login>'
+```
+
+Never copy the public URL into a file, a shell history line or a chat; the command above never
+prints it.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
