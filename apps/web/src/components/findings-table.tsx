@@ -33,7 +33,7 @@ export function FindingsByKind({ findings }: { findings: FindingRow[] }) {
               </span>
             </h3>
             {rows.length === 0 ? (
-              <p className="mt-2 text-sm text-gray-400">None</p>
+              <p className="mt-2 text-sm text-gray-500">None</p>
             ) : (
               <div className="mt-2 overflow-x-auto rounded-lg bg-white ring-1 ring-gray-200">
                 <table className="w-full text-left text-sm whitespace-nowrap">

@@ -8,7 +8,7 @@ export function DemoBanner() {
         <strong className="font-semibold">Live demo.</strong> Clients, deploys and pull request checks are sample data, read-only. The
         Acme API check and its alert are live: the worker checks it every minute.
       </p>
-      <Link href="/login" className="rounded-md bg-emerald-600 px-3 py-1.5 font-medium text-white hover:bg-emerald-500">
+      <Link href="/login" className="rounded-md bg-emerald-700 px-3 py-1.5 font-medium text-white hover:bg-emerald-800">
         Sign in to monitor your own projects
       </Link>
     </div>

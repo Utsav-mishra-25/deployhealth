@@ -39,7 +39,7 @@ export function ProjectSettingsForm({
         {fields?.clientId && <span className="mt-1 block text-sm text-red-600">{fields.clientId}</span>}
       </label>
       <label className="block">
-        <span className="text-sm font-medium">Alert webhook URL</span> <span className="text-sm text-gray-400">(optional)</span>
+        <span className="text-sm font-medium">Alert webhook URL</span> <span className="text-sm text-gray-500">(optional)</span>
         <input
           name="alertWebhookUrl"
           type="url"
@@ -54,7 +54,7 @@ export function ProjectSettingsForm({
         {fields?.alertWebhookUrl && <span className="mt-1 block text-sm text-red-600">{fields.alertWebhookUrl}</span>}
       </label>
       <label className="block">
-        <span className="text-sm font-medium">How to deploy</span> <span className="text-sm text-gray-400">(optional, Markdown)</span>
+        <span className="text-sm font-medium">How to deploy</span> <span className="text-sm text-gray-500">(optional, Markdown)</span>
         <textarea
           name="deployNotes"
           rows={8}
@@ -72,7 +72,7 @@ export function ProjectSettingsForm({
       <div className="flex items-center gap-3">
         <button
           disabled={pending}
-          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
         >
           {pending ? 'Saving…' : 'Save settings'}
         </button>

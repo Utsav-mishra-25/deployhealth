@@ -42,8 +42,8 @@ export function DeployList({
                 </td>
                 <td className="px-3 py-2 text-gray-500">{deploy.source}</td>
                 <td className="px-3 py-2">
-                  {counts ? <CountPills counts={counts} /> : <span className="text-gray-400">—</span>}
-                  {scanCount > 1 && <span className="ml-2 text-xs text-gray-400">({scanCount} scans)</span>}
+                  {counts ? <CountPills counts={counts} /> : <span className="text-gray-500">—</span>}
+                  {scanCount > 1 && <span className="ml-2 text-xs text-gray-500">({scanCount} scans)</span>}
                 </td>
               </tr>
             );
