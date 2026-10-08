@@ -3,19 +3,20 @@
 Find env var drift in a repository and report it to
 [deployhealth](https://github.com/Utsav-mishra-25/deployhealth):
 
-- **MISSING**: read in code (`process.env.X`, `os.environ["X"]`, `os.Getenv("X")`, `ENV["X"]`) but
-  defined in no env file;
+- **MISSING**: read in code (`process.env.X`, `os.environ["X"]`, `os.Getenv("X")`, `ENV["X"]`,
+  `env('X')`, `System.getenv("X")`, `@Value("${X}")`) but defined in no env file;
 - **UNUSED**: defined in an env file but never read;
 - **MISMATCH**: in `.env` but not `.env.example`, or the reverse.
 
 It scans JavaScript/TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`),
-Python (including pydantic-settings classes), Go and Ruby, respects `.gitignore`, and treats each
-folder with its own env files as a separate scope (monorepos). One file, no dependencies, Node 20+.
+Python (including pydantic-settings classes), Go, Ruby, PHP (with Laravel and Symfony) and
+Java/Kotlin (`.java`, `.kt`, `.kts`, with Spring), respects `.gitignore`, and treats each folder
+with its own env files as a separate scope (monorepos). One file, no dependencies, Node 20+.
 
-Reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
 
 On a directory with no such source file (after the rules below), it prints
-`No JS/TS, Python, Go, Ruby or PHP source files found: deployhealth can't check this directory yet.`,
+`No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source files found: deployhealth can't check this directory yet.`,
 reports no UNUSED variables (nothing it reads could use them), still reports MISMATCH, and exits
 `0`. With `--json` the line goes to stderr, and the JSON says `"can_check": false` with
 `"source_files": 0`.
@@ -35,22 +36,27 @@ A first scan stays quiet:
 - **A read with a default on the same line isn't MISSING**: `process.env.X ?? "a"` or `|| "a"`,
   `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`, `ENV.fetch("X", "a")`,
   `ENV.fetch("X") { … }`, `ENV["X"] || "a"`, `env('X', 'a')`, `env('X') ?? 'a'` / `?: 'a'`,
-  `getenv('X') ?: 'a'`, `$_ENV['X'] ?? 'a'`. Such variables are counted as optional (one OPTIONAL
-  line; `--show-optional` lists them). (A default of `undefined`, `null`, `None` or `nil` is no
-  default, nor is PHP's `?: throw …`.)
+  `getenv('X') ?: 'a'`, `$_ENV['X'] ?? 'a'`, `System.getenv().getOrDefault("X", "a")`, Kotlin's
+  `System.getenv("X") ?: "a"`, `Optional.ofNullable(System.getenv("X")).orElse("a")`,
+  `@Value("${X:a}")`. Such variables are counted as optional (one OPTIONAL line;
+  `--show-optional` lists them). (A default of `undefined`, `null`, `None` or `nil` is no default,
+  nor is PHP's `?: throw …` or Kotlin's `?: error(…)`.)
 - **Tests, fixtures and test tooling are skipped**: `test/`, `tests/`, `__tests__/`, `spec/`,
   `e2e/`, `fixtures/`, `__fixtures__/`, `testdata/`, `playwright/`, `cypress/`, `mocks/`,
   `__mocks__/` and `testing/` directories (their env files too, so a fixture's `.env` never
   becomes a scope), and `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, `*_test.go`,
-  `test_*.py`, `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml`, and
-  `playwright`/`vitest`/`jest`/`cypress` config files, `vitest.workspace.*` and `vitest`/`jest` setup files. They're only read to see
-  which variables they use, so a variable only tests read isn't UNUSED. `--include-tests` scans
-  them like any other file.
+  `test_*.py`, `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml`,
+  `*Test(s).java|kt`, `*IT.java|kt`, Spring's `application-test.*`, and
+  `playwright`/`vitest`/`jest`/`cypress` config files, `vitest.workspace.*` and `vitest`/`jest`
+  setup files. They're only read to see which variables they use, so a variable only tests read
+  isn't UNUSED. `--include-tests` scans them like any other file.
 - **Vendored and generated code is never read**: `node_modules`, `dist`, `.next`, `venv`,
   `.venv`, `.yarn`, `vendor`, `third_party`, `bower_components`, `out`, `coverage`, `.turbo`,
   `.vercel`, `.output`, `.svelte-kit`, `.nuxt`, `.cache`, `.pnpm-store`, `__pycache__`,
-  `site-packages` and `.phpunit.cache` directories, `bootstrap/cache/` and `public/build/`,
-  Laravel's `storage/` next to `artisan` (never opened: cached config can hold values),
+  `site-packages`, `.phpunit.cache`, `.gradle` and `.mvn` directories, `bootstrap/cache/` and
+  `public/build/`, Laravel's `storage/` next to `artisan` (never opened: cached config can hold
+  values), Maven's `target/` next to `pom.xml`, Gradle's `build/` and `target/` next to a Gradle
+  build file,
   `.pnp.cjs`, `.pnp.loader.mjs`, `*.min.js` (`.mjs`, `.cjs`), and any source file over 512 KB.
   `--dry-run` says what it skipped.
 - **Docker Compose interpolation counts as a use**: `${VAR}`, `${VAR:-x}`, `${VAR:?x}`, `$VAR`, …
@@ -60,6 +66,12 @@ A first scan stays quiet:
   (`BCRYPT_ROUNDS`, `BROADCAST_CONNECTION`, …) are never UNUSED, and a read of one is never
   MISSING (except `APP_KEY`). `$_SERVER['X']` marks `X` used, never MISSING. Symfony's
   `%env(X)%` in `config/**/*.yaml` is a read (`%env(default:param:X)%` is optional).
+- **Spring**: `${X}` in `application*` / `bootstrap*` `.properties` and `.yml` files is a read
+  (`${X:default}` is optional); dotted names like `${server.port}` are properties, not env vars.
+  Where the code uses Spring, a declared name Spring binds to a property isn't UNUSED: the env form
+  of a key in that config (`mail.host` → `MAIL_HOST`), anything starting with `SPRING_`,
+  `SERVER_`, `MANAGEMENT_` or `LOGGING_`, and a `@ConfigurationProperties("app.mail")` prefix
+  (`APP_MAIL_…`). That only ever marks names used, never MISSING.
 - **One row per variable per line**, even when a line reads it twice, and a quoted
   `'process.env.X'` (a bundler `define` key) isn't a read. Same-line destructuring counts:
   `const { X, Y: y, Z = "a" } = process.env` reads all three, `Z` as optional.
@@ -93,8 +105,8 @@ Same-line, regex-based scanning misses some things on purpose:
 ## Try it locally
 
 ```sh
-npx deployhealth-scan@0.4.0 --dry-run          # grouped findings with file:line
-npx deployhealth-scan@0.4.0 --dry-run --json   # the same, as JSON
+npx deployhealth-scan@0.5.0 --dry-run          # grouped findings with file:line
+npx deployhealth-scan@0.5.0 --dry-run --json   # the same, as JSON
 ```
 
 With `--dry-run` nothing leaves your machine.
@@ -130,14 +142,14 @@ jobs:
         env:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
         run: |
-          npx --yes deployhealth-scan@0.4.0 \
+          npx --yes deployhealth-scan@0.5.0 \
             --url https://deployhealth.dev \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
             --branch "$GITHUB_REF_NAME"
 ```
 
-Pin the version (`@0.4.0`) so an update never runs in your CI unreviewed. For a self-hosted
+Pin the version (`@0.5.0`) so an update never runs in your CI unreviewed. For a self-hosted
 deployhealth, change `--url` to your instance.
 
 ## What it sends

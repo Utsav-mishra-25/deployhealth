@@ -35,7 +35,7 @@ before changing `apps/web/src/lib/github-webhook.ts`, `apps/worker/src/github/` 
 `coverage.ts#treeCoverage` runs in the isolate with the file selection (task `select`) and works
 only from the two tree listings (path, blob sha, size): the supported source files read in head per
 language (`SUPPORTED_LANGUAGES`, core `languages.ts`), all files read (source, env and declaration
-files, Compose files, Symfony config YAML, Laravel's `artisan`; the summary counts the non-source
+files, Compose files, Spring and Symfony config, Laravel's `artisan`; the summary counts the non-source
 ones as "env or config files"), how many of them the pull request changes (added, deleted, or a
 different sha between merge base and head), and the source files it doesn't read
 (`UNREAD_SOURCE_EXTENSIONS`, counts by extension only, never paths; same skip, vendored,
@@ -51,18 +51,18 @@ blob is downloaded**. The outcomes, in order:
    tests and vendored code don't either) → no blob downloads; only the checks that don't depend on
    a language run: secrets on the pull request's added lines, and committed env files from the
    tree paths. Nothing flagged → neutral in every mode, strict included, titled
-   `deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby or PHP files found`, with a
+   `deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files found`, with a
    summary naming the languages read and the unread ones found by extension, and a README link;
    no comment is created (an earlier comment on the pull request is rewritten to say so, since its
    findings no longer describe the head). Something flagged → today's conclusion and comment
    (strict fails), titled e.g. `Committed env file found; deployhealth can't check env vars in this
-   repo yet (no JS/TS, Python, Go, Ruby or PHP files)`.
+   repo yet (no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files)`.
 5. The fetch caps (2,000 files / 20 MB) → neutral "too large to check".
 6. The isolate fails during the analysis → "Couldn't be checked", as 3.
 7. **Nothing changed that it reads:** the pull request changes no read file → no blob downloads,
    the secret search still runs; nothing flagged → success, titled
-   `No JS/TS, Python, Go, Ruby or PHP files or env files changed`, the summary counting unread source
-   files the pull request changed (e.g. "This pull request also changed 3 .java files, which
+   `No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files or env files changed`, the summary counting unread source
+   files the pull request changed (e.g. "This pull request also changed 3 .rs files, which
    deployhealth doesn't read yet."); no comment is created (an earlier one is updated, as for any
    clean head).
 8. **Checked:** as before. A clean pass is titled with both counts, e.g. `Checked 42 files (JS/TS,

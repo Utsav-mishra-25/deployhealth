@@ -3,7 +3,7 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-Reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
 
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 
@@ -65,11 +65,12 @@ Every check run says what it read. A pull request gets one of three outcomes:
 
 - **Checked.** The comment above when something is flagged; otherwise a success titled with what
   was read, e.g. `Checked 42 files (JS/TS, Python), 3 changed: no undeclared env vars`.
-- **Nothing it reads changed.** `No JS/TS, Python, Go, Ruby or PHP files or env files changed`: a
-  success with no comment (the summary counts the other source files it changed, e.g. `.java`).
-- **Can't check this repo.** `deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby or
-  PHP files found`: neutral in every mode, strict included, with no comment, and a summary counting
-  the source files it doesn't read by extension.
+- **Nothing it reads changed.** `No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files or env files
+  changed`: a success with no comment (the summary counts the other source files it changed, e.g.
+  `.rs`).
+- **Can't check this repo.** `deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby,
+  PHP or Java/Kotlin files found`: neutral in every mode, strict included, with no comment, and a
+  summary counting the source files it doesn't read by extension.
 
 In all three, committed `.env` files and secret-shaped strings on added lines are still flagged as
 above, whatever the language, with the usual comment and conclusion (strict mode fails).
@@ -182,7 +183,7 @@ The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; 
 | 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
 | 4.8 Security fixes | Done | Pull request checks run isolated with a time limit, linear-time scanning and gitignore matching, an env parser that never reads values as names, more SSRF ranges, fair endpoint claims, CLI 0.3.1 |
 | 4.9 Unsupported stacks say so | Done | The pull request check and the CLI say what they read, and say "can't check" on a repo in a language they don't read; setup split into pull request checks and deploy history; CLI 0.3.2 |
-| 5. More languages | In progress | Deleting an account on request, an accessibility check, PHP and Laravel (CLI 0.4.0, and the GitHub App); Java/Kotlin and Spring next (CLI 0.5.0) |
+| 5. More languages | In progress | Deleting an account on request, an accessibility check, PHP and Laravel (CLI 0.4.0), Java/Kotlin and Spring (CLI 0.5.0); the GitHub App reads each on deploy |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -250,7 +251,9 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`, and pydantic-settings fields), Go
    (`os.Getenv("X")`, `os.LookupEnv("X")`), Ruby (`ENV["X"]`, `ENV.fetch("X")`) and PHP (`.php`,
    Blade templates included: `getenv('X')`, `$_ENV['X']`, Laravel's `env('X')` and
-   `Env::get('X')`; CLI 0.4.0), one row per variable per line. Same-line destructuring counts
+   `Env::get('X')`; CLI 0.4.0) and Java/Kotlin (`.java`, `.kt`, `.kts`: `System.getenv("X")`,
+   `System.getenv().get("X")`, Kotlin's `System.getenv()["X"]`, Spring's `@Value("${X}")`; CLI
+   0.5.0), one row per variable per line. Same-line destructuring counts
    too: `const { X, Y: y, Z = "a" } = process.env` reads all three, `Z` with a default. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
    `.env.test` and their `.local` variants, and **declaration files**: `.env.example`,
    `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`,
@@ -271,27 +274,30 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
      - A read with a default on the same line isn't MISSING: `process.env.X ?? "a"` / `|| "a"`,
        `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`,
        `ENV.fetch("X", "a")`, `ENV.fetch("X") { … }`, `ENV["X"] || "a"`, `env('X', 'a')`,
-       `env('X') ?? 'a'` / `?: 'a'`, `getenv('X') ?: 'a'`, `$_ENV['X'] ?? 'a'`. (`undefined`,
-       `null`, `None` and `nil` aren't defaults, nor is PHP's `?: throw …`; `getenv('X') ?? 'a'`
-       isn't either, since getenv returns false.) Variables read only that way are listed as
-       optional.
+       `env('X') ?? 'a'` / `?: 'a'`, `getenv('X') ?: 'a'`, `$_ENV['X'] ?? 'a'`,
+       `System.getenv().getOrDefault("X", "a")`, Kotlin's `System.getenv("X") ?: "a"`,
+       `Optional.ofNullable(System.getenv("X")).orElse("a")`, `@Value("${X:a}")`. (`undefined`,
+       `null`, `None` and `nil` aren't defaults, nor are PHP's `?: throw …` and Kotlin's
+       `?: error(…)`; `getenv('X') ?? 'a'` isn't either, since getenv returns false.) Variables
+       read only that way are listed as optional.
      - Tests, fixtures and test tooling are skipped: `test/`, `tests/`, `__tests__/`, `spec/`,
        `e2e/`, `fixtures/`, `__fixtures__/`, `testdata/`, `playwright/`, `cypress/`, `mocks/`,
        `__mocks__/` and `testing/` directories (env files inside them make no scope), and
        `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, `*_test.go`, `test_*.py`,
-       `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml(.dist)`, test runner
-       configs (`playwright`, `vitest`, `jest`, `cypress`), `vitest.workspace.*` and
-       `vitest`/`jest` setup files. The CLI reads
-       them only to see which variables they use, so a test-only variable isn't UNUSED; the
-       GitHub App never fetches them. `--include-tests` scans them.
+       `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml(.dist)`,
+       `*Test(s).java|kt`, `*IT.java|kt`, Spring's `application-test.*`, test runner configs
+       (`playwright`, `vitest`, `jest`, `cypress`), `vitest.workspace.*` and `vitest`/`jest` setup
+       files. The CLI reads them only to see which variables they use, so a test-only variable
+       isn't UNUSED; the GitHub App never fetches them. `--include-tests` scans them.
      - Vendored and generated code is never read (CLI 0.3.0): `node_modules`, `dist`, `.next`,
        virtualenvs, `.yarn`, `vendor`, `third_party`, `bower_components`, `out`, `coverage`,
        `.turbo`, `.vercel`, `.output`, `.svelte-kit`, `.nuxt`, `.cache`, `.pnpm-store`,
-       `__pycache__`, `site-packages` and `.phpunit.cache` directories, `bootstrap/cache/` and
-       `public/build/` at any depth, Laravel's `storage/` next to `artisan` (compiled views and
-       cached config can hold values: never opened), `.pnp.cjs`, `.pnp.loader.mjs`, `*.min.js`,
-       and any source file over 512 KB. A committed `build/` is still read: it's as often build
-       scripts as output. `--dry-run` lists what it skipped; the GitHub App never fetches it.
+       `__pycache__`, `site-packages`, `.phpunit.cache`, `.gradle` and `.mvn` directories,
+       `bootstrap/cache/` and `public/build/` at any depth, Laravel's `storage/` next to `artisan`
+       (compiled views and cached config can hold values: never opened), Maven's `target/` next to
+       `pom.xml`, Gradle's `build/` and `target/` next to a Gradle build file, `.pnp.cjs`,
+       `.pnp.loader.mjs`, `*.min.js`, and any source file over 512 KB. Any other committed `build/`
+       is still read: it's as often build scripts as output. `--dry-run` lists what it skipped; the GitHub App never fetches it.
      - pydantic-settings (CLI 0.3.0): in a class whose bases include `BaseSettings`, each
        annotated field is the env var `NAME` uppercased, after a literal `env_prefix`, or a string
        `alias` / `validation_alias` (each `AliasChoices` string, optional). A field with a default
@@ -307,6 +313,15 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
        is never MISSING (Laravel's config reads optional settings with no default), except
        `APP_KEY`: Laravel won't boot without it. PHP's `$_SERVER['X']` marks `X` used too; it
        also holds request data (`HTTP_HOST`, …), so it never makes MISSING rows.
+     - Spring: `${X}` in `application*` / `bootstrap*` `.properties` and `.yml` files is a
+       reference (`${X:default}` is optional; dotted names like `${server.port}` are properties,
+       not env vars), and can be MISSING: a missing one fails startup. **Relaxed binding**: Spring
+       maps an env var like `SPRING_DATASOURCE_URL` onto the property `spring.datasource.url`, so
+       in a scope whose Java/Kotlin uses Spring, a declared name counts as used when it's the env
+       form of a key in that scope's config (`cache.ttl-seconds` → `CACHE_TTLSECONDS`), starts
+       with `SPRING_`, `SERVER_`, `MANAGEMENT_` or `LOGGING_`, or starts with a
+       `@ConfigurationProperties("app.mail")` prefix (`APP_MAIL_…`). That only prevents UNUSED
+       rows; it never makes MISSING ones.
      - Symfony: `%env(X)%` in YAML under a `config/` directory is a reference, with processors
        (`%env(int:X)%`, `%env(json:file:X)%`); `%env(default:param:X)%` is optional.
      - A scope with no env file at all (in practice the root, for code outside every other scope)
@@ -463,14 +478,14 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
 
 ## Known limitations
 
-- **Languages.** The scanner reads JS/TS, Python, Go, Ruby and PHP source, plus env, declaration
-  and Compose files and Symfony's config YAML. Java/Kotlin, Rust, C# and others aren't read yet. On
-  a repo with none of the languages it reads, the pull request check says "can't check this repo
-  yet" (neutral, never a failure) and the CLI prints `No JS/TS, Python, Go, Ruby or PHP source files
-  found: deployhealth can't check this directory yet.` (exit 0) instead of passing it. The GitHub
-  App reads PHP as soon as it's deployed; the CLI reads it from 0.4.0 (0.3.2 treats PHP as
-  unread), and Java/Kotlin is planned for 0.5.0. Committed `.env` files and secret-shaped strings
-  are still flagged in any language.
+- **Languages.** The scanner reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin source, plus env,
+  declaration and Compose files, Spring's application and bootstrap config and Symfony's config
+  YAML. Rust, C# and others aren't read yet. On a repo with none of the languages it reads, the
+  pull request check says "can't check this repo yet" (neutral, never a failure) and the CLI
+  prints `No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source files found: deployhealth can't
+  check this directory yet.` (exit 0) instead of passing it. The GitHub App reads a language as
+  soon as it's deployed; the CLI reads PHP from 0.4.0 and Java/Kotlin from 0.5.0. Committed `.env`
+  files and secret-shaped strings are still flagged in any language.
 - **Old workflows still download the CLI unpinned.** Workflows written before the npm package fetch
   `/deployhealth-scan.mjs` from your instance on every run, with no version or checksum, so
   whoever controls that instance controls what runs in their CI. New snippets pin an npm version;
@@ -505,9 +520,15 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
   `.rake` files, shell scripts, Dockerfiles and CI workflows; and `turbo.json`'s `env` lists.
   In PHP: a call split across lines (`env(` with the name on the next line, a common Laravel
   style for long defaults), dynamic names (`env($key)`), `$_SERVER` reads (they only mark a name
-  used), and Symfony's `%env()%` in PHP or XML config. Symfony commits `.env` by convention (secrets
-  go in `.env.local`), so the pull request check flags a Symfony repo's committed `.env` like any
-  other.
+  used), and Symfony's `%env()%` in PHP or XML config. In Java/Kotlin: reads split across lines,
+  `System.getenv(name)` with a variable, Spring properties set only on the platform (a property
+  overridden by an env var that no config key or prefix names stays UNUSED in `.env.example`),
+  `@ConfigurationProperties` prefixes held in constants or split across lines, and properties in
+  profile files activated only on the platform. The Spring Boot prefixes can hide a genuinely
+  unused `SERVER_…` name, and Gradle build scripts (`*.gradle.kts`) are read like any Kotlin, so a
+  CI-only read there (a signing or publishing token) can be MISSING. Symfony commits `.env` by
+  convention (secrets go in `.env.local`), so the pull request check flags a Symfony repo's
+  committed `.env` like any other.
 - **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team
   sharing).
 - **Pull request checks follow the installer.** An App installed by an org admin checks pull

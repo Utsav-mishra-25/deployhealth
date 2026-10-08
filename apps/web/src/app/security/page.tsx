@@ -97,10 +97,12 @@ export default function SecurityPage() {
           If you install it, the App asks GitHub for read access to the contents of the repositories you choose, and write
           access to their pull requests and checks (to comment and add the <code>deployhealth / env</code> check). For each
           pull request it reads, at the pull request&apos;s head and at its merge base, only the files the scanner reads
-          (source files in the scanned languages up to 512 KB, env files, Docker Compose files, Symfony config YAML and
-          Laravel&apos;s <code>artisan</code> file, whose contents aren&apos;t read; never tests, fixtures, vendored code
-          or cached build output such as Laravel&apos;s <code>storage/</code> and <code>bootstrap/cache/</code>), plus the
-          pull request&apos;s diff and commit messages. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
+          (source files in the scanned languages up to 512 KB, env files, Docker Compose files, Spring&apos;s application
+          and bootstrap config, Symfony config YAML and Laravel&apos;s <code>artisan</code> file, whose contents
+          aren&apos;t read; never tests, fixtures, vendored code or build output such as Laravel&apos;s{' '}
+          <code>storage/</code> and <code>bootstrap/cache/</code> or Maven&apos;s and Gradle&apos;s <code>target/</code>{' '}
+          and <code>build/</code>), plus the pull request&apos;s diff and commit messages. From config files it keeps
+          only variable and key names, never values. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
           pull request, fetched only from api.github.com.
         </p>
         <p>
