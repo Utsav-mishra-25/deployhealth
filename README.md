@@ -285,7 +285,8 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
        `__mocks__/` and `testing/` directories (env files inside them make no scope), and
        `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, `*_test.go`, `test_*.py`,
        `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml(.dist)`,
-       `*Test(s).java|kt`, `*IT.java|kt`, Spring's `application-test.*`, test runner configs
+       `*Test(s).java|kt`, `*IT.java|kt`, Spring's `application-test.*`, Gradle's `*.gradle.kts`
+       build scripts (build tooling: their reads are CI secrets), test runner configs
        (`playwright`, `vitest`, `jest`, `cypress`), `vitest.workspace.*` and `vitest`/`jest` setup
        files. The CLI reads them only to see which variables they use, so a test-only variable
        isn't UNUSED; the GitHub App never fetches them. `--include-tests` scans them.
@@ -525,8 +526,10 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
   overridden by an env var that no config key or prefix names stays UNUSED in `.env.example`),
   `@ConfigurationProperties` prefixes held in constants or split across lines, and properties in
   profile files activated only on the platform. The Spring Boot prefixes can hide a genuinely
-  unused `SERVER_…` name, and Gradle build scripts (`*.gradle.kts`) are read like any Kotlin, so a
-  CI-only read there (a signing or publishing token) can be MISSING. Symfony commits `.env` by
+  unused `SERVER_…` name. Gradle build scripts (`*.gradle.kts`, like Groovy's `build.gradle`)
+  aren't read for env reads: they're build tooling whose reads are CI and publishing secrets
+  (Sonar, signing, Maven credentials), so a variable only a build script reads is never MISSING,
+  and a declared one it reads isn't UNUSED in the CLI. Symfony commits `.env` by
   convention (secrets go in `.env.local`), so the pull request check flags a Symfony repo's
   committed `.env` like any other.
 - **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team

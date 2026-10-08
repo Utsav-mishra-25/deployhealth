@@ -121,7 +121,7 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
   a call split across lines, dynamic names, `%env()%` in PHP or XML config, and names read only
   by Composer packages' unpublished config (UNUSED).
 - **Java, Kotlin and Spring** (Phase 5; the App on deploy, the CLI from 0.5.0). `.java`, `.kt`,
-  `.kts` (Gradle's `build.gradle.kts` too): `System.getenv("X")`, `System.getenv().get("X")`,
+  `.kts`: `System.getenv("X")`, `System.getenv().get("X")`,
   Kotlin's `System.getenv()["X"]`, `System.getenv().getOrDefault("X", d)` (optional unless `d` is
   `null`). Same-line defaults after a read: Kotlin's `?: d` (not `null`, `throw`, `error(…)`,
   `TODO(…)`, `requireNotNull`, `checkNotNull`) and `Optional.ofNullable(…).orElse(d)` /
@@ -148,7 +148,12 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
   VENDORED_DIRS; `target/` is skipped beside `pom.xml` or a Gradle build file and `build/` beside
   a Gradle build file (`build.gradle(.kts)`, `settings.gradle(.kts)`), so a JS `build/` or a Go
   `target` package is still read. `*Test.java|kt`, `*Tests.java|kt`, `*IT.java|kt` are test
-  tooling (`src/test/` already was).
+  tooling (`src/test/` already was), and so are Gradle's `*.gradle.kts` build scripts
+  (`build.gradle.kts`, `settings.gradle.kts`, convention plugins; decision 21 as amended): their
+  env reads are CI and publishing secrets (Sonar, signing, Maven credentials) that never belong in
+  `.env.example`, and Groovy's `build.gradle` isn't read either. Like test files they're never
+  references or MISSING; the CLI reads them only to keep a declared name they use from being
+  UNUSED, and the App never fetches them. Other `.kts` scripts are read.
 - **No supported source, no UNUSED** (decision 18, 0.3.2): when a whole scan reads no supported
   source file (`sourceFiles` 0, after the skip, vendored and test rules), `scanFiles` emits no
   UNUSED findings: nothing it reads could use them. MISMATCH stays (`.env` vs `.env.example` doesn't
