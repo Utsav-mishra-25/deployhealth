@@ -312,30 +312,32 @@ describe("a check the isolate can't finish", () => {
 });
 
 describe('what the check read: repos it can\'t read, pull requests that change nothing it reads', () => {
-  const JAVA = {
-    'pom.xml': '<project/>',
-    'src/main/java/app/App.java': 'class App { String url = System.getenv("DATABASE_URL"); }',
-    'src/main/java/app/Config.java': 'class Config {}',
-    'src/main/kotlin/app/Util.kt': 'object Util',
-    'src/main/resources/application.properties': 'spring.datasource.url=${DATABASE_URL}',
+  // Rust, C# and shell: languages the scanner doesn't read.
+  const RUST = {
+    'Cargo.toml': '[package]',
+    'src/main.rs': 'fn main() { let url = std::env::var("DATABASE_URL"); }',
+    'src/config.rs': 'pub struct Config;',
+    'src/util.rs': 'pub fn util() {}',
+    'tools/Gen.cs': 'class Gen {}',
+    'scripts/deploy.sh': 'echo "$DATABASE_URL"',
   };
   const PR = repo().pulls[42]!;
-  const javaRepo = (head: Record<string, string>, files: Array<{ filename: string; patch?: string }> = []) =>
-    repo({ commits: { base1: JAVA, head1: head }, pulls: { 42: { ...PR, author: 'octocat', files } } });
+  const rustRepo = (head: Record<string, string>, files: Array<{ filename: string; patch?: string }> = []) =>
+    repo({ commits: { base1: RUST, head1: head }, pulls: { 42: { ...PR, author: 'octocat', files } } });
   const runs = (mock: ReturnType<typeof mockOctokit>) => [...mock.state.checkRuns.values()];
   const blobs = (mock: ReturnType<typeof mockOctokit>) => mock.calls.filter((c) => c.startsWith('git.getBlob'));
 
-  it('a Java/Kotlin repo: neutral, the can\'t-check title, no comment, no blob downloads; strict mode too', async () => {
-    const head = { ...JAVA, 'src/main/java/app/Feature.java': 'class Feature { String k = System.getenv("NEW_KEY"); }' };
+  it('a Rust repo: neutral, the can\'t-check title, no comment, no blob downloads; strict mode too', async () => {
+    const head = { ...RUST, 'src/feature.rs': 'fn feature() { let k = std::env::var("NEW_KEY"); }' };
     for (const mode of ['comment', 'strict'] as const) {
-      const mock = mockOctokit(javaRepo(head, [{ filename: 'src/main/java/app/Feature.java', patch: '@@ -0,0 +1 @@\n+class Feature {}' }]));
+      const mock = mockOctokit(rustRepo(head, [{ filename: 'src/feature.rs', patch: '@@ -0,0 +1 @@\n+fn feature() {}' }]));
       const { deps, rows } = harness(mock, { mode });
       expect(await prCheck(JOB, deps)).toBe('neutral');
       expect(runs(mock)).toEqual([expect.objectContaining({ conclusion: 'neutral', title: CANT_CHECK_TITLE })]);
-      expect(CANT_CHECK_TITLE).toBe("deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby or PHP files found");
+      expect(CANT_CHECK_TITLE).toBe("deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files found");
       const summary = runs(mock)[0]!.summary;
-      expect(summary).toContain('deployhealth reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren\'t read yet');
-      expect(summary).toContain('It holds 3 .java, 1 .kt, 1 .properties files that deployhealth doesn\'t read.');
+      expect(summary).toContain('deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren\'t read yet');
+      expect(summary).toContain('It holds 4 .rs, 1 .cs, 1 .sh files that deployhealth doesn\'t read.');
       expect(summary).toContain('https://github.com/Utsav-mishra-25/deployhealth#known-limitations');
       expect(summary).not.toContain('src/main'); // counts only, never paths
       expect(mock.state.comments.size).toBe(0);
@@ -350,7 +352,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
       { 'web/app.test.ts': `${ENV}.A`, 'node_modules/lib/index.js': `${ENV}.B`, 'vendor/x.min.js': `${ENV}.C`, 'e2e/login.spec.ts': `${ENV}.D` },
     ];
     for (const extra of extras) {
-      const mock = mockOctokit(javaRepo({ ...JAVA, ...extra }));
+      const mock = mockOctokit(rustRepo({ ...RUST, ...extra }));
       const { deps } = harness(mock, { mode: 'strict' });
       expect(await prCheck(JOB, deps)).toBe('neutral');
       expect(runs(mock)[0]).toMatchObject({ conclusion: 'neutral', title: CANT_CHECK_TITLE });
@@ -359,28 +361,28 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     }
   });
 
-  it('a Java repo whose pull request commits a .env: flagged as today, and the title says both', async () => {
-    const mock = mockOctokit(javaRepo({ ...JAVA, '.env': 'DATABASE_URL=postgres://x' }));
+  it('a Rust repo whose pull request commits a .env: flagged as today, and the title says both', async () => {
+    const mock = mockOctokit(rustRepo({ ...RUST, '.env': 'DATABASE_URL=postgres://x' }));
     const { deps, rows } = harness(mock, { mode: 'strict' });
     expect(await prCheck(JOB, deps)).toBe('failure');
     expect(rows[0]).toMatchObject({ committedEnvFiles: [{ path: '.env', added: true }] });
     expect(runs(mock)[0]).toMatchObject({
       conclusion: 'failure',
-      title: "1 committed env file; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go, Ruby or PHP files)",
+      title: "1 committed env file; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files)",
     });
     const comment = [...mock.state.comments.values()][0]!.body;
     expect(comment).toContain('#### Committed env files');
-    expect(comment).toContain("deployhealth reads JS/TS, Python, Go, Ruby and PHP; Java/Kotlin, Rust, C# and others aren't read yet");
+    expect(comment).toContain("deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin; Rust, C# and others aren't read yet");
     expect(blobs(mock)).toEqual([]);
   });
 
-  it('a Java repo whose pull request adds a secret-shaped string: flagged as today', async () => {
+  it('a Rust repo whose pull request adds a secret-shaped string: flagged as today', async () => {
     const token = ['gh', 'p_', 'y'.repeat(36)].join('');
-    const mock = mockOctokit(javaRepo(JAVA, [{ filename: 'src/main/java/app/App.java', patch: `@@ -0,0 +1 @@\n+String t = "${token}";` }]));
+    const mock = mockOctokit(rustRepo(RUST, [{ filename: 'src/main.rs', patch: `@@ -0,0 +1 @@\n+let t = "${token}";` }]));
     const { deps, rows } = harness(mock);
     expect(await prCheck(JOB, deps)).toBe('neutral');
     expect(rows[0]).toMatchObject({ secretHits: 1 });
-    expect(runs(mock)[0]!.title).toBe("1 possible secret; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go, Ruby or PHP files)");
+    expect(runs(mock)[0]!.title).toBe("1 possible secret; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files)");
     expect(mock.state.comments.size).toBe(1);
     expect(JSON.stringify([...mock.state.comments.values(), ...runs(mock)])).not.toContain(token);
   });
@@ -390,26 +392,26 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     const { deps } = harness(mock, { mode: 'strict' });
     expect(await prCheck(JOB, deps)).toBe('success');
     expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
-    expect(NOTHING_CHANGED_TITLE).toBe('No JS/TS, Python, Go, Ruby or PHP files or env files changed');
+    expect(NOTHING_CHANGED_TITLE).toBe('No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files or env files changed');
     expect(runs(mock)[0]!.summary).toContain('Read 3 files (JS/TS 2, 1 env or config file)');
     expect(mock.state.comments.size).toBe(0);
     expect(blobs(mock)).toEqual([]);
   });
 
-  it('a JS repo whose pull request changes only a .java file: the nothing-changed title, counting the .java file', async () => {
-    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, 'tools/Gen.java': 'class Gen {}' } } }));
+  it('a JS repo whose pull request changes only a .rs file: the nothing-changed title, counting the .rs file', async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, 'tools/gen.rs': 'fn gen() {}' } } }));
     const { deps } = harness(mock);
     expect(await prCheck(JOB, deps)).toBe('success');
     expect(runs(mock)[0]!.title).toBe(NOTHING_CHANGED_TITLE);
-    expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .java file, which deployhealth doesn't read yet.");
+    expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .rs file, which deployhealth doesn't read yet.");
   });
 
-  it('a JS repo whose pull request adds a secret in a .java file: still flagged as today', async () => {
+  it('a JS repo whose pull request adds a secret in a .rs file: still flagged as today', async () => {
     const token = ['gh', 'p_', 'z'.repeat(36)].join('');
     const mock = mockOctokit(
       repo({
-        commits: { base1: BASE, head1: { ...BASE, 'tools/Gen.java': 'class Gen {}' } },
-        pulls: { 42: { ...PR, author: 'octocat', files: [{ filename: 'tools/Gen.java', patch: `@@ -0,0 +1 @@\n+String t = "${token}";` }] } },
+        commits: { base1: BASE, head1: { ...BASE, 'tools/gen.rs': 'fn gen() {}' } },
+        pulls: { 42: { ...PR, author: 'octocat', files: [{ filename: 'tools/gen.rs', patch: `@@ -0,0 +1 @@\n+let t = "${token}";` }] } },
       }),
     );
     const { deps, rows } = harness(mock);
@@ -448,14 +450,14 @@ describe('what the check read: repos it can\'t read, pull requests that change n
       expect(blobs(withCaches)).toHaveLength(blobs(without).length);
     });
 
-    it('a pull request that changes only storage/ and a .java file: the nothing-changed title, no downloads', async () => {
-      const head = { ...LARAVEL, ...CACHES, 'storage/framework/views/0a1b.php': "<?php echo env('NEW_COMPILED'); ?>", 'tools/Gen.java': 'class Gen {}' };
-      const mock = mockOctokit(laravelRepo({ ...LARAVEL, ...CACHES }, head, [{ filename: 'tools/Gen.java', patch: '@@ -0,0 +1 @@\n+class Gen {}' }]));
+    it('a pull request that changes only storage/ and a .rs file: the nothing-changed title, no downloads', async () => {
+      const head = { ...LARAVEL, ...CACHES, 'storage/framework/views/0a1b.php': "<?php echo env('NEW_COMPILED'); ?>", 'tools/gen.rs': 'fn gen() {}' };
+      const mock = mockOctokit(laravelRepo({ ...LARAVEL, ...CACHES }, head, [{ filename: 'tools/gen.rs', patch: '@@ -0,0 +1 @@\n+fn gen() {}' }]));
       const { deps } = harness(mock, { mode: 'strict' });
       expect(await prCheck(JOB, deps)).toBe('success');
       expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
       expect(runs(mock)[0]!.summary).toContain('Read 3 files (PHP 1, 2 env or config files)');
-      expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .java file, which deployhealth doesn't read yet.");
+      expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .rs file, which deployhealth doesn't read yet.");
       expect(mock.state.comments.size).toBe(0);
       expect(blobs(mock)).toEqual([]);
     });
@@ -466,6 +468,59 @@ describe('what the check read: repos it can\'t read, pull requests that change n
       const { deps } = harness(mock);
       expect(await prCheck(JOB, deps)).toBe('success');
       expect(runs(mock)[0]!.title).toBe('Checked 3 files (PHP), 1 changed: no undeclared env vars');
+    });
+  });
+
+  describe('a Spring Boot repo', () => {
+    const SPRING = {
+      'pom.xml': '<project/>',
+      '.env.example': 'DATABASE_URL=\nSPRING_DATASOURCE_USERNAME=\n',
+      'src/main/java/com/example/App.java':
+        'import org.springframework.boot.SpringApplication;\nclass App { String url = System.getenv("DATABASE_URL"); }',
+      'src/main/resources/application.properties': 'spring.datasource.url=${DATABASE_URL}\n',
+      'src/test/java/com/example/AppTest.java': 'class AppTest { String v = System.getenv("TEST_ONLY"); }',
+    };
+    // Maven's build output: never downloaded, whatever it reads.
+    const TARGET = { 'target/classes/application.properties': 'a=${TARGET_SECRET}\n', 'target/generated/Gen.java': 'class Gen { String v = System.getenv("TARGET_GEN"); }' };
+    const springRepo = (base: Record<string, string>, head: Record<string, string>, files: Array<{ filename: string; patch?: string }>) =>
+      repo({ commits: { base1: base, head1: head }, pulls: { 42: { ...PR, author: 'octocat', files } } });
+
+    it('flags a new undeclared System.getenv, @Value and config placeholder; never downloads target/; strict fails', async () => {
+      const head = {
+        ...SPRING,
+        ...TARGET,
+        'src/main/java/com/example/Pay.java': 'class Pay { String k = System.getenv("STRIPE_SECRET"); @Value("${STRIPE_WEBHOOK}") String w; }',
+        'src/main/resources/application.properties': 'spring.datasource.url=${DATABASE_URL}\npayments.url=${PAYMENTS_URL}\n',
+      };
+      const files = [{ filename: 'src/main/java/com/example/Pay.java', patch: '@@ -0,0 +1 @@\n+class Pay {}' }];
+      const withTarget = mockOctokit(springRepo({ ...SPRING, ...TARGET }, head, files));
+      const { deps, rows } = harness(withTarget, { mode: 'strict' });
+      expect(await prCheck(JOB, deps)).toBe('failure');
+      expect(rows[0]!.undeclaredVars).toEqual(['PAYMENTS_URL', 'STRIPE_SECRET', 'STRIPE_WEBHOOK']);
+      expect(runs(withTarget)[0]).toMatchObject({ conclusion: 'failure', title: '3 env vars added (3 not in .env.example)' });
+      expect(JSON.stringify([rows, ...withTarget.state.comments.values(), ...runs(withTarget)])).not.toMatch(/TARGET_SECRET|TARGET_GEN|SPRING_DATASOURCE_USERNAME/);
+      const withoutTarget = mockOctokit(springRepo(SPRING, Object.fromEntries(Object.entries(head).filter(([p]) => !p.startsWith('target/'))), files));
+      await prCheck(JOB, harness(withoutTarget, { mode: 'strict' }).deps);
+      expect(blobs(withTarget)).toHaveLength(blobs(withoutTarget).length);
+    });
+
+    it('a pull request that changes only target/ and a .rs file: the nothing-changed title, no downloads', async () => {
+      const head = { ...SPRING, ...TARGET, 'target/generated/Gen.java': 'class Gen { String v = System.getenv("NEW_GEN"); }', 'tools/gen.rs': 'fn gen() {}' };
+      const mock = mockOctokit(springRepo({ ...SPRING, ...TARGET }, head, [{ filename: 'tools/gen.rs', patch: '@@ -0,0 +1 @@\n+fn gen() {}' }]));
+      const { deps } = harness(mock, { mode: 'strict' });
+      expect(await prCheck(JOB, deps)).toBe('success');
+      expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
+      expect(runs(mock)[0]!.summary).toContain('Read 3 files (Java/Kotlin 1, 2 env or config files)');
+      expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .rs file, which deployhealth doesn't read yet.");
+      expect(blobs(mock)).toEqual([]);
+    });
+
+    it('a clean pass names Java/Kotlin; a default makes a new read declared enough', async () => {
+      const head = { ...SPRING, 'src/main/kotlin/com/example/Flags.kt': 'object Flags { val f = System.getenv("FEATURE_FLAG") ?: "off" }' };
+      const mock = mockOctokit(springRepo(SPRING, head, [{ filename: 'src/main/kotlin/com/example/Flags.kt', patch: '@@ -0,0 +1 @@\n+object Flags' }]));
+      const { deps } = harness(mock, { mode: 'strict' });
+      expect(await prCheck(JOB, deps)).toBe('success');
+      expect(runs(mock)[0]!.title).toBe('Checked 4 files (Java/Kotlin), 1 changed: no undeclared env vars');
     });
   });
 
@@ -490,7 +545,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
 
   it('rewrites an earlier head\'s comment when a later head can\'t be checked, and never creates one', async () => {
     // An earlier head of this pull request got a comment; the current head holds no source file it reads.
-    const mock = mockOctokit(javaRepo(JAVA));
+    const mock = mockOctokit(rustRepo(RUST));
     mock.state.comments.set(7, { body: `${COMMENT_MARKER}\n⚠️ **1 env var added (1 not in .env.example).**`, bot: true, appId: MOCK_APP_ID });
     const { deps } = harness(mock);
     expect(await prCheck(JOB, deps)).toBe('neutral');

@@ -10,21 +10,21 @@ const coverageOf = (base: Record<string, string>, head: Record<string, string>) 
 
 describe('treeCoverage', () => {
   it('counts read files per language, unread source by extension, and what the pull request changed', () => {
-    const base = { 'src/a.ts': '1', 'src/gone.ts': '2', 'api/app.py': '3', '.env.example': '4', 'App.java': '5', 'Old.java': '6', 'node_modules/x/Y.java': '7' };
-    const head = { 'src/a.ts': '1', 'api/app.py': '3b', '.env.example': '4', 'App.java': '5b', 'New.kt': '8', 'node_modules/x/Y.java': '7b', 'src/a.test.ts': '9' };
+    const base = { 'src/a.ts': '1', 'src/gone.ts': '2', 'api/app.py': '3', '.env.example': '4', 'svc/main.rs': '5', 'svc/old.rs': '6', 'node_modules/x/y.rs': '7', 'App.java': 'j' };
+    const head = { 'src/a.ts': '1', 'api/app.py': '3b', '.env.example': '4', 'svc/main.rs': '5b', 'ios/App.swift': '8', 'node_modules/x/y.rs': '7b', 'src/a.test.ts': '9', 'App.java': 'j' };
     expect(coverageOf(base, head)).toEqual({
-      sourceByLanguage: { javascript: 1, python: 1, go: 0, ruby: 0, php: 0 },
-      sourceFiles: 2,
-      readFiles: 3, // src/a.ts, api/app.py, .env.example (the test file isn't read)
+      sourceByLanguage: { javascript: 1, python: 1, go: 0, ruby: 0, php: 0, jvm: 1 },
+      sourceFiles: 3,
+      readFiles: 4, // src/a.ts, api/app.py, App.java, .env.example (the test file isn't read)
       changedRead: 2, // api/app.py changed, src/gone.ts deleted
-      unsupported: { '.java': 1, '.kt': 1 }, // node_modules never counts
-      unsupportedChanged: { '.java': 2, '.kt': 1 }, // App.java changed, Old.java deleted, New.kt added
+      unsupported: { '.rs': 1, '.swift': 1 }, // node_modules never counts
+      unsupportedChanged: { '.rs': 2, '.swift': 1 }, // main.rs changed, old.rs deleted, App.swift added
     });
   });
 
   it('describes counts by extension, most first', () => {
-    expect(describeExtensionCounts({ '.kt': 1, '.java': 12, '.properties': 3 })).toBe('12 .java, 3 .properties, 1 .kt files');
-    expect(describeExtensionCounts({ '.java': 1 })).toBe('1 .java file');
+    expect(describeExtensionCounts({ '.swift': 1, '.rs': 12, '.cs': 3 })).toBe('12 .rs, 3 .cs, 1 .swift files');
+    expect(describeExtensionCounts({ '.rs': 1 })).toBe('1 .rs file');
     expect(describeExtensionCounts({})).toBe('');
   });
 
@@ -39,7 +39,7 @@ describe('treeCoverage', () => {
     const base: TreeEntry[] = [];
     const head: TreeEntry[] = [];
     for (let i = 0; i < n; i++) {
-      const path = `${deep}${i % 7}/f${i}.${['ts', 'java', 'py', 'md', 'kt', 'go', 'rb'][i % 7]}`;
+      const path = `${deep}${i % 7}/f${i}.${['ts', 'rs', 'py', 'md', 'cs', 'go', 'rb'][i % 7]}`;
       base.push({ path, sha: `s${i}` });
       head.push({ path, sha: i % 3 === 0 ? `t${i}` : `s${i}` });
     }
