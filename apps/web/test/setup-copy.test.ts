@@ -35,8 +35,8 @@ describe('the setup copy', () => {
 
 describe('the no-references notice on the project page', () => {
   it('says the last scan found no env var references and which languages are read', () => {
-    expect(NO_REFERENCES_NOTICE).toBe('The last scan found no env var references. deployhealth reads JS/TS, Python, Go, Ruby and PHP.');
-    expect(renderToStaticMarkup(createElement(NoReferencesNotice, { show: true }))).toContain('deployhealth reads JS/TS, Python, Go, Ruby and PHP.');
+    expect(NO_REFERENCES_NOTICE).toBe('The last scan found no env var references. deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin.');
+    expect(renderToStaticMarkup(createElement(NoReferencesNotice, { show: true }))).toContain('deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin.');
     expect(renderToStaticMarkup(createElement(NoReferencesNotice, { show: false }))).toBe('');
   });
 });

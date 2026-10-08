@@ -75,7 +75,7 @@ export function treeCoverage(
   return { sourceByLanguage, sourceFiles, readFiles: selectedHead.length, changedRead, unsupported, unsupportedChanged };
 }
 
-/** "12 .java, 3 .properties files" (most first, then by extension), or '' when there are none. */
+/** "12 .rs, 3 .cs files" (most first, then by extension), or '' when there are none. */
 export function describeExtensionCounts(counts: Readonly<Record<string, number>>): string {
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
   if (entries.length === 0) return '';

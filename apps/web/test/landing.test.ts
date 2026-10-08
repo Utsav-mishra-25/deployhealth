@@ -30,7 +30,7 @@ describe('the landing page languages line', () => {
   it('names the languages the scanner reads, and what happens on others, from the shared constant', () => {
     const html = renderToStaticMarkup(createElement(Landing, { demo: false }));
     expect(LANGUAGES_SENTENCE).toBe(
-      "Reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.",
+      "Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.",
     );
     expect(html).toContain(LANGUAGES_SENTENCE.replace(/'/g, '&#x27;'));
   });
