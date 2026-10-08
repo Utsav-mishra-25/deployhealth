@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { scanFiles, selectTreeFiles } from '../src/scan';
 import { scanSource } from '../src/scanner';
+import { MAX_SOURCE_FILE_BYTES } from '../src/vendored';
 
 // Every parser of untrusted input gets a timing test: a pull request (via the GitHub App) or a
 // cloned repository (via the CLI) controls these files. Inputs are built at run time; the bounds
@@ -142,6 +143,70 @@ describe('path rules timing on hostile trees', () => {
     const { value, ms } = await timed(() => selectTreeFiles(paths));
     expect(value).toHaveLength(1_999);
     expect(value).not.toContain(`${deep}/storage/compiled.php`);
+    expect(ms).toBeLessThan(2_000);
+  });
+});
+
+// Java, Kotlin and Spring (Phase 5). The same ~4x headroom; the comment on each gives the time
+// here and what a quadratic version took.
+describe('Java, Kotlin and Spring timing on hostile inputs', () => {
+  const LIMIT = 512 * 1024 - 64;
+  const oneLine = (unit: string, tail = '') => `${unit.repeat(Math.floor((LIMIT - tail.length) / unit.length))}${tail}`;
+
+  it('reads one Kotlin line of 26,000 System.getenv("A") reads, each checked for a default, in under 1 s', async () => {
+    // ~50 ms here. Reads with no default are the worst case: an unanchored default check scans the
+    // rest of the line for each, which took 6.5 s.
+    const source = oneLine('System.getenv("A"); ');
+    const { value, ms } = await timed(() => scanFiles(new Map([['src/A.kt', source], ['.env.example', '']])));
+    expect(value.references).toEqual([expect.objectContaining({ name: 'A' })]);
+    expect(value.references[0]!.hasDefault).toBeUndefined();
+    expect(ms).toBeLessThan(1_000);
+  });
+
+  it('reads one line of unclosed System.getenv, map reads and @Value placeholders in under 1 s', async () => {
+    // ~60 ms here for all of them: every attempt stops at the next quote, bracket or brace.
+    for (const unit of ['System.getenv("A ', 'System.getenv().get("A ', 'System.getenv()["A" ', 'System.getenv().getOrDefault("A", ', '@Value("${A ', '${', '${A:']) {
+      const source = oneLine(unit);
+      const { value, ms } = await timed(() => scanFiles(new Map([['src/A.java', source], ['.env.example', 'A=\n']])));
+      expect(value.references.length, unit).toBeLessThanOrEqual(1);
+      expect(ms, unit).toBeLessThan(1_000);
+    }
+  });
+
+  it('reads a Spring config line of 130,000 nested defaults (${A:${A:…) in under 1 s', async () => {
+    // ~50 ms here: one pass with a stack of open placeholders.
+    const source = `a=${oneLine('${A:', '}')}`;
+    const { value, ms } = await timed(() => scanFiles(new Map([['application.properties', source], ['.env.example', '']])));
+    expect(value.references).toEqual([expect.objectContaining({ name: 'A', hasDefault: true })]);
+    expect(ms).toBeLessThan(1_000);
+  });
+
+  it('reads YAML with a 200 KB key over 15,000 children, and 900 levels of nesting, in under 1 s', async () => {
+    // ~35 ms here: key paths past 256 characters aren't built. Joining every line's full key path
+    // took 8 s.
+    const wide = `${'k'.repeat(200 * 1024)}:\n${'  child: 1\n'.repeat(15_000)}`;
+    const deep = Array.from({ length: 900 }, (_, i) => `${' '.repeat(i)}k${i}:`).join('\n');
+    for (const source of [wide, deep]) {
+      expect(Buffer.byteLength(source)).toBeLessThan(MAX_SOURCE_FILE_BYTES);
+      const { ms } = await timed(() => scanFiles(new Map([['src/A.java', 'import org.springframework.boot.X;'], ['application.yml', source], ['.env.example', 'K_CHILD=\n']])));
+      expect(ms).toBeLessThan(1_000);
+    }
+  });
+
+  it('matches 50,000 declared names against 50,000 @ConfigurationProperties prefixes in under 2 s', async () => {
+    // ~450 ms here: a character trie of prefixes. Checking every name against every prefix took
+    // 64 s.
+    const n = 50_000;
+    const env = Array.from({ length: n }, (_, i) => `APP_P${i}_X=`).join('\n');
+    // Ten files under the 512 KB source limit, 5,000 annotations each.
+    const files = new Map([['.env.example', env]]);
+    for (let f = 0; f < 10; f++) {
+      const lines = Array.from({ length: n / 10 }, (_, i) => `@ConfigurationProperties("app.q${f * 10_000 + i}")`);
+      files.set(`src/Props${f}.java`, `import org.springframework.boot.X;\n${lines.join('\n')}`);
+      expect(Buffer.byteLength(files.get(`src/Props${f}.java`)!)).toBeLessThan(MAX_SOURCE_FILE_BYTES);
+    }
+    const { value, ms } = await timed(() => scanFiles(files));
+    expect(value.counts.unused).toBe(n);
     expect(ms).toBeLessThan(2_000);
   });
 });
