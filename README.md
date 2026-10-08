@@ -3,7 +3,7 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-Reads JS/TS, Python, Go and Ruby. Java/Kotlin, PHP, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+Reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
 
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 
@@ -446,11 +446,12 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
 
 ## Known limitations
 
-- **Languages.** The scanner reads JS/TS, Python, Go and Ruby source, plus env, declaration and
-  Compose files. Java/Kotlin, PHP, Rust, C# and others aren't read yet. On a repo with none of the
-  languages it reads, the pull request check says "can't check this repo yet" (neutral, never a
-  failure) and the CLI prints `No JS/TS, Python, Go or Ruby source files found: deployhealth can't
-  check this directory yet.` (exit 0) instead of passing it. Committed `.env` files and
+- **Languages.** The scanner reads JS/TS, Python, Go, Ruby and PHP source, plus env, declaration
+  and Compose files and Symfony's config YAML. Java/Kotlin, Rust, C# and others aren't read yet. On
+  a repo with none of the languages it reads, the pull request check says "can't check this repo
+  yet" (neutral, never a failure) and the CLI prints `No JS/TS, Python, Go, Ruby or PHP source files
+  found: deployhealth can't check this directory yet.` (exit 0) instead of passing it. The GitHub
+  App reads PHP as soon as it's deployed; the CLI reads it from 0.4.0 (0.3.2 treats PHP as unread). Committed `.env` files and
   secret-shaped strings are still flagged in any language.
 - **Old workflows still download the CLI unpinned.** Workflows written before the npm package fetch
   `/deployhealth-scan.mjs` from your instance on every run, with no version or checksum, so

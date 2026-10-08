@@ -5,7 +5,9 @@ import { DEFAULT_IGNORE } from './default-ignore';
 import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
-import { languageForFile, SCANNED_EXTENSIONS, scanSource } from './scanner';
+import { LARAVEL_FRAMEWORK_NAMES, LARAVEL_MARKER } from './laravel';
+import { languageForFile, SCANNED_EXTENSIONS, scanSource, usedOnlyNames } from './scanner';
+import { isSymfonyConfigPath, scanSymfonyConfig } from './symfony';
 import { isDeclarationFile, isEnvFileName, MAX_ENV_FILES_PER_SCOPE, sortEnvFileNames } from './env-files';
 import {
   type EnvScope,
@@ -105,10 +107,17 @@ export async function scanFiles(
 
 /**
  * Env files (env-files.ts; other names such as `.env.staging` are ignored), source files in a
- * scanned language, and Compose files (compose.ts).
+ * scanned language, Compose files (compose.ts), Symfony config YAML (symfony.ts), and Laravel's
+ * `artisan`, whose content is never read: it only marks its scope as a Laravel app.
  */
 function isScannable(relPath: string, name: string): boolean {
-  return isEnvFileName(name) || isComposeFileName(name) || SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase());
+  return (
+    isEnvFileName(name) ||
+    isComposeFileName(name) ||
+    name === LARAVEL_MARKER ||
+    isSymfonyConfigPath(relPath) ||
+    SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase())
+  );
 }
 
 const UNTERMINATED = {
@@ -133,12 +142,20 @@ async function analyzeFiles(
   const envFiles: ScopeEnvFile[] = [];
   const sourceFiles: string[] = [];
   const composeFiles: string[] = [];
+  const configFiles: string[] = [];
+  const laravelDirs: string[] = [];
   const tooLargeSkipped: string[] = [];
   for (const file of files) {
     const name = posix.basename(file);
+    if (name === LARAVEL_MARKER) {
+      laravelDirs.push(dirOf(file));
+      continue;
+    }
     if (!isEnvFileName(name)) {
       if ((await size(file)) > MAX_SOURCE_FILE_BYTES) tooLargeSkipped.push(file);
-      else (isComposeFileName(name) ? composeFiles : sourceFiles).push(file);
+      else if (isComposeFileName(name)) composeFiles.push(file);
+      else if (languageForFile(file)) sourceFiles.push(file);
+      else configFiles.push(file);
       continue;
     }
     const { entries, commented, invalid, unterminated } = parseEnv(await read(file));
@@ -148,20 +165,9 @@ async function analyzeFiles(
   }
 
   const scopeDirs = new Set(envFiles.map((f) => dirOf(f.path)));
-  const referencesByScope = new Map<string, Reference[]>();
-  for (const file of sourceFiles) {
-    const language = languageForFile(file);
-    if (!language) continue;
-    const refs = scanSource(await read(file), language, file);
-    if (refs.length === 0) continue;
-    const scope = nearestScope(dirOf(file), scopeDirs);
-    const list = referencesByScope.get(scope);
-    if (list) for (const ref of refs) list.push(ref);
-    else referencesByScope.set(scope, refs);
-  }
-
   // Names read outside the scanned code: by test files (never reported; their env files are left
-  // out) and by Compose interpolation (never MISSING). Both only keep a variable from being UNUSED.
+  // out), by Compose interpolation, by PHP's $_SERVER, and by Laravel's framework in a scope with
+  // `artisan` (never MISSING). All of them only keep a variable from being UNUSED.
   const usedOutsideCode = new Map<string, Set<string>>();
   const markUsed = (file: string, names: Iterable<string>) => {
     const scope = nearestScope(dirOf(file), scopeDirs);
@@ -169,12 +175,33 @@ async function analyzeFiles(
     if (!used) usedOutsideCode.set(scope, (used = new Set()));
     for (const name of names) used.add(name);
   };
+
+  const referencesByScope = new Map<string, Reference[]>();
+  const addReferences = (file: string, refs: Reference[]) => {
+    if (refs.length === 0) return;
+    const scope = nearestScope(dirOf(file), scopeDirs);
+    const list = referencesByScope.get(scope);
+    if (list) for (const ref of refs) list.push(ref);
+    else referencesByScope.set(scope, refs);
+  };
+  for (const file of sourceFiles) {
+    const language = languageForFile(file)!;
+    const text = await read(file);
+    addReferences(file, scanSource(text, language, file));
+    markUsed(file, usedOnlyNames(text, language));
+  }
+  // Symfony config YAML: references like code, but not source files (it alone can't be checked).
+  for (const file of configFiles) addReferences(file, scanSymfonyConfig(await read(file), file));
+
   for (const file of testFiles) {
     const language = languageForFile(file);
     if (!language || (await size(file)) > MAX_SOURCE_FILE_BYTES) continue;
-    markUsed(file, scanSource(await read(file), language, file).map((ref) => ref.name));
+    const text = await read(file);
+    markUsed(file, scanSource(text, language, file).map((ref) => ref.name));
+    markUsed(file, usedOnlyNames(text, language));
   }
   for (const file of composeFiles) markUsed(file, composeVariableNames(await read(file)));
+  for (const dir of laravelDirs) markUsed(`${dir ? `${dir}/` : ''}${LARAVEL_MARKER}`, LARAVEL_FRAMEWORK_NAMES);
 
   const byUser = createNameFilter(options.ignore ?? []);
   const byDefault = createNameFilter(options.defaultIgnore === false ? [] : DEFAULT_IGNORE);

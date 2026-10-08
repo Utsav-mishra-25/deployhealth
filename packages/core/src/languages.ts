@@ -1,7 +1,7 @@
 // Browser-safe (no Node imports): the languages the scanner reads, and how every result names them.
 // The App's check runs, the CLI, the web app and the README all take their wording from here.
 
-export type LanguageId = 'javascript' | 'python' | 'go' | 'ruby';
+export type LanguageId = 'javascript' | 'python' | 'go' | 'ruby' | 'php';
 
 export interface SupportedLanguage {
   id: LanguageId;
@@ -16,6 +16,8 @@ export const SUPPORTED_LANGUAGES: readonly SupportedLanguage[] = [
   { id: 'python', label: 'Python', extensions: ['.py'] },
   { id: 'go', label: 'Go', extensions: ['.go'] },
   { id: 'ruby', label: 'Ruby', extensions: ['.rb'] },
+  // `.blade.php` templates included: their extension is `.php`.
+  { id: 'php', label: 'PHP', extensions: ['.php'] },
 ];
 
 /** "A, B, C or D" / "A, B, C and D" (no serial comma); one item alone, two joined by the word. */
@@ -25,9 +27,9 @@ export function listLabels(labels: readonly string[], word: 'or' | 'and'): strin
 }
 
 const LABELS = SUPPORTED_LANGUAGES.map((l) => l.label);
-/** "JS/TS, Python, Go or Ruby" */
+/** "JS/TS, Python, Go, Ruby or PHP" */
 export const SUPPORTED_LANGUAGES_OR = listLabels(LABELS, 'or');
-/** "JS/TS, Python, Go and Ruby" */
+/** "JS/TS, Python, Go, Ruby and PHP" */
 export const SUPPORTED_LANGUAGES_AND = listLabels(LABELS, 'and');
 
 /**
@@ -41,7 +43,6 @@ export const UNREAD_SOURCE_EXTENSIONS: readonly string[] = [
   '.scala',
   '.groovy',
   '.properties',
-  '.php',
   '.rs',
   '.cs',
   '.ex',
@@ -59,7 +60,7 @@ export const UNREAD_SOURCE_EXTENSIONS: readonly string[] = [
 ];
 
 /** The languages people ask about first that aren't read yet, for messages. */
-export const UNREAD_LANGUAGES_TEXT = 'Java/Kotlin, PHP, Rust, C# and others';
+export const UNREAD_LANGUAGES_TEXT = 'Java/Kotlin, Rust, C# and others';
 
 /** The README section that says which languages are read (its "Languages" bullet comes first). */
 export const LANGUAGES_DOC_URL = 'https://github.com/Utsav-mishra-25/deployhealth#known-limitations';

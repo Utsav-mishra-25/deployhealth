@@ -22,6 +22,10 @@ const REPOS = [
   { repo: 'calcom/cal.com', sha: '54343aa685ae8f33159d2f485ec4a57bad5c574a' },
   { repo: 'mastodon/mastodon', sha: 'cfbfe77290a918be6846f9ffa2d28d4c4f926b3d' },
   { repo: 'langgenius/dify', sha: '0bd950fd01e9d0b357601fb1a418673465304ede' },
+  // PHP / Laravel (Phase 5), default branches as of 2026-10-08.
+  { repo: 'laravel/laravel', sha: 'f4000aeb018fcbf71d4a13e3ee4b80c7e2d45be5' },
+  { repo: 'BookStackApp/BookStack', sha: 'ff661b59f6f605bf768fe850c0d0a8a2dc09d203' },
+  { repo: 'koel/koel', sha: '72ab1e8d9bc4b744b2043a5259e1a06d733a9a29' },
 ];
 
 const ROOT = resolve(import.meta.dirname, '..');

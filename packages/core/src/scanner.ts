@@ -38,6 +38,26 @@ const PY_DEFAULT = /^\s*(?:,|\)\s*or\b)\s*(?!None\b)[^\s)]/;
 const RUBY_FETCH_DEFAULT = /^\s*(?:,\s*(?!nil\b)\S|\)\s*(?:\{|do\b))/;
 /** Ruby `ENV["<NAME>"] || "a"`. */
 const RUBY_INDEX_DEFAULT = /^\s*\|\|\s*(?!nil\b)\S/;
+/**
+ * PHP: what may follow a read when the code supplies a default. `null` (any case) is no default,
+ * and neither is a PHP 8 `throw` expression: `?: throw new …` means the variable is required.
+ */
+const PHP_NO_DEFAULT = '(?!(?:null|throw)\\b)';
+/** `getenv('<NAME>') ?: 'a'`, after the closing parenthesis. Not `??`: getenv returns false, not null. */
+const PHP_GETENV_DEFAULT = new RegExp(`^\\s*\\?:\\s*${PHP_NO_DEFAULT}\\S`, 'i');
+/** `$_ENV['<NAME>'] ?? 'a'` or `?: 'a'`, after the closing bracket. */
+const PHP_INDEX_DEFAULT = new RegExp(`^\\s*(?:\\?\\?|\\?:)\\s*${PHP_NO_DEFAULT}\\S`, 'i');
+/**
+ * Laravel `env('<NAME>', 'a')` / `Env::get('<NAME>', 'a')`, or `env('<NAME>') ?? 'a'` / `?: 'a'`
+ * (also after a `null` second argument), after the quoted name.
+ */
+const PHP_ENV_DEFAULT = new RegExp(
+  `^\\s*(?:,\\s*${PHP_NO_DEFAULT}[^\\s)]|(?:,\\s*null\\s*)?\\)\\s*(?:\\?\\?|\\?:)\\s*${PHP_NO_DEFAULT}\\S)`,
+  'i',
+);
+// A PHP function call, not a method (`->env(`), a static call (`::env(`), a variable (`$env(`) or
+// part of a longer name (`getenv(` isn't `env(`); a leading `\` (the global namespace) is fine.
+const PHP_CALL = '(?<![\\w$>:\\\\])\\\\?';
 
 /**
  * One list per language. Each regex runs over a single line, so references split across
@@ -87,7 +107,45 @@ const PATTERNS: Readonly<Record<Language, readonly Pattern[]>> = {
     // ENV.fetch("<NAME>"), ENV.fetch("<NAME>", default), ENV.fetch "<NAME>"
     { syntax: 'ENV', regex: new RegExp(`\\bENV\\.fetch(?:\\s*\\(\\s*|\\s+)${quoted('\'"')}`, 'g'), defaultAfter: RUBY_FETCH_DEFAULT },
   ],
+  php: [
+    // getenv('<NAME>'), getenv("<NAME>", true): through the closing parenthesis, since a second
+    // argument is getenv's local_only flag, not a default.
+    {
+      syntax: 'getenv',
+      regex: new RegExp(`${PHP_CALL}getenv\\s*\\(\\s*${quoted('\'"')}\\s*(?:,[^,()]*)?\\)`, 'g'),
+      defaultAfter: PHP_GETENV_DEFAULT,
+    },
+    // $_ENV['<NAME>']
+    { syntax: '$_ENV', regex: new RegExp(`\\$_ENV\\s*\\[\\s*${quoted('\'"')}\\s*\\]`, 'g'), defaultAfter: PHP_INDEX_DEFAULT },
+    // Laravel: env('<NAME>'), env('<NAME>', default)
+    { syntax: 'env()', regex: new RegExp(`${PHP_CALL}env\\s*\\(\\s*${quoted('\'"')}`, 'g'), defaultAfter: PHP_ENV_DEFAULT },
+    // Laravel: Env::get('<NAME>'), \Illuminate\Support\Env::get('<NAME>', default)
+    { syntax: 'Env::get', regex: new RegExp(`\\bEnv::get\\s*\\(\\s*${quoted('\'"')}`, 'g'), defaultAfter: PHP_ENV_DEFAULT },
+  ],
 };
+
+/**
+ * Reads that only mark a name as used (it can't be UNUSED) without making it a reference that
+ * can be MISSING: PHP's `$_SERVER['<NAME>']` holds env vars and request data alike (HTTP_HOST,
+ * REQUEST_METHOD, …), so a name read there is never reported as missing.
+ */
+const USED_ONLY: Readonly<Partial<Record<Language, readonly RegExp[]>>> = {
+  php: [new RegExp(`\\$_SERVER\\s*\\[\\s*${quoted('\'"')}\\s*\\]`, 'g')],
+};
+
+/** Names a file reads in a way that marks them used but is never a reference (USED_ONLY). */
+export function usedOnlyNames(source: string, language: Language): Set<string> {
+  const names = new Set<string>();
+  const patterns = USED_ONLY[language];
+  if (!patterns) return names;
+  for (const line of source.split(/\r?\n/)) {
+    for (const regex of patterns) {
+      regex.lastIndex = 0;
+      for (let match = regex.exec(line); match; match = regex.exec(line)) names.add(match.groups!.name!);
+    }
+  }
+  return names;
+}
 
 export function languageForFile(file: string): Language | undefined {
   return LANGUAGE_BY_EXTENSION[extname(file).toLowerCase()];
