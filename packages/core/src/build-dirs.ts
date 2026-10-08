@@ -1,14 +1,20 @@
-// Build output and caches that only a directory's context identifies. `cache`, `build` and
-// `storage` are ordinary source folder names in many repositories, so unlike VENDORED_DIRS they
-// are skipped only under a known parent (`bootstrap/cache`) or next to a framework's marker file
-// (`storage/` beside Laravel's `artisan`). Laravel's bootstrap/cache and storage/ can hold
+// Build output and caches that only a directory's context identifies. `cache`, `build`, `target`
+// and `storage` are ordinary source folder names in many repositories, so unlike VENDORED_DIRS
+// they are skipped only under a known parent (`bootstrap/cache`) or next to a build tool's or
+// framework's marker file (Maven's `target/` beside `pom.xml`, Gradle's `build/` and `target/`
+// beside a Gradle build file, `storage/` beside Laravel's `artisan`). Laravel's bootstrap/cache and storage/ can hold
 // cached config with values: the scanner never opens them.
 
 /** `<parent>/<dir>` pairs skipped at any depth. */
 const SKIPPED_PAIRS: ReadonlySet<string> = new Set(['bootstrap/cache', 'public/build']);
 
 /** Directories skipped when their parent directory holds one of these files. */
-const SKIPPED_NEXT_TO: ReadonlyMap<string, readonly string[]> = new Map([['storage', ['artisan']]]);
+const GRADLE_FILES = ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts'];
+const SKIPPED_NEXT_TO: ReadonlyMap<string, readonly string[]> = new Map([
+  ['storage', ['artisan']],
+  ['target', ['pom.xml', ...GRADLE_FILES]],
+  ['build', GRADLE_FILES],
+]);
 
 /** Every file name SKIPPED_NEXT_TO looks for. */
 const MARKER_FILE_NAMES: ReadonlySet<string> = new Set([...SKIPPED_NEXT_TO.values()].flat());

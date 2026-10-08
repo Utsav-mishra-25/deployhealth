@@ -6,8 +6,8 @@
  * Directory names never entered, at any depth. `build` is deliberately absent: a committed
  * `build/` is as often build scripts (webpack, gulp) that read real env vars as build output,
  * which is gitignored anyway; committed bundles are caught by the size and `.min.*` rules.
- * Names that are build output only in context (`bootstrap/cache`, Laravel's `storage/`) are in
- * build-dirs.ts.
+ * Names that are build output only in context (`bootstrap/cache`, Laravel's `storage/`, Maven's and
+ * Gradle's `target/` and `build/`) are in build-dirs.ts.
  */
 export const VENDORED_DIRS: ReadonlySet<string> = new Set([
   'node_modules',
@@ -31,6 +31,8 @@ export const VENDORED_DIRS: ReadonlySet<string> = new Set([
   '__pycache__',
   'site-packages',
   '.phpunit.cache',
+  '.gradle',
+  '.mvn',
 ]);
 
 /** Generated files: Yarn Plug'n'Play's loaders and minified bundles. */
