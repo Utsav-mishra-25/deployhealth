@@ -300,10 +300,12 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
      - Docker Compose interpolation (CLI 0.3.0): `${VAR}`, `${VAR:-x}`, `${VAR:?x}`, `$VAR` and the
        other forms in `docker-compose*.yml` / `compose*.yaml` mark `VAR` as used in that file's
        scope, so an entry Compose consumes isn't UNUSED. They never make MISSING rows.
-     - Laravel (next to `artisan`): the env vars Laravel's framework reads itself (its own
-       config, merged into the app's: `BCRYPT_ROUNDS`, `BROADCAST_CONNECTION`,
-       `PHP_CLI_SERVER_WORKERS`, …; 195 names from its 11.x, 12.x and 13.x releases) count as used,
-       so a fresh app's `.env.example` isn't UNUSED. PHP's `$_SERVER['X']` marks `X` used too; it
+     - Laravel (next to `artisan`): the env vars Laravel's framework and skeleton read (the
+       framework's own config, merged into the app's, and the skeleton's: `BCRYPT_ROUNDS`,
+       `BROADCAST_CONNECTION`, `PHP_CLI_SERVER_WORKERS`, …; 198 names from the 11.x, 12.x and 13.x
+       releases) count as used, so a fresh app's `.env.example` isn't UNUSED, and a read of one
+       is never MISSING (Laravel's config reads optional settings with no default), except
+       `APP_KEY`: Laravel won't boot without it. PHP's `$_SERVER['X']` marks `X` used too; it
        also holds request data (`HTTP_HOST`, …), so it never makes MISSING rows.
      - Symfony: `%env(X)%` in YAML under a `config/` directory is a reference, with processors
        (`%env(int:X)%`, `%env(json:file:X)%`); `%env(default:param:X)%` is optional.
