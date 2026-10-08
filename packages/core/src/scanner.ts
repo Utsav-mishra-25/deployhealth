@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import { SUPPORTED_LANGUAGES, type LanguageId } from './languages';
 import { scanPydanticSettings } from './pydantic';
+import { springPlaceholders } from './spring';
 import type { Reference, Syntax } from './types';
 
 export type Language = LanguageId;
@@ -55,6 +56,15 @@ const PHP_ENV_DEFAULT = new RegExp(
   `^\\s*(?:,\\s*${PHP_NO_DEFAULT}[^\\s)]|(?:,\\s*null\\s*)?\\)\\s*(?:\\?\\?|\\?:)\\s*${PHP_NO_DEFAULT}\\S)`,
   'i',
 );
+/**
+ * Java/Kotlin, after `System.getenv("<NAME>")` or a map read: Kotlin's `?: d` (not `null`, and not
+ * `throw`, `error(…)`, `TODO(…)`, `requireNotNull`/`checkNotNull`, which mean "required"), or
+ * `Optional.ofNullable(…).orElse(d)` / `.orElseGet(…)` closing the read.
+ */
+const JVM_DEFAULT =
+  /^\s*(?:\?:\s*(?!(?:null|throw|error|TODO|requireNotNull|checkNotNull)\b)\S|\)\s*\.orElse(?:Get)?\s*\(\s*(?!null\b)[^\s)])/;
+/** `System.getenv().getOrDefault("<NAME>", d)`, after the name: a non-null second argument. */
+const JVM_GET_OR_DEFAULT = /^\s*,\s*(?!null\b)[^\s)]/;
 // A PHP function call, not a method (`->env(`), a static call (`::env(`), a variable (`$env(`) or
 // part of a longer name (`getenv(` isn't `env(`); a leading `\` (the global namespace) is fine.
 const PHP_CALL = '(?<![\\w$>:\\\\])\\\\?';
@@ -122,6 +132,33 @@ const PATTERNS: Readonly<Record<Language, readonly Pattern[]>> = {
     // Laravel: Env::get('<NAME>'), \Illuminate\Support\Env::get('<NAME>', default)
     { syntax: 'Env::get', regex: new RegExp(`\\bEnv::get\\s*\\(\\s*${quoted('\'"')}`, 'g'), defaultAfter: PHP_ENV_DEFAULT },
   ],
+  // Java and Kotlin; `@Value("${…}")` placeholders are read separately (springPlaceholders).
+  jvm: [
+    // System.getenv("<NAME>")
+    {
+      syntax: 'System.getenv',
+      regex: new RegExp(`\\bSystem\\.getenv\\s*\\(\\s*${quoted('"')}\\s*\\)`, 'g'),
+      defaultAfter: JVM_DEFAULT,
+    },
+    // System.getenv().get("<NAME>")
+    {
+      syntax: 'System.getenv',
+      regex: new RegExp(`\\bSystem\\.getenv\\s*\\(\\s*\\)\\s*\\.get\\s*\\(\\s*${quoted('"')}\\s*\\)`, 'g'),
+      defaultAfter: JVM_DEFAULT,
+    },
+    // Kotlin: System.getenv()["<NAME>"]
+    {
+      syntax: 'System.getenv',
+      regex: new RegExp(`\\bSystem\\.getenv\\s*\\(\\s*\\)\\s*\\[\\s*${quoted('"')}\\s*\\]`, 'g'),
+      defaultAfter: JVM_DEFAULT,
+    },
+    // System.getenv().getOrDefault("<NAME>", default)
+    {
+      syntax: 'System.getenv',
+      regex: new RegExp(`\\bSystem\\.getenv\\s*\\(\\s*\\)\\s*\\.getOrDefault\\s*\\(\\s*${quoted('"')}`, 'g'),
+      defaultAfter: JVM_GET_OR_DEFAULT,
+    },
+  ],
 };
 
 /**
@@ -152,9 +189,10 @@ export function languageForFile(file: string): Language | undefined {
 }
 
 /**
- * Find env var references in one file's source. `file` is only copied into the results. JS/TS
- * also reads same-line destructuring (`const { <NAME>, <OTHER> = "x" } = process.env`), Python
- * files pydantic-settings fields (pydantic.ts). A line that reads a variable more than
+ * Find env var references in one file's source. `file` is only copied into the results (and,
+ * for Java/Kotlin, says whether it's Kotlin). JS/TS also reads same-line destructuring
+ * (`const { <NAME>, <OTHER> = "x" } = process.env`), Python files pydantic-settings fields
+ * (pydantic.ts), Java/Kotlin `@Value("${<NAME>}")` placeholders. A line that reads a variable more than
  * once (`process.env.<NAME> ? process.env.<NAME> : x`) gives one reference, at the first read; it
  * has a default only if every read on the line has one. A match that is a whole string literal
  * (`'process.env.<NAME>'`, a bundler `define` key or a message) isn't a read.
@@ -176,11 +214,27 @@ export function scanSource(source: string, language: Language, file: string): Re
       }
     }
     if (language === 'javascript') for (const ref of destructuredReads(line, index + 1, file)) found.push(ref);
+    if (language === 'jvm') for (const ref of valueAnnotationReads(line, index + 1, file)) found.push(ref);
   }
   // Loops, not push(...refs): spreading an unbounded array into arguments overflows the stack.
   if (language === 'python') for (const ref of scanPydanticSettings(source, file)) found.push(ref);
 
   return onePerNameAndLine(found).sort((a, b) => a.line - b.line || a.column - b.column);
+}
+
+/**
+ * Spring's `@Value("${<NAME>}")` / `@Value("${<NAME>:default}")` on one line: each env-name
+ * placeholder after `@Value(`. In Kotlin only `\${…}` counts (a bare `${…}` is interpolation).
+ */
+function valueAnnotationReads(line: string, lineNumber: number, file: string): Reference[] {
+  const at = line.indexOf('@Value');
+  if (at === -1) return [];
+  const escaped = /\.kts?$/i.test(file);
+  return springPlaceholders(line.slice(at), { escaped }).map((p) => {
+    const reference: Reference = { name: p.name, file, line: lineNumber, column: at + p.index + 1, syntax: '@Value' };
+    if (p.hasDefault) reference.hasDefault = true;
+    return reference;
+  });
 }
 
 // `const { <NAME>, <OTHER>: alias, <THIRD> = "x" } = process.env` (or `import.meta.env`), on one line. No nested braces,

@@ -8,6 +8,7 @@ import { createNameFilter } from './glob';
 import { inContextualSkipDir, treeMarkers, type TreeMarkers } from './build-dirs';
 import { LARAVEL_FRAMEWORK_NAMES, LARAVEL_MARKER, LARAVEL_REQUIRED_NAMES } from './laravel';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource, usedOnlyNames } from './scanner';
+import { configurationPropertiesPrefixes, isSpringConfigName, scanSpringConfig, springUsedNames, usesSpring } from './spring';
 import { isSymfonyConfigPath, scanSymfonyConfig } from './symfony';
 import { isDeclarationFile, isEnvFileName, MAX_ENV_FILES_PER_SCOPE, sortEnvFileNames } from './env-files';
 import {
@@ -108,7 +109,8 @@ export async function scanFiles(
 
 /**
  * Env files (env-files.ts; other names such as `.env.staging` are ignored), source files in a
- * scanned language, Compose files (compose.ts), Symfony config YAML (symfony.ts), and Laravel's
+ * scanned language, Compose files (compose.ts), Spring's application/bootstrap config (spring.ts),
+ * Symfony config YAML (symfony.ts), and Laravel's
  * `artisan`, whose content is never read: it only marks its scope as a Laravel app.
  */
 function isScannable(relPath: string, name: string): boolean {
@@ -116,6 +118,7 @@ function isScannable(relPath: string, name: string): boolean {
     isEnvFileName(name) ||
     isComposeFileName(name) ||
     name === LARAVEL_MARKER ||
+    isSpringConfigName(name) ||
     isSymfonyConfigPath(relPath) ||
     SCANNED_EXTENSIONS.has(posix.extname(relPath).toLowerCase())
   );
@@ -185,14 +188,39 @@ async function analyzeFiles(
     if (list) for (const ref of refs) list.push(ref);
     else referencesByScope.set(scope, refs);
   };
+  // Spring, per scope: whether any Java/Kotlin source uses it, the env forms of the keys its
+  // config sets, and its @ConfigurationProperties prefixes (relaxed binding, below).
+  const springScopes = new Set<string>();
+  const springKeys = new Map<string, Set<string>>();
+  const springPrefixes = new Map<string, string[]>();
+  const inMap = <T>(map: Map<string, T>, scope: string, empty: () => T): T => {
+    let value = map.get(scope);
+    if (value === undefined) map.set(scope, (value = empty()));
+    return value;
+  };
   for (const file of sourceFiles) {
     const language = languageForFile(file)!;
     const text = await read(file);
     addReferences(file, scanSource(text, language, file));
     markUsed(file, usedOnlyNames(text, language));
+    if (language === 'jvm' && usesSpring(text)) {
+      const scope = nearestScope(dirOf(file), scopeDirs);
+      springScopes.add(scope);
+      const prefixes = inMap(springPrefixes, scope, () => []);
+      for (const prefix of configurationPropertiesPrefixes(text)) prefixes.push(prefix);
+    }
   }
-  // Symfony config YAML: references like code, but not source files (it alone can't be checked).
-  for (const file of configFiles) addReferences(file, scanSymfonyConfig(await read(file), file));
+  // Spring and Symfony config: references like code, but not source files (they alone can't be checked).
+  for (const file of configFiles) {
+    if (!isSpringConfigName(posix.basename(file))) {
+      addReferences(file, scanSymfonyConfig(await read(file), file));
+      continue;
+    }
+    const { references, keyEnvNames } = scanSpringConfig(await read(file), file);
+    addReferences(file, references);
+    const keys = inMap(springKeys, nearestScope(dirOf(file), scopeDirs), () => new Set<string>());
+    for (const key of keyEnvNames) keys.add(key);
+  }
 
   for (const file of testFiles) {
     const language = languageForFile(file);
@@ -229,6 +257,16 @@ async function analyzeFiles(
     else envFilesByScope.set(scope, [f]);
   }
   const envFilesOf = (scope: string) => envFilesByScope.get(scope) ?? [];
+
+  // Spring's relaxed binding, in a scope whose Java/Kotlin uses Spring: a declared name Spring
+  // binds to a property (a key in the scope's config, a Spring Boot prefix, a
+  // @ConfigurationProperties prefix) is used. Only ever marks names used: never MISSING.
+  for (const scope of springScopes) {
+    const declared = new Set(envFilesOf(scope).flatMap((f) => [...f.entries, ...(f.commented ?? [])].map((e) => e.key)));
+    const used = springUsedNames(declared, springKeys.get(scope) ?? new Set(), springPrefixes.get(scope) ?? []);
+    inMap(usedOutsideCode, scope, () => new Set<string>());
+    for (const name of used) usedOutsideCode.get(scope)!.add(name);
+  }
 
   const scopes = [...new Set([...scopeDirs, ...referencesByScope.keys()])].sort();
   const envScopes = scopes.map((scope) => {

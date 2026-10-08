@@ -290,28 +290,28 @@ describe('arguments', () => {
   });
 });
 
-describe('a directory with no JS/TS, Python, Go, Ruby or PHP source', () => {
-  let javaDir: string;
+describe('a directory with no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source', () => {
+  // Rust: a language the scanner doesn't read.
+  let rustDir: string;
   beforeAll(async () => {
-    javaDir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-java-'));
-    await mkdir(join(javaDir, 'src/main/java/app'), { recursive: true });
-    await writeFile(join(javaDir, 'src/main/java/app/App.java'), 'class App { String url = System.getenv("DATABASE_URL"); }\n');
-    await writeFile(join(javaDir, 'application.properties'), 'spring.datasource.url=${DATABASE_URL}\n');
-    await writeFile(join(javaDir, '.env.example'), 'DATABASE_URL=\n');
+    rustDir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-rust-'));
+    await mkdir(join(rustDir, 'src'), { recursive: true });
+    await writeFile(join(rustDir, 'src/main.rs'), 'fn main() { let url = std::env::var("DATABASE_URL"); }\n');
+    await writeFile(join(rustDir, '.env.example'), 'DATABASE_URL=\n');
   });
   afterAll(async () => {
-    await rm(javaDir, { recursive: true, force: true });
+    await rm(rustDir, { recursive: true, force: true });
   });
 
   it('prints the can\'t-check line with --dry-run, reports no UNUSED rows, and exits 0', async () => {
-    const { io, out } = makeIo({ cwd: javaDir });
+    const { io, out } = makeIo({ cwd: rustDir });
     expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
     expect(out.stdout).toContain(`deployhealth-scan: 0 source files, scopes: (root)\n\n${NO_SOURCE_FILES_LINE}\n`);
     expect(out.stdout).toContain('UNUSED (0)');
   });
 
   it('keeps --json valid: can_check false and source_files 0, with the line on stderr', async () => {
-    const { io, out } = makeIo({ cwd: javaDir });
+    const { io, out } = makeIo({ cwd: rustDir });
     expect(await run(['--dry-run', '--json'], io)).toBe(EXIT.ok);
     const json = JSON.parse(out.stdout);
     expect(json).toMatchObject({ source_files: 0, can_check: false, findings: [] });
@@ -324,7 +324,7 @@ describe('a directory with no JS/TS, Python, Go, Ruby or PHP source', () => {
       sent++;
       return Response.json({ deployId: 'd', scanId: 's', counts: { missing: 0, unused: 0, mismatch: 0 } });
     };
-    const { io, out } = makeIo({ cwd: javaDir, fetch });
+    const { io, out } = makeIo({ cwd: rustDir, fetch });
     expect(await run(['--url', 'https://dh.example', '--token', 'dh_t', '--sha', SHA, '--branch', 'main'], io)).toBe(EXIT.ok);
     expect(sent).toBe(1);
     expect(out.stdout).toContain(`${NO_SOURCE_FILES_LINE}\n`);
