@@ -31,13 +31,14 @@ export function parseCommand(argv: readonly string[]): { selector: UserSelector;
   return { selector: { login: login!.trim() }, confirm: confirm === true };
 }
 
-/** The counts table, one table per line. */
-export function formatCounts({ user, counts }: UserDeletion, heading: string): string {
+/** The counts table, one table per line; installations also by account type (counts only). */
+export function formatCounts({ user, counts, installationAccounts }: UserDeletion, heading: string): string {
   const width = Math.max(...DELETION_TABLES.map((t) => t.length));
+  const accounts = ` (${installationAccounts.user} on a user account, ${installationAccounts.organization} on an organization)`;
   return [
     `User "${user.login}" (GitHub id ${user.githubId})`,
     heading,
-    ...DELETION_TABLES.map((table) => `  ${table.padEnd(width)}  ${counts[table]}`),
+    ...DELETION_TABLES.map((table) => `  ${table.padEnd(width)}  ${counts[table]}${table === 'installations' && counts[table] > 0 ? accounts : ''}`),
   ].join('\n');
 }
 

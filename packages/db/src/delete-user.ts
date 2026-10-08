@@ -48,6 +48,8 @@ export interface UserDeletion {
   user: { id: string; login: string; githubId: number };
   /** Rows per table: what would go (plan) or what went (delete). */
   counts: DeletionCounts;
+  /** The installations among them by account type, counts only: pull request checks stop on each. */
+  installationAccounts: { user: number; organization: number };
 }
 
 /** Why a deletion was refused; the message is safe to print (logins and ids only). */
@@ -61,7 +63,7 @@ export class UserDeletionError extends Error {
 /** Counts per table, changing nothing. */
 export async function planUserDeletion(db: Db, selector: UserSelector): Promise<UserDeletion> {
   const user = await findUser(db, selector);
-  return { user, counts: await countOwned(db, user) };
+  return { user, counts: await countOwned(db, user), installationAccounts: await countAccounts(db, user) };
 }
 
 /**
@@ -73,9 +75,10 @@ export async function deleteUser(db: Db, selector: UserSelector): Promise<UserDe
   return db.transaction(async (tx) => {
     const user = await findUser(tx, selector);
     const counts = await countOwned(tx, user);
+    const installationAccounts = await countAccounts(tx, user);
     await tx.delete(installations).where(ownedInstallation(user));
     await tx.delete(users).where(eq(users.id, user.id));
-    return { user, counts };
+    return { user, counts, installationAccounts };
   });
 }
 
@@ -95,6 +98,13 @@ async function findUser(db: Db, selector: UserSelector): Promise<UserDeletion['u
 
 function ownedInstallation(user: UserDeletion['user']): SQL {
   return or(eq(installations.userId, user.id), eq(installations.installerGithubId, user.githubId))!;
+}
+
+/** GitHub's account types are 'User' and 'Organization'; anything else is counted as an organization. */
+async function countAccounts(db: Db, user: UserDeletion['user']): Promise<UserDeletion['installationAccounts']> {
+  const rows = await db.select({ accountType: installations.accountType }).from(installations).where(ownedInstallation(user));
+  const onUser = rows.filter((r) => r.accountType === 'User').length;
+  return { user: onUser, organization: rows.length - onUser };
 }
 
 async function countOwned(db: Db, user: UserDeletion['user']): Promise<DeletionCounts> {

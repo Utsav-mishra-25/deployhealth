@@ -39,6 +39,6 @@ query (authorization rules for queries are in [security.md](security.md)).
   index. One transaction: the user's row (every owned table cascades from it) and the
   installations linked to them or installed from their GitHub id (repos and pull request checks
   cascade). It refuses GitHub ids ≤ 0 (demo, dev) and an ambiguous login, and prints logins, ids
-  and counts only. A table that gets a user's rows without cascading from `users`, `projects` or
+  and counts only (installations also by account type, user or organization, for the reply). A table that gets a user's rows without cascading from `users`, `projects` or
   `installations` must join `DELETION_TABLES` and `countOwned()`; `test/delete-user.test.ts` checks
   that only the other user's rows remain.

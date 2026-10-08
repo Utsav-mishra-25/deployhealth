@@ -280,16 +280,19 @@ network, so no secret leaves Railway and none is pasted anywhere.
    them to write from that address, and do nothing else.
 2. **Dry run.** With the [Railway CLI](https://docs.railway.com/guides/cli) logged in and linked to
    the project (`railway link`), open a shell in the web service and run the command without
-   `--confirm`:
+   `--confirm`. On the hosted instance the web service is named **`deployhealth`** (use the
+   name it has in your project; this guide calls it `web`). The first `railway ssh` asks you to
+   register an SSH key with Railway: let it.
 
    ```sh
-   railway ssh --service web
+   railway ssh --service deployhealth
    # in the container, from the app directory (the one holding packages/; /app on Railpack):
    node packages/db/dist/delete-user.js --login <github-login>
    ```
 
-   It prints the user's login and GitHub id and how many rows each table holds for them, and
-   changes nothing. If the login matches more than one user, it says so: use
+   It prints the user's login and GitHub id and how many rows each table holds for them, with
+   the GitHub App installations split by account type (e.g. `installations  2 (1 on a user
+   account, 1 on an organization)`; counts only, never names), and changes nothing. If the login matches more than one user, it says so: use
    `--github-id <id>` instead. It refuses the demo (GitHub id -1) and dev (-2) users.
 3. **Delete.** Run it again with `--confirm`. It deletes, in one transaction, the user, their
    clients, projects, deploys, scans, findings, variables, endpoints, checks, daily totals and
@@ -299,10 +302,15 @@ network, so no secret leaves Railway and none is pasted anywhere.
 
    > Your deployhealth account (GitHub @<login>) and everything it held have been deleted:
    > clients, projects, deploy and scan history, endpoints and their checks, alerts, and pull
-   > request checks. If you installed the deployhealth GitHub App, please uninstall it on
-   > GitHub (Settings → Applications → Installed GitHub Apps, and on any organization you
-   > installed it on); we can't remove it for you, and until you do, GitHub keeps sending its
-   > events, which we discard. If you're still signed in somewhere, sign out: that session
+   > request checks. Pull request checks have stopped on every account you installed the
+   > deployhealth GitHub App on, organizations included. Please uninstall it on GitHub
+   > (Settings → Applications → Installed GitHub Apps, and in each organization's settings);
+   > we can't remove it for you, and until you do, GitHub keeps sending its events, which we
+   > discard.
+
+   When the dry run showed no installation on an organization, leave out "organizations
+   included" and "and in each organization's settings"; with none at all, leave out both
+   sentences about the App. If you're still signed in somewhere, sign out: that session
    > now shows an empty account. Signing in again would create a new, empty account.
 
 What the command leaves, on purpose: `check_hosts` (one row per monitored hostname, with no link
