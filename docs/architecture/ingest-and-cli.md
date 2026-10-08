@@ -56,7 +56,11 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   first never behind the second. 0.3.1 (the 4.8 parser and matcher fixes, `DEPLOYHEALTH_TOKEN` as
   `--token`'s default, a warning for plain-http `--url` to another machine) and 0.3.2 (the
   can't-check line, `source_files` / `can_check` in `--json`, no UNUSED without supported source)
-  are on npm; 0.3.2 is `CLI_VERSION`, `PUBLISHED_CLI_VERSION` and every pin.
+  are on npm; 0.3.2 is `PUBLISHED_CLI_VERSION` and every pin. 0.4.0 is `CLI_VERSION`, not yet
+  published: PHP and Laravel, Symfony's `%env()%`, the Laravel path rules, and OPTIONAL as one
+  line in the text output (`--show-optional` lists the rows; `--json` is unchanged). The ingest
+  payload is unchanged, so the server needs nothing before it's published. Java/Kotlin ships in
+  0.5.0.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow

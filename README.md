@@ -182,7 +182,7 @@ The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; 
 | 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
 | 4.8 Security fixes | Done | Pull request checks run isolated with a time limit, linear-time scanning and gitignore matching, an env parser that never reads values as names, more SSRF ranges, fair endpoint claims, CLI 0.3.1 |
 | 4.9 Unsupported stacks say so | Done | The pull request check and the CLI say what they read, and say "can't check" on a repo in a language they don't read; setup split into pull request checks and deploy history; CLI 0.3.2 |
-| 5. More languages | In progress | Deleting an account on request, an accessibility check, PHP and Laravel (the GitHub App at once, the CLI from 0.4.0); Java/Kotlin and Spring next |
+| 5. More languages | In progress | Deleting an account on request, an accessibility check, PHP and Laravel (CLI 0.4.0, and the GitHub App); Java/Kotlin and Spring next (CLI 0.5.0) |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -250,8 +250,8 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`, and pydantic-settings fields), Go
    (`os.Getenv("X")`, `os.LookupEnv("X")`), Ruby (`ENV["X"]`, `ENV.fetch("X")`) and PHP (`.php`,
    Blade templates included: `getenv('X')`, `$_ENV['X']`, Laravel's `env('X')` and
-   `Env::get('X')`; CLI 0.4.0), one row per variable per line. Same-line destructuring counts too: `const { X, Y: y, Z = "a" } = process.env`
-   reads all three, `Z` with a default. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
+   `Env::get('X')`; CLI 0.4.0), one row per variable per line. Same-line destructuring counts
+   too: `const { X, Y: y, Z = "a" } = process.env` reads all three, `Z` with a default. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
    `.env.test` and their `.local` variants, and **declaration files**: `.env.example`,
    `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`,
    `env.example` and `.env.<name>.example` / `.sample` / `.template` (CLI 0.3.0). In a declaration
@@ -468,8 +468,9 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
   a repo with none of the languages it reads, the pull request check says "can't check this repo
   yet" (neutral, never a failure) and the CLI prints `No JS/TS, Python, Go, Ruby or PHP source files
   found: deployhealth can't check this directory yet.` (exit 0) instead of passing it. The GitHub
-  App reads PHP as soon as it's deployed; the CLI reads it from 0.4.0 (0.3.2 treats PHP as unread). Committed `.env` files and
-  secret-shaped strings are still flagged in any language.
+  App reads PHP as soon as it's deployed; the CLI reads it from 0.4.0 (0.3.2 treats PHP as
+  unread), and Java/Kotlin is planned for 0.5.0. Committed `.env` files and secret-shaped strings
+  are still flagged in any language.
 - **Old workflows still download the CLI unpinned.** Workflows written before the npm package fetch
   `/deployhealth-scan.mjs` from your instance on every run, with no version or checksum, so
   whoever controls that instance controls what runs in their CI. New snippets pin an npm version;
@@ -497,8 +498,9 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
   dynamic access (`const env = process.env; env.X`, `process.env[name]`) and destructuring split
   across lines are missed (same-line `const { X, Y = "a" } = process.env` is read, `Y` as optional); a
   default counts only on the same line as the read; other env file names (`.env.staging`, say)
-  aren't read. Also missed: pydantic-settings bases defined in another file, prefixes or aliases
-  held in variables, `AliasPath` and `env_nested_delimiter`; Compose's `env_file:` (it passes a
+  aren't read, nor are other declaration conventions such as BookStack's `.env.example.complete`
+  (a full list beside a short `.env.example`), so a setting declared only there is MISSING. Also
+  missed: pydantic-settings bases defined in another file, prefixes or aliases held in variables, `AliasPath` and `env_nested_delimiter`; Compose's `env_file:` (it passes a
   whole file into a container) and `environment:` keys; env reads in Rails' ERB `config/*.yml`,
   `.rake` files, shell scripts, Dockerfiles and CI workflows; and `turbo.json`'s `env` lists.
   In PHP: a call split across lines (`env(` with the name on the next line, a common Laravel
