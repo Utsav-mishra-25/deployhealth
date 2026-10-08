@@ -1,0 +1,1 @@
+<phpunit><php><env name="APP_ENV" value="testing"/></php></phpunit>

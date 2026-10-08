@@ -1,0 +1,2 @@
+parameters:
+    mailer: '%env(MAILER_DSN)%'

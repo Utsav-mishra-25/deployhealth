@@ -10,7 +10,14 @@ export type Syntax =
   | 'os.LookupEnv'
   | 'ENV'
   /** A field of a pydantic-settings class (pydantic.ts). */
-  | 'BaseSettings';
+  | 'BaseSettings'
+  /** PHP: `getenv('X')`, `$_ENV['X']`, Laravel's `env('X')` and `Env::get('X')`. */
+  | 'getenv'
+  | '$_ENV'
+  | 'env()'
+  | 'Env::get'
+  /** Symfony's `%env(X)%` in config YAML (symfony.ts). */
+  | '%env()%';
 
 /** A single use of an env var in code. Paths are POSIX and relative to the scan root; 1-based. */
 export interface Reference {

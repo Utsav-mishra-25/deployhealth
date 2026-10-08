@@ -21,6 +21,7 @@ const SAMPLE: Record<string, string> = {
   python: 'os.getenv("X_VAR")',
   go: 'os.Getenv("X_VAR")',
   ruby: 'ENV["X_VAR"]',
+  php: "getenv('X_VAR')",
 };
 
 describe('the supported languages constant', () => {
@@ -41,17 +42,17 @@ describe('the supported languages constant', () => {
       expect(SCANNED_EXTENSIONS.has(ext)).toBe(false);
       expect(languageForFile(`a${ext}`)).toBeUndefined();
     }
-    for (const ext of ['.java', '.kt', '.kts', '.scala', '.groovy', '.properties', '.php', '.rs', '.cs', '.ex', '.exs', '.swift', '.dart']) {
+    for (const ext of ['.java', '.kt', '.kts', '.scala', '.groovy', '.properties', '.rs', '.cs', '.ex', '.exs', '.swift', '.dart']) {
       expect(UNREAD_SOURCE_EXTENSIONS).toContain(ext);
     }
   });
 
   it('says the languages the same way everywhere', () => {
-    expect(SUPPORTED_LANGUAGES_OR).toBe('JS/TS, Python, Go or Ruby');
-    expect(SUPPORTED_LANGUAGES_AND).toBe('JS/TS, Python, Go and Ruby');
+    expect(SUPPORTED_LANGUAGES_OR).toBe('JS/TS, Python, Go, Ruby or PHP');
+    expect(SUPPORTED_LANGUAGES_AND).toBe('JS/TS, Python, Go, Ruby and PHP');
     expect(listLabels(['JS/TS'], 'or')).toBe('JS/TS');
     expect(listLabels(['JS/TS', 'Go'], 'and')).toBe('JS/TS and Go');
-    expect(NO_SOURCE_FILES_LINE).toBe("No JS/TS, Python, Go or Ruby source files found: deployhealth can't check this directory yet.");
+    expect(NO_SOURCE_FILES_LINE).toBe("No JS/TS, Python, Go, Ruby or PHP source files found: deployhealth can't check this directory yet.");
   });
 
   it('classifies paths by extension, case-insensitively, without counting dotfiles as extensions', () => {

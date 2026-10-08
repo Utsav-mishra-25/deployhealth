@@ -1,0 +1,8 @@
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        port: '%env(int:SF_PORT)%'
+        host: '%env(default:fallback_host:SF_HOST)%'
+        # A default:: with no parameter falls back to null: no default.
+        name: '%env(default::SF_NULLDEF)%'
+        # url: '%env(COMMENTED_OUT)%'

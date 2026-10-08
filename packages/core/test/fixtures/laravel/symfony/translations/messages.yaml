@@ -1,0 +1,2 @@
+# Not config: never read.
+greeting: '%env(NOT_CONFIG)%'
