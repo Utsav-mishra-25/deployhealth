@@ -187,6 +187,11 @@ describe('githubActionSnippet', () => {
     expect(PUBLISHED_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
     const workflow = readFileSync(fileURLToPath(new URL('../../../.github/workflows/deployhealth.yml', import.meta.url)), 'utf8');
     expect(workflow).toContain(`npx --yes deployhealth-scan@${PUBLISHED_CLI_VERSION} \\`);
+    // Every pinned invocation in the README is the published version too.
+    const readme = readFileSync(fileURLToPath(new URL('../../../README.md', import.meta.url)), 'utf8');
+    const pins = [...readme.matchAll(/deployhealth-scan@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+    expect(pins.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(pins)).toEqual(new Set([PUBLISHED_CLI_VERSION]));
     // The source version can run ahead of the published one while a release is pending, never behind.
     const rank = (v: string) => v.split('.').reduce((n, part) => n * 1000 + Number(part), 0);
     expect(rank(CLI_VERSION)).toBeGreaterThanOrEqual(rank(PUBLISHED_CLI_VERSION));
