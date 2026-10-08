@@ -7,6 +7,7 @@ export { languageForFile, scanSource, SCANNED_EXTENSIONS, type Language } from '
 export { analyzeScope, compareFindings, newMissingVars, newUndeclaredVars, summarize } from './findings';
 export { DEFAULT_IGNORE } from './default-ignore';
 export { passesTreeRules, scanFiles, scanProject, selectTreeFiles, type ScanOptions, type ScanResult } from './scan';
+export { treeMarkers, type TreeMarkers } from './build-dirs';
 export { DEFAULT_SKIP_DIRS } from './walker';
 export { isTestPath, TEST_DIRS } from './test-paths';
 export * from './ingest';

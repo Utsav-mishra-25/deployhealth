@@ -22,7 +22,7 @@ export const TEST_DIRS: ReadonlySet<string> = new Set([
 
 /**
  * Test file names: *.test.*, *.spec.*, *.e2e.*, *.e2e-spec.* (NestJS), *.cy.*, *_test.go, test_*.py, *_test.py,
- * conftest.py, *_spec.rb, and test runner config and setup files (playwright.config.*,
+ * conftest.py, *_spec.rb, *Test.php, phpunit.xml(.dist), and test runner config and setup files (playwright.config.*,
  * vitest.config.*, vitest.workspace.*, vitest.setup.*, jest.config.*, jest.setup.*, cypress.config.*).
  */
 const TEST_FILE_NAMES: readonly RegExp[] = [
@@ -36,6 +36,8 @@ const TEST_FILE_NAMES: readonly RegExp[] = [
   /_test\.py$/,
   /^conftest\.py$/,
   /_spec\.rb$/,
+  /.Test\.php$/,
+  /^phpunit\.xml(?:\.dist)?$/,
   /^(?:playwright|vitest|jest|cypress)\.config\./,
   /^vitest\.workspace\./,
   /^(?:vitest|jest)\.setup\./,

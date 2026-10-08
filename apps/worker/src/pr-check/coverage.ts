@@ -1,4 +1,4 @@
-import { passesTreeRules, SUPPORTED_LANGUAGES, supportedLanguageOf, unreadExtensionOf, type LanguageId } from '@deployhealth/core';
+import { passesTreeRules, SUPPORTED_LANGUAGES, supportedLanguageOf, treeMarkers, unreadExtensionOf, type LanguageId, type TreeMarkers } from '@deployhealth/core';
 
 /**
  * What a pull request check reads, worked out from the two tree listings alone (paths, blob shas
@@ -56,16 +56,19 @@ export function treeCoverage(
 
   const unsupported: Record<string, number> = {};
   const unsupportedChanged: Record<string, number> = {};
-  const unread = (path: string) => (passesTreeRules(path) ? unreadExtensionOf(path) : null);
+  // The same skip rules as selectTreeFiles, with each side's marker files (Laravel's storage/).
+  const headMarkers = treeMarkers(head.map((h) => h.path));
+  const baseMarkers = treeMarkers(base.map((b) => b.path));
+  const unread = (path: string, markers: TreeMarkers) => (passesTreeRules(path, { markers }) ? unreadExtensionOf(path) : null);
   for (const { path } of head) {
-    const ext = unread(path);
+    const ext = unread(path, headMarkers);
     if (!ext) continue;
     unsupported[ext] = (unsupported[ext] ?? 0) + 1;
     if (differs(path)) unsupportedChanged[ext] = (unsupportedChanged[ext] ?? 0) + 1;
   }
   for (const { path } of base) {
     if (headSha.has(path)) continue; // counted above
-    const ext = unread(path);
+    const ext = unread(path, baseMarkers);
     if (ext) unsupportedChanged[ext] = (unsupportedChanged[ext] ?? 0) + 1;
   }
 
