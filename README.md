@@ -65,11 +65,11 @@ Every check run says what it read. A pull request gets one of three outcomes:
 
 - **Checked.** The comment above when something is flagged; otherwise a success titled with what
   was read, e.g. `Checked 42 files (JS/TS, Python), 3 changed: no undeclared env vars`.
-- **Nothing it reads changed.** `No JS/TS, Python, Go or Ruby files or env files changed`: a
+- **Nothing it reads changed.** `No JS/TS, Python, Go, Ruby or PHP files or env files changed`: a
   success with no comment (the summary counts the other source files it changed, e.g. `.java`).
-- **Can't check this repo.** `deployhealth can't check this repo yet: no JS/TS, Python, Go or Ruby
-  files found`: neutral in every mode, strict included, with no comment, and a summary counting the
-  source files it doesn't read by extension.
+- **Can't check this repo.** `deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby or
+  PHP files found`: neutral in every mode, strict included, with no comment, and a summary counting
+  the source files it doesn't read by extension.
 
 In all three, committed `.env` files and secret-shaped strings on added lines are still flagged as
 above, whatever the language, with the usual comment and conclusion (strict mode fails).

@@ -15,7 +15,7 @@ folder with its own env files as a separate scope (monorepos). One file, no depe
 Reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
 
 On a directory with no such source file (after the rules below), it prints
-`No JS/TS, Python, Go or Ruby source files found: deployhealth can't check this directory yet.`,
+`No JS/TS, Python, Go, Ruby or PHP source files found: deployhealth can't check this directory yet.`,
 reports no UNUSED variables (nothing it reads could use them), still reports MISMATCH, and exits
 `0`. With `--json` the line goes to stderr, and the JSON says `"can_check": false` with
 `"source_files": 0`.

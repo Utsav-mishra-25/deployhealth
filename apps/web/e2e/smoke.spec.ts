@@ -12,7 +12,7 @@ test('landing page for a signed-out visitor, one click to the demo', async ({ pa
   await expect(landing.getByRole('alert')).toContainText(SCRIPTED_ALERT);
   await expect(landing.getByRole('heading', { level: 1 })).toHaveText(/tells you which deploy broke what\.$/);
   await expect(landing).toContainText('Free while in beta.');
-  await expect(landing.getByTestId('landing-languages')).toContainText('Reads JS/TS, Python, Go and Ruby.');
+  await expect(landing.getByTestId('landing-languages')).toContainText('Reads JS/TS, Python, Go, Ruby and PHP.');
   await expect(landing).not.toContainText(/\$\d|per month|pricing/i);
   await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
