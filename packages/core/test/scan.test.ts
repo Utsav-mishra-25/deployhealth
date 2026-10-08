@@ -258,34 +258,33 @@ describe('summarize', () => {
 });
 
 describe('a directory with no source file in a language the scanner reads', () => {
-  let javaDir: string;
+  // Rust: a language the scanner doesn't read.
+  let rustDir: string;
   beforeAll(async () => {
-    javaDir = await mkdtemp(join(tmpdir(), 'deployhealth-java-'));
-    await mkdir(join(javaDir, 'src/main/java/app'), { recursive: true });
-    await mkdir(join(javaDir, 'src/main/resources'), { recursive: true });
-    await writeFile(join(javaDir, 'src/main/java/app/App.java'), 'class App { String url = System.getenv("DATABASE_URL"); }\n');
-    await writeFile(join(javaDir, 'src/main/resources/application.properties'), 'spring.datasource.url=${DATABASE_URL}\n');
-    await writeFile(join(javaDir, 'pom.xml'), '<project/>\n');
-    await writeFile(join(javaDir, '.env.example'), 'DATABASE_URL=\nAPI_KEY=\n');
+    rustDir = await mkdtemp(join(tmpdir(), 'deployhealth-rust-'));
+    await mkdir(join(rustDir, 'src'), { recursive: true });
+    await writeFile(join(rustDir, 'src/main.rs'), 'fn main() { let url = std::env::var("DATABASE_URL"); }\n');
+    await writeFile(join(rustDir, 'Cargo.toml'), '[package]\nname = "app"\n');
+    await writeFile(join(rustDir, '.env.example'), 'DATABASE_URL=\nAPI_KEY=\n');
   });
   afterAll(async () => {
-    await rm(javaDir, { recursive: true, force: true });
+    await rm(rustDir, { recursive: true, force: true });
   });
 
   it('reports no UNUSED rows (nothing was read that could use them) and no source files', async () => {
-    const result = await scanProject(javaDir);
+    const result = await scanProject(rustDir);
     expect(result.sourceFiles).toBe(0);
     expect(result.findings).toEqual([]);
     expect(result.envScopes).toEqual([{ scope: '', env_files: ['.env.example'] }]);
   });
 
   it('still reports MISMATCH between .env and .env.example, which no language decides', async () => {
-    await writeFile(join(javaDir, '.env'), 'DATABASE_URL=postgres://x\nONLY_LOCAL=1\n');
+    await writeFile(join(rustDir, '.env'), 'DATABASE_URL=postgres://x\nONLY_LOCAL=1\n');
     try {
-      const result = await scanProject(javaDir);
+      const result = await scanProject(rustDir);
       expect(result.findings.map((f) => `${f.kind} ${f.var_name}`)).toEqual(['mismatch API_KEY', 'mismatch ONLY_LOCAL']);
     } finally {
-      await rm(join(javaDir, '.env'));
+      await rm(join(rustDir, '.env'));
     }
   });
 

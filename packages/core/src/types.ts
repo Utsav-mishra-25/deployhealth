@@ -17,7 +17,12 @@ export type Syntax =
   | 'env()'
   | 'Env::get'
   /** Symfony's `%env(X)%` in config YAML (symfony.ts). */
-  | '%env()%';
+  | '%env()%'
+  /** Java/Kotlin: `System.getenv("X")` and its map forms. */
+  | 'System.getenv'
+  /** Spring: `@Value("${X}")` in code, `${X}` in its application and bootstrap config files (spring.ts). */
+  | '@Value'
+  | '${…}';
 
 /** A single use of an env var in code. Paths are POSIX and relative to the scan root; 1-based. */
 export interface Reference {

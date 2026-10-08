@@ -22,6 +22,7 @@ const SAMPLE: Record<string, string> = {
   go: 'os.Getenv("X_VAR")',
   ruby: 'ENV["X_VAR"]',
   php: "getenv('X_VAR')",
+  jvm: 'System.getenv("X_VAR")',
 };
 
 describe('the supported languages constant', () => {
@@ -42,17 +43,17 @@ describe('the supported languages constant', () => {
       expect(SCANNED_EXTENSIONS.has(ext)).toBe(false);
       expect(languageForFile(`a${ext}`)).toBeUndefined();
     }
-    for (const ext of ['.java', '.kt', '.kts', '.scala', '.groovy', '.properties', '.rs', '.cs', '.ex', '.exs', '.swift', '.dart']) {
+    for (const ext of ['.scala', '.groovy', '.rs', '.cs', '.ex', '.exs', '.swift', '.dart']) {
       expect(UNREAD_SOURCE_EXTENSIONS).toContain(ext);
     }
   });
 
   it('says the languages the same way everywhere', () => {
-    expect(SUPPORTED_LANGUAGES_OR).toBe('JS/TS, Python, Go, Ruby or PHP');
-    expect(SUPPORTED_LANGUAGES_AND).toBe('JS/TS, Python, Go, Ruby and PHP');
+    expect(SUPPORTED_LANGUAGES_OR).toBe('JS/TS, Python, Go, Ruby, PHP or Java/Kotlin');
+    expect(SUPPORTED_LANGUAGES_AND).toBe('JS/TS, Python, Go, Ruby, PHP and Java/Kotlin');
     expect(listLabels(['JS/TS'], 'or')).toBe('JS/TS');
     expect(listLabels(['JS/TS', 'Go'], 'and')).toBe('JS/TS and Go');
-    expect(NO_SOURCE_FILES_LINE).toBe("No JS/TS, Python, Go, Ruby or PHP source files found: deployhealth can't check this directory yet.");
+    expect(NO_SOURCE_FILES_LINE).toBe("No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source files found: deployhealth can't check this directory yet.");
   });
 
   it('classifies paths by extension, case-insensitively, without counting dotfiles as extensions', () => {
@@ -60,8 +61,10 @@ describe('the supported languages constant', () => {
     expect(extensionOf('a/.env')).toBe('');
     expect(extensionOf('Makefile')).toBe('');
     expect(supportedLanguageOf('web/app.tsx')?.label).toBe('JS/TS');
-    expect(supportedLanguageOf('App.java')).toBeUndefined();
-    expect(unreadExtensionOf('src/main/resources/application.properties')).toBe('.properties');
+    expect(supportedLanguageOf('App.java')?.label).toBe('Java/Kotlin');
+    expect(supportedLanguageOf('src/main.rs')).toBeUndefined();
+    expect(unreadExtensionOf('src/main.rs')).toBe('.rs');
+    expect(unreadExtensionOf('src/main/resources/application.properties')).toBeNull();
     expect(unreadExtensionOf('pom.xml')).toBeNull();
   });
 });
