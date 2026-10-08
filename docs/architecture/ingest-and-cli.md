@@ -8,7 +8,7 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
 
 ```
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 29 KB file, `CLI_BUNDLE_KB`; served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 35 KB file, `CLI_BUNDLE_KB`; served by web)
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
     npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
                       `build:npm` adds dist/ and LICENSE (gitignored)
