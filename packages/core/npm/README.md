@@ -46,7 +46,8 @@ A first scan stays quiet:
   `__mocks__/` and `testing/` directories (their env files too, so a fixture's `.env` never
   becomes a scope), and `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, `*_test.go`,
   `test_*.py`, `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml`,
-  `*Test(s).java|kt`, `*IT.java|kt`, Spring's `application-test.*`, and
+  `*Test(s).java|kt`, `*IT.java|kt`, Spring's `application-test.*`, Gradle's `*.gradle.kts`
+  build scripts, and
   `playwright`/`vitest`/`jest`/`cypress` config files, `vitest.workspace.*` and `vitest`/`jest`
   setup files. They're only read to see which variables they use, so a variable only tests read
   isn't UNUSED. `--include-tests` scans them like any other file.
