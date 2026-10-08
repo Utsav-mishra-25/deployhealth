@@ -23,7 +23,7 @@ export const TEST_DIRS: ReadonlySet<string> = new Set([
 /**
  * Test file names: *.test.*, *.spec.*, *.e2e.*, *.e2e-spec.* (NestJS), *.cy.*, *_test.go, test_*.py, *_test.py,
  * conftest.py, *_spec.rb, *Test.php, phpunit.xml(.dist), *Test(s).java|kt, *IT.java|kt, Spring's
- * application-test.* / bootstrap-test.* profile config, and test runner config and setup files (playwright.config.*,
+ * application-test.* / bootstrap-test.* profile config, Gradle's *.gradle.kts build scripts, and test runner config and setup files (playwright.config.*,
  * vitest.config.*, vitest.workspace.*, vitest.setup.*, jest.config.*, jest.setup.*, cypress.config.*).
  */
 const TEST_FILE_NAMES: readonly RegExp[] = [
@@ -40,6 +40,9 @@ const TEST_FILE_NAMES: readonly RegExp[] = [
   /.Test\.php$/,
   /^phpunit\.xml(?:\.dist)?$/,
   /.(?:Tests?|IT)\.(?:java|kt)$/,
+  // Gradle Kotlin build scripts (build.gradle.kts, settings.gradle.kts, convention plugins):
+  // build tooling, whose env reads are CI and publishing secrets that never belong in .env.example.
+  /\.gradle\.kts$/,
   /^(?:application|bootstrap)-test\.(?:properties|ya?ml)$/,
   /^(?:playwright|vitest|jest|cypress)\.config\./,
   /^vitest\.workspace\./,

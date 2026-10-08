@@ -2,8 +2,8 @@
 // and `storage` are ordinary source folder names in many repositories, so unlike VENDORED_DIRS
 // they are skipped only under a known parent (`bootstrap/cache`) or next to a build tool's or
 // framework's marker file (Maven's `target/` beside `pom.xml`, Gradle's `build/` and `target/`
-// beside a Gradle build file, `storage/` beside Laravel's `artisan`). Laravel's bootstrap/cache and storage/ can hold
-// cached config with values: the scanner never opens them.
+// beside a Gradle build file, `storage/` beside Laravel's `artisan`). Laravel's bootstrap/cache
+// and storage/ can hold cached config with values: the scanner never opens them.
 
 /** `<parent>/<dir>` pairs skipped at any depth. */
 const SKIPPED_PAIRS: ReadonlySet<string> = new Set(['bootstrap/cache', 'public/build']);

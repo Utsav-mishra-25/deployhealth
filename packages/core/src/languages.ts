@@ -18,7 +18,7 @@ export const SUPPORTED_LANGUAGES: readonly SupportedLanguage[] = [
   { id: 'ruby', label: 'Ruby', extensions: ['.rb'] },
   // `.blade.php` templates included: their extension is `.php`.
   { id: 'php', label: 'PHP', extensions: ['.php'] },
-  // `.kts` includes Gradle's build.gradle.kts, read like any Kotlin.
+  // `.kts` scripts; Gradle's *.gradle.kts build scripts are build tooling (test-paths.ts).
   { id: 'jvm', label: 'Java/Kotlin', extensions: ['.java', '.kt', '.kts'] },
 ];
 

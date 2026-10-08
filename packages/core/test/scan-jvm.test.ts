@@ -97,10 +97,15 @@ describe('a Spring Boot app', () => {
 });
 
 describe('a scope without Spring (Gradle, plain Java)', () => {
-  it('relaxed binding is off: SPRING_* is UNUSED; .kts build scripts are read', () => {
+  it('relaxed binding is off: SPRING_* is UNUSED', () => {
     expect(names(project, 'unused', 'gradle-app')).toEqual(['SPRING_PROFILES_ACTIVE']);
     expect(names(project, 'missing', 'gradle-app')).toEqual(['PLAIN_VAR']);
-    expect(optional(project, 'gradle-app')).toEqual(['SIGNING_KEY']);
+  });
+
+  it('a build.gradle.kts reading System.getenv makes no reference and no MISSING row (build tooling)', () => {
+    expect(project.references.filter((r) => r.file.endsWith('.gradle.kts'))).toEqual([]);
+    expect(project.findings.some((f) => f.var_name === 'SONAR_TOKEN' || f.var_name === 'SIGNING_KEY')).toBe(false);
+    expect(optional(project, 'gradle-app')).toEqual([]);
   });
 });
 
@@ -147,10 +152,11 @@ describe('the GitHub App sees the same thing from the tree', () => {
     expect(selected).toContain('web/build/tasks.ts');
     const files = new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const)));
     const fromTree = await scanFiles(files);
-    // The App never fetches test files, so the variable only an *IT.java reads is UNUSED there.
-    const testOnly = (f: ScanResult['findings'][number]) => f.kind === 'unused' && f.var_name === 'TEST_ONLY_JVM';
-    expect(fromTree.findings.filter((f) => !testOnly(f))).toEqual(project.findings);
-    expect(fromTree.findings.filter(testOnly)).toHaveLength(1);
+    // The App never fetches test files or build tooling, so the variables only an *IT.java or a
+    // build.gradle.kts reads are UNUSED there.
+    const toolingOnly = (f: ScanResult['findings'][number]) => f.kind === 'unused' && ['TEST_ONLY_JVM', 'SIGNING_KEY'].includes(f.var_name);
+    expect(fromTree.findings.filter((f) => !toolingOnly(f))).toEqual(project.findings);
+    expect(fromTree.findings.filter(toolingOnly)).toHaveLength(2);
     expect(fromTree.variables).toEqual(project.variables);
   });
 });
