@@ -197,7 +197,8 @@ const TITLES: Record<FindingKind, string> = { missing: 'MISSING', unused: 'UNUSE
 
 function renderText(result: ScanResult, showOptional: boolean): string {
   const scopes = result.scopes.map((s) => s || '(root)').join(', ');
-  const out = [`deployhealth-scan: ${result.sourceFiles} source files, scopes: ${scopes}`, ''];
+  const files = result.sourceFiles === 1 ? 'file' : 'files';
+  const out = [`deployhealth-scan: ${result.sourceFiles} source ${files}, scopes: ${scopes}`, ''];
   if (result.sourceFiles === 0) out.push(NO_SOURCE_FILES_LINE, '');
   for (const kind of ['missing', 'unused', 'mismatch'] as const) {
     const rows = result.findings.filter((f) => f.kind === kind);

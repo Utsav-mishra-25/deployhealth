@@ -330,6 +330,19 @@ describe('a directory with no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source
     expect(out.stdout).toContain(`${NO_SOURCE_FILES_LINE}\n`);
   });
 
+  it('says "1 source file", singular, and "2 source files"', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-count-'));
+    await writeFile(join(dir, 'App.java'), 'class App { String a = System.getenv("A"); }\n');
+    const one = makeIo({ cwd: dir });
+    expect(await run(['--dry-run'], one.io)).toBe(EXIT.ok);
+    expect(one.out.stdout.split('\n')[0]).toBe('deployhealth-scan: 1 source file, scopes: (root)');
+    await writeFile(join(dir, 'Other.kt'), 'object Other\n');
+    const two = makeIo({ cwd: dir });
+    expect(await run(['--dry-run'], two.io)).toBe(EXIT.ok);
+    expect(two.out.stdout.split('\n')[0]).toBe('deployhealth-scan: 2 source files, scopes: (root)');
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('prints nothing new for a directory it can read, and --json says can_check true', async () => {
     const { io, out } = makeIo();
     expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
