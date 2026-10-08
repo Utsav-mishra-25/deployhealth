@@ -37,7 +37,7 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
 ## A directory it can't check (0.3.2)
 
 - When the scan reads no supported source file (after the skip, vendored and test rules), the CLI
-  prints `NO_SOURCE_FILES_LINE` (core `languages.ts`): "No JS/TS, Python, Go or Ruby source files
+  prints `NO_SOURCE_FILES_LINE` (core `languages.ts`): "No JS/TS, Python, Go, Ruby or PHP source files
   found: deployhealth can't check this directory yet." In `--dry-run` text it follows the header;
   with `--json` it goes to stderr and the JSON gains `"source_files": <n>` and `"can_check":
   <bool>` (always present; `can_check` is `source_files > 0`); without `--dry-run` it is printed

@@ -282,7 +282,7 @@ describe('arguments', () => {
   });
 });
 
-describe('a directory with no JS/TS, Python, Go or Ruby source', () => {
+describe('a directory with no JS/TS, Python, Go, Ruby or PHP source', () => {
   let javaDir: string;
   beforeAll(async () => {
     javaDir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-java-'));

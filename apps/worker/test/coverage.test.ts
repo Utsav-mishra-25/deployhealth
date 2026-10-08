@@ -13,7 +13,7 @@ describe('treeCoverage', () => {
     const base = { 'src/a.ts': '1', 'src/gone.ts': '2', 'api/app.py': '3', '.env.example': '4', 'App.java': '5', 'Old.java': '6', 'node_modules/x/Y.java': '7' };
     const head = { 'src/a.ts': '1', 'api/app.py': '3b', '.env.example': '4', 'App.java': '5b', 'New.kt': '8', 'node_modules/x/Y.java': '7b', 'src/a.test.ts': '9' };
     expect(coverageOf(base, head)).toEqual({
-      sourceByLanguage: { javascript: 1, python: 1, go: 0, ruby: 0 },
+      sourceByLanguage: { javascript: 1, python: 1, go: 0, ruby: 0, php: 0 },
       sourceFiles: 2,
       readFiles: 3, // src/a.ts, api/app.py, .env.example (the test file isn't read)
       changedRead: 2, // api/app.py changed, src/gone.ts deleted

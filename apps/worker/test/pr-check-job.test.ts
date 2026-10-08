@@ -332,9 +332,9 @@ describe('what the check read: repos it can\'t read, pull requests that change n
       const { deps, rows } = harness(mock, { mode });
       expect(await prCheck(JOB, deps)).toBe('neutral');
       expect(runs(mock)).toEqual([expect.objectContaining({ conclusion: 'neutral', title: CANT_CHECK_TITLE })]);
-      expect(CANT_CHECK_TITLE).toBe("deployhealth can't check this repo yet: no JS/TS, Python, Go or Ruby files found");
+      expect(CANT_CHECK_TITLE).toBe("deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby or PHP files found");
       const summary = runs(mock)[0]!.summary;
-      expect(summary).toContain('deployhealth reads JS/TS, Python, Go and Ruby. Java/Kotlin, PHP, Rust, C# and others aren\'t read yet');
+      expect(summary).toContain('deployhealth reads JS/TS, Python, Go, Ruby and PHP. Java/Kotlin, Rust, C# and others aren\'t read yet');
       expect(summary).toContain('It holds 3 .java, 1 .kt, 1 .properties files that deployhealth doesn\'t read.');
       expect(summary).toContain('https://github.com/Utsav-mishra-25/deployhealth#known-limitations');
       expect(summary).not.toContain('src/main'); // counts only, never paths
@@ -366,11 +366,11 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     expect(rows[0]).toMatchObject({ committedEnvFiles: [{ path: '.env', added: true }] });
     expect(runs(mock)[0]).toMatchObject({
       conclusion: 'failure',
-      title: "1 committed env file; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go or Ruby files)",
+      title: "1 committed env file; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go, Ruby or PHP files)",
     });
     const comment = [...mock.state.comments.values()][0]!.body;
     expect(comment).toContain('#### Committed env files');
-    expect(comment).toContain("deployhealth reads JS/TS, Python, Go and Ruby; Java/Kotlin, PHP, Rust, C# and others aren't read yet");
+    expect(comment).toContain("deployhealth reads JS/TS, Python, Go, Ruby and PHP; Java/Kotlin, Rust, C# and others aren't read yet");
     expect(blobs(mock)).toEqual([]);
   });
 
@@ -380,7 +380,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     const { deps, rows } = harness(mock);
     expect(await prCheck(JOB, deps)).toBe('neutral');
     expect(rows[0]).toMatchObject({ secretHits: 1 });
-    expect(runs(mock)[0]!.title).toBe("1 possible secret; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go or Ruby files)");
+    expect(runs(mock)[0]!.title).toBe("1 possible secret; deployhealth can't check env vars in this repo yet (no JS/TS, Python, Go, Ruby or PHP files)");
     expect(mock.state.comments.size).toBe(1);
     expect(JSON.stringify([...mock.state.comments.values(), ...runs(mock)])).not.toContain(token);
   });
@@ -390,7 +390,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     const { deps } = harness(mock, { mode: 'strict' });
     expect(await prCheck(JOB, deps)).toBe('success');
     expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
-    expect(NOTHING_CHANGED_TITLE).toBe('No JS/TS, Python, Go or Ruby files or env files changed');
+    expect(NOTHING_CHANGED_TITLE).toBe('No JS/TS, Python, Go, Ruby or PHP files or env files changed');
     expect(runs(mock)[0]!.summary).toContain('Read 3 files (JS/TS 2, 1 env or Compose file)');
     expect(mock.state.comments.size).toBe(0);
     expect(blobs(mock)).toEqual([]);
