@@ -152,7 +152,10 @@ describe('the GitHub App sees the same thing from the tree', () => {
     expect(selected).toContain('legacy/storage/Store.php');
     const files = new Map(await Promise.all(selected.map(async (p) => [p, await readFile(join(root, p), 'utf8')] as const)));
     const fromTree = await scanFiles(files);
-    expect(fromTree.findings).toEqual(project.findings);
+    // The App never fetches test files, so the two variables only tests read are UNUSED there.
+    const testOnly = (f: ScanResult['findings'][number]) => f.kind === 'unused' && ['TEST_ONLY_VAR', 'UNIT_TEST_VAR'].includes(f.var_name);
+    expect(fromTree.findings.filter((f) => !testOnly(f))).toEqual(project.findings);
+    expect(fromTree.findings.filter(testOnly)).toHaveLength(2);
     expect(fromTree.variables).toEqual(project.variables);
   });
 });

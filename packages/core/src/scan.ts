@@ -5,6 +5,7 @@ import { DEFAULT_IGNORE } from './default-ignore';
 import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
+import { inContextualSkipDir, treeMarkers, type TreeMarkers } from './build-dirs';
 import { LARAVEL_FRAMEWORK_NAMES, LARAVEL_MARKER } from './laravel';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource, usedOnlyNames } from './scanner';
 import { isSymfonyConfigPath, scanSymfonyConfig } from './symfony';
@@ -287,9 +288,10 @@ export function selectTreeFiles(
   }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean; sizes?: ReadonlyMap<string, number> } = {},
 ): string[] {
   const selected: string[] = [];
+  const markers = treeMarkers(paths);
   for (const path of paths) {
     const name = posix.basename(path);
-    if (!isScannable(path, name) || !passesTreeRules(path, { skipDirs, includeTests })) continue;
+    if (!isScannable(path, name) || !passesTreeRules(path, { skipDirs, includeTests, markers })) continue;
     if (!isEnvFileName(name) && (sizes?.get(path) ?? 0) > MAX_SOURCE_FILE_BYTES) continue;
     selected.push(path);
   }
@@ -298,15 +300,28 @@ export function selectTreeFiles(
 
 /**
  * The rules `selectTreeFiles` applies whatever the file type: not in a skipped (vendored)
- * directory, not a generated file name, not a test file or under a test directory. Used to count
- * files the scanner doesn't read with the same rules, so `node_modules/**` never counts.
+ * directory or build output known by its context (build-dirs.ts; pass the tree's `treeMarkers`
+ * for the rules that depend on a marker file such as `artisan`), not a generated file name, not
+ * a test file or under a test directory. Used to count files the scanner doesn't read with the
+ * same rules, so `node_modules/**` never counts.
  */
 export function passesTreeRules(
   path: string,
-  { skipDirs = DEFAULT_SKIP_DIRS, includeTests = false }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean } = {},
+  {
+    skipDirs = DEFAULT_SKIP_DIRS,
+    includeTests = false,
+    markers = NO_MARKERS,
+  }: { skipDirs?: ReadonlySet<string>; includeTests?: boolean; markers?: TreeMarkers } = {},
 ): boolean {
-  return !isVendoredFileName(posix.basename(path)) && (includeTests || !isTestPath(path)) && !inSkippedDir(path, skipDirs);
+  return (
+    !isVendoredFileName(posix.basename(path)) &&
+    (includeTests || !isTestPath(path)) &&
+    !inSkippedDir(path, skipDirs) &&
+    !inContextualSkipDir(path, markers)
+  );
 }
+
+const NO_MARKERS: TreeMarkers = treeMarkers([]);
 
 /** Whether any directory on the path is one `walk` never enters. */
 function inSkippedDir(path: string, skipDirs: ReadonlySet<string>): boolean {

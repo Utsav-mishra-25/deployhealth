@@ -1,11 +1,15 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GitignoreMatcher } from './gitignore';
+import { isContextualSkip } from './build-dirs';
 import { isTestFileName, TEST_DIRS } from './test-paths';
 import type { Warning } from './types';
 import { isVendoredFileName, VENDORED_DIRS } from './vendored';
 
-/** Directory names that are never descended into, at any depth: `.git` and vendored code (vendored.ts). */
+/**
+ * Directory names that are never descended into, at any depth: `.git` and vendored code
+ * (vendored.ts). Build output known by its context (build-dirs.ts) is always skipped too.
+ */
 export const DEFAULT_SKIP_DIRS: ReadonlySet<string> = new Set(['.git', ...VENDORED_DIRS]);
 
 export interface WalkOptions {
@@ -70,6 +74,8 @@ export async function walk(root: string, options: WalkOptions): Promise<WalkResu
       matcher = matcher.extend(relDir, await readFile(join(absDir, '.gitignore'), 'utf8'));
     }
 
+    const fileNames = new Set(entries.filter((e) => e.isFile()).map((e) => e.name));
+    const dirName = relDir.slice(relDir.lastIndexOf('/') + 1);
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
       const relPath = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
@@ -78,6 +84,10 @@ export async function walk(root: string, options: WalkOptions): Promise<WalkResu
         if (excluded.ignores(relPath, true) || matcher.ignores(relPath, true)) continue;
         if (skipDirs.has(entry.name)) {
           if (VENDORED_DIRS.has(entry.name) && !inTests && (await holdsAny(relPath))) vendored.push(`${relPath}/`);
+          continue;
+        }
+        if (isContextualSkip(dirName, entry.name, (file) => fileNames.has(file))) {
+          if (!inTests && (await holdsAny(relPath))) vendored.push(`${relPath}/`);
           continue;
         }
         await visit(relPath, matcher, inTests || (options.skipTests === true && TEST_DIRS.has(entry.name)));
