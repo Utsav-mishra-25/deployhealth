@@ -89,6 +89,7 @@ describe('delete-user', () => {
     const plan = await planUserDeletion(db, { login: 'ALICE' });
     expect(plan.user.login).toBe('alice');
     expect(plan.counts).toEqual(ONE_OF_EVERYTHING);
+    expect(plan.installationAccounts).toEqual({ user: 1, organization: 1 });
     expect(await allRows()).toEqual(before);
   });
 
@@ -144,7 +145,11 @@ describe('delete-user command line', () => {
   });
 
   it('prints the login, the id and counts only', () => {
-    const text = formatCounts({ user: { id: 'uuid-never-printed', login: 'alice', githubId: 7 }, counts: ONE_OF_EVERYTHING }, 'Would delete:');
+    const text = formatCounts(
+      { user: { id: 'uuid-never-printed', login: 'alice', githubId: 7 }, counts: ONE_OF_EVERYTHING, installationAccounts: { user: 1, organization: 1 } },
+      'Would delete:',
+    );
+    expect(text).toMatch(/^ {2}installations +2 \(1 on a user account, 1 on an organization\)$/m);
     expect(text).toContain('User "alice" (GitHub id 7)');
     expect(text).toMatch(/^ {2}installation_repos +3$/m);
     expect(text).not.toContain('uuid-never-printed');
