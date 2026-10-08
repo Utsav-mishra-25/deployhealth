@@ -17,7 +17,8 @@ its docs, and `AGENTS.md` points other coding agents here.
 - `packages/core`: scanner, CLI, SSRF guard, alert, handoff and report rules (MIT).
 - `packages/db`: Drizzle schema, migrations, queries, seed.
 - `docs`: the Railway deploy guide, the GitHub App manifest, `architecture/`.
-- `scripts`: `eval-repos.mjs` (scanner accuracy) and `load-demo.mjs` (load check), both manual.
+- `scripts`: `eval-repos.mjs` (scanner accuracy), `load-demo.mjs` (load check) and
+  `laravel-framework-names.mjs` (core's Laravel list), all manual.
 
 ## Commands
 
@@ -31,6 +32,7 @@ pnpm build
 pnpm e2e             # Playwright smoke test (not in CI)
 pnpm scan:self       # run deployhealth's own scanner on this repo; must report nothing
 pnpm eval:repos      # manual: counts per repo on pinned public repos
+pnpm laravel:names   # manual: check core's Laravel framework names against pinned tags
 pnpm load:demo       # manual: p50/p95/errors/rps of the public pages on `next start`
 ```
 

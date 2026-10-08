@@ -182,6 +182,7 @@ The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; 
 | 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
 | 4.8 Security fixes | Done | Pull request checks run isolated with a time limit, linear-time scanning and gitignore matching, an env parser that never reads values as names, more SSRF ranges, fair endpoint claims, CLI 0.3.1 |
 | 4.9 Unsupported stacks say so | Done | The pull request check and the CLI say what they read, and say "can't check" on a repo in a language they don't read; setup split into pull request checks and deploy history; CLI 0.3.2 |
+| 5. More languages | In progress | Deleting an account on request, an accessibility check, PHP and Laravel (the GitHub App at once, the CLI from 0.4.0); Java/Kotlin and Spring next |
 | Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
 
 ## Local setup
@@ -247,8 +248,9 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
    generated code. It finds references in JS/TS (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`,
    `.mts`, `.cts`: `process.env.X`, `process.env["X"]`, `import.meta.env.X`), Python
    (`os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`, and pydantic-settings fields), Go
-   (`os.Getenv("X")`, `os.LookupEnv("X")`) and Ruby (`ENV["X"]`, `ENV.fetch("X")`), one row per
-   variable per line. Same-line destructuring counts too: `const { X, Y: y, Z = "a" } = process.env`
+   (`os.Getenv("X")`, `os.LookupEnv("X")`), Ruby (`ENV["X"]`, `ENV.fetch("X")`) and PHP (`.php`,
+   Blade templates included: `getenv('X')`, `$_ENV['X']`, Laravel's `env('X')` and
+   `Env::get('X')`; CLI 0.4.0), one row per variable per line. Same-line destructuring counts too: `const { X, Y: y, Z = "a" } = process.env`
    reads all three, `Z` with a default. It reads `.env`, `.env.local`, `.env.development`, `.env.production`,
    `.env.test` and their `.local` variants, and **declaration files**: `.env.example`,
    `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`, `example.env`, `sample.env`,
@@ -268,20 +270,26 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
        `RENDER`/`RENDER_*` and `FLY_*`. `--no-default-ignore` checks them too.
      - A read with a default on the same line isn't MISSING: `process.env.X ?? "a"` / `|| "a"`,
        `os.getenv("X", "a")`, `os.environ.get("X", "a")`, `os.getenv("X") or "a"`,
-       `ENV.fetch("X", "a")`, `ENV.fetch("X") { … }`, `ENV["X"] || "a"`. (`undefined`, `null`,
-       `None` and `nil` aren't defaults.) Variables read only that way are listed as optional.
+       `ENV.fetch("X", "a")`, `ENV.fetch("X") { … }`, `ENV["X"] || "a"`, `env('X', 'a')`,
+       `env('X') ?? 'a'` / `?: 'a'`, `getenv('X') ?: 'a'`, `$_ENV['X'] ?? 'a'`. (`undefined`,
+       `null`, `None` and `nil` aren't defaults, nor is PHP's `?: throw …`; `getenv('X') ?? 'a'`
+       isn't either, since getenv returns false.) Variables read only that way are listed as
+       optional.
      - Tests, fixtures and test tooling are skipped: `test/`, `tests/`, `__tests__/`, `spec/`,
        `e2e/`, `fixtures/`, `__fixtures__/`, `testdata/`, `playwright/`, `cypress/`, `mocks/`,
        `__mocks__/` and `testing/` directories (env files inside them make no scope), and
        `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.e2e-spec.*`, `*.cy.*`, `*_test.go`, `test_*.py`,
-       `*_test.py`, `conftest.py`, `*_spec.rb`, test runner configs (`playwright`, `vitest`,
-       `jest`, `cypress`), `vitest.workspace.*` and `vitest`/`jest` setup files. The CLI reads
+       `*_test.py`, `conftest.py`, `*_spec.rb`, `*Test.php`, `phpunit.xml(.dist)`, test runner
+       configs (`playwright`, `vitest`, `jest`, `cypress`), `vitest.workspace.*` and
+       `vitest`/`jest` setup files. The CLI reads
        them only to see which variables they use, so a test-only variable isn't UNUSED; the
        GitHub App never fetches them. `--include-tests` scans them.
      - Vendored and generated code is never read (CLI 0.3.0): `node_modules`, `dist`, `.next`,
        virtualenvs, `.yarn`, `vendor`, `third_party`, `bower_components`, `out`, `coverage`,
        `.turbo`, `.vercel`, `.output`, `.svelte-kit`, `.nuxt`, `.cache`, `.pnpm-store`,
-       `__pycache__` and `site-packages` directories, `.pnp.cjs`, `.pnp.loader.mjs`, `*.min.js`,
+       `__pycache__`, `site-packages` and `.phpunit.cache` directories, `bootstrap/cache/` and
+       `public/build/` at any depth, Laravel's `storage/` next to `artisan` (compiled views and
+       cached config can hold values: never opened), `.pnp.cjs`, `.pnp.loader.mjs`, `*.min.js`,
        and any source file over 512 KB. A committed `build/` is still read: it's as often build
        scripts as output. `--dry-run` lists what it skipped; the GitHub App never fetches it.
      - pydantic-settings (CLI 0.3.0): in a class whose bases include `BaseSettings`, each
@@ -292,6 +300,13 @@ git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/
      - Docker Compose interpolation (CLI 0.3.0): `${VAR}`, `${VAR:-x}`, `${VAR:?x}`, `$VAR` and the
        other forms in `docker-compose*.yml` / `compose*.yaml` mark `VAR` as used in that file's
        scope, so an entry Compose consumes isn't UNUSED. They never make MISSING rows.
+     - Laravel (next to `artisan`): the env vars Laravel's framework reads itself (its own
+       config, merged into the app's: `BCRYPT_ROUNDS`, `BROADCAST_CONNECTION`,
+       `PHP_CLI_SERVER_WORKERS`, …; 195 names from its 11.x, 12.x and 13.x releases) count as used,
+       so a fresh app's `.env.example` isn't UNUSED. PHP's `$_SERVER['X']` marks `X` used too; it
+       also holds request data (`HTTP_HOST`, …), so it never makes MISSING rows.
+     - Symfony: `%env(X)%` in YAML under a `config/` directory is a reference, with processors
+       (`%env(int:X)%`, `%env(json:file:X)%`); `%env(default:param:X)%` is optional.
      - A scope with no env file at all (in practice the root, for code outside every other scope)
        gets no MISSING rows. The project page says "No .env.example here: N variables referenced"
        once, and the handoff offers the list as a starting `.env.example`.
@@ -484,6 +499,11 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
   held in variables, `AliasPath` and `env_nested_delimiter`; Compose's `env_file:` (it passes a
   whole file into a container) and `environment:` keys; env reads in Rails' ERB `config/*.yml`,
   `.rake` files, shell scripts, Dockerfiles and CI workflows; and `turbo.json`'s `env` lists.
+  In PHP: a call split across lines (`env(` with the name on the next line, a common Laravel
+  style for long defaults), dynamic names (`env($key)`), `$_SERVER` reads (they only mark a name
+  used), and Symfony's `%env()%` in PHP or XML config. Symfony commits `.env` by convention (secrets
+  go in `.env.local`), so the pull request check flags a Symfony repo's committed `.env` like any
+  other.
 - **Notifications** are webhook-only (no email or SMS), and each account is single-user (no team
   sharing).
 - **Pull request checks follow the installer.** An App installed by an org admin checks pull
