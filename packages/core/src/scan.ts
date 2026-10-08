@@ -6,7 +6,7 @@ import { parseEnv } from './env-parser';
 import { analyzeScope, compareFindings, requiredVariables, summarize, type ScopeEnvFile } from './findings';
 import { createNameFilter } from './glob';
 import { inContextualSkipDir, treeMarkers, type TreeMarkers } from './build-dirs';
-import { LARAVEL_FRAMEWORK_NAMES, LARAVEL_MARKER } from './laravel';
+import { LARAVEL_FRAMEWORK_NAMES, LARAVEL_MARKER, LARAVEL_REQUIRED_NAMES } from './laravel';
 import { languageForFile, SCANNED_EXTENSIONS, scanSource, usedOnlyNames } from './scanner';
 import { isSymfonyConfigPath, scanSymfonyConfig } from './symfony';
 import { isDeclarationFile, isEnvFileName, MAX_ENV_FILES_PER_SCOPE, sortEnvFileNames } from './env-files';
@@ -204,12 +204,12 @@ async function analyzeFiles(
   for (const file of composeFiles) markUsed(file, composeVariableNames(await read(file)));
   // In a Laravel app the framework's own settings are its business: never UNUSED, and a read of
   // one (Laravel's published config reads `env('DB_URL')` with no default, null meaning "not
-  // set") never MISSING either, as if it had a default.
+  // set") never MISSING either, as if it had a default; except LARAVEL_REQUIRED_NAMES (APP_KEY).
   for (const dir of laravelDirs) {
     const marker = `${dir ? `${dir}/` : ''}${LARAVEL_MARKER}`;
     markUsed(marker, LARAVEL_FRAMEWORK_NAMES);
     for (const ref of referencesByScope.get(nearestScope(dir, scopeDirs)) ?? []) {
-      if (LARAVEL_FRAMEWORK_NAMES.has(ref.name)) ref.hasDefault = true;
+      if (LARAVEL_FRAMEWORK_NAMES.has(ref.name) && !LARAVEL_REQUIRED_NAMES.has(ref.name)) ref.hasDefault = true;
     }
   }
 

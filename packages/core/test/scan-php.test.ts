@@ -70,7 +70,7 @@ describe('a Laravel app', () => {
   });
 
   it('a same-line default makes a read optional; null, throw, and ?? after getenv are no default', () => {
-    expect(optional(project)).toEqual(['APP_KEY', 'APP_NAME', 'BLADE_VAR', 'BOOTSTRAP_APP', 'DB_HOST', 'DB_URL', 'ENV_ARR', 'ENV_GET', 'GETENV_OPT', 'MY_SERVICE_TIMEOUT', 'OTHER_FLAG']);
+    expect(optional(project)).toEqual(['APP_NAME', 'BLADE_VAR', 'BOOTSTRAP_APP', 'DB_HOST', 'DB_URL', 'ENV_ARR', 'ENV_GET', 'GETENV_OPT', 'MY_SERVICE_TIMEOUT', 'OTHER_FLAG']);
     expect(names(project, 'missing')).toEqual(['ENV_GET2', 'FEATURE_FLAG', 'GETENV_LOCAL', 'GETENV_Q', 'THROWS']);
   });
 
@@ -90,6 +90,14 @@ describe('a Laravel app', () => {
   it('treats *Test.php and phpunit.xml as test tooling', () => {
     expect(project.references.map((r) => r.file)).not.toContain('app/Http/HealthTest.php');
     expect(project.testFilesSkipped).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('APP_KEY', () => {
+  it('stays never-UNUSED but can be MISSING next to artisan: Laravel needs it to boot', () => {
+    expect(names(project, 'missing', 'nokey')).toEqual(['APP_KEY']);
+    expect(optional(project, 'nokey')).toEqual(['APP_NAME', 'APP_URL']);
+    expect(project.variables).toContainEqual({ var_name: 'APP_KEY', scope: '', defined_in: ['.env.example'] });
   });
 });
 
