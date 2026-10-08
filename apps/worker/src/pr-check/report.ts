@@ -148,11 +148,11 @@ export function titleFor(r: PrReport): string {
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** "JS/TS 30, Python 10 and 2 env or Compose files" */
+/** "JS/TS 30, Python 10 and 2 env or config files" (env, declaration, Compose and config files, artisan) */
 function readBreakdown(c: Coverage): string {
   const parts = SUPPORTED_LANGUAGES.filter((l) => c.sourceByLanguage[l.id] > 0).map((l) => `${l.label} ${c.sourceByLanguage[l.id]}`);
   const other = c.readFiles - c.sourceFiles;
-  if (other > 0) parts.push(plural(other, 'env or Compose file'));
+  if (other > 0) parts.push(plural(other, 'env or config file'));
   return parts.join(', ');
 }
 
