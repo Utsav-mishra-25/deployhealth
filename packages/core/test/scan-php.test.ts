@@ -70,13 +70,15 @@ describe('a Laravel app', () => {
   });
 
   it('a same-line default makes a read optional; null, throw, and ?? after getenv are no default', () => {
-    expect(optional(project)).toEqual(['APP_NAME', 'BLADE_VAR', 'BOOTSTRAP_APP', 'DB_HOST', 'ENV_ARR', 'ENV_GET', 'GETENV_OPT', 'MY_SERVICE_TIMEOUT', 'OTHER_FLAG']);
+    expect(optional(project)).toEqual(['APP_KEY', 'APP_NAME', 'BLADE_VAR', 'BOOTSTRAP_APP', 'DB_HOST', 'DB_URL', 'ENV_ARR', 'ENV_GET', 'GETENV_OPT', 'MY_SERVICE_TIMEOUT', 'OTHER_FLAG']);
     expect(names(project, 'missing')).toEqual(['ENV_GET2', 'FEATURE_FLAG', 'GETENV_LOCAL', 'GETENV_Q', 'THROWS']);
   });
 
-  it("counts the framework's own names, $_SERVER reads and test-only reads as used, never MISSING", () => {
+  it("counts the framework's own names, $_SERVER reads and test-only reads as used; a framework name is never MISSING", () => {
     expect(names(project, 'unused')).toEqual(['UNUSED_THING', 'VITE_APP_NAME']);
     expect(project.references.map((r) => r.name)).not.toContain('BCRYPT_ROUNDS');
+    // DB_URL is read with no default and declared nowhere, but it's the framework's setting.
+    expect(project.variables).toContainEqual({ var_name: 'DB_URL', scope: '', defined_in: [], optional: true });
   });
 
   it('never reads storage/ next to artisan, bootstrap/cache, public/build, .phpunit.cache or vendor', () => {
@@ -92,9 +94,9 @@ describe('a Laravel app', () => {
 });
 
 describe('the framework names apply only next to artisan', () => {
-  it("in legacy/ (no artisan) BCRYPT_ROUNDS is UNUSED, and storage/ is ordinary code", () => {
+  it('in legacy/ (no artisan) BCRYPT_ROUNDS is UNUSED, DB_URL can be MISSING, and storage/ is ordinary code', () => {
     expect(names(project, 'unused', 'legacy')).toEqual(['BCRYPT_ROUNDS']);
-    expect(names(project, 'missing', 'legacy')).toEqual(['LEGACY_STORAGE_VAR']);
+    expect(names(project, 'missing', 'legacy')).toEqual(['DB_URL', 'LEGACY_STORAGE_VAR']);
   });
 });
 

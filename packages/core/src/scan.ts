@@ -202,7 +202,16 @@ async function analyzeFiles(
     markUsed(file, usedOnlyNames(text, language));
   }
   for (const file of composeFiles) markUsed(file, composeVariableNames(await read(file)));
-  for (const dir of laravelDirs) markUsed(`${dir ? `${dir}/` : ''}${LARAVEL_MARKER}`, LARAVEL_FRAMEWORK_NAMES);
+  // In a Laravel app the framework's own settings are its business: never UNUSED, and a read of
+  // one (Laravel's published config reads `env('DB_URL')` with no default, null meaning "not
+  // set") never MISSING either, as if it had a default.
+  for (const dir of laravelDirs) {
+    const marker = `${dir ? `${dir}/` : ''}${LARAVEL_MARKER}`;
+    markUsed(marker, LARAVEL_FRAMEWORK_NAMES);
+    for (const ref of referencesByScope.get(nearestScope(dir, scopeDirs)) ?? []) {
+      if (LARAVEL_FRAMEWORK_NAMES.has(ref.name)) ref.hasDefault = true;
+    }
+  }
 
   const byUser = createNameFilter(options.ignore ?? []);
   const byDefault = createNameFilter(options.defaultIgnore === false ? [] : DEFAULT_IGNORE);
