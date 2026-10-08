@@ -1,0 +1,6 @@
+mail:
+  host: localhost
+notes: |
+  fake: ${BLOCK_REF}
+list:
+  - name: first
