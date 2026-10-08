@@ -1,17 +1,20 @@
-// The env var names Laravel's framework reads itself (manual; not run in CI, not shipped).
+// The env var names Laravel's framework and its app skeleton read (manual; not run in CI, not
+// shipped).
 //
 //   pnpm laravel:names            # report per tag, and check packages/core/src/laravel.ts
 //   pnpm laravel:names --write    # rewrite the generated list in packages/core/src/laravel.ts
 //
 // LARAVEL_FRAMEWORK_NAMES is the union, over the tags below, of
-//   1. every literal env('NAME' …) in the framework's own config/*.php, which Laravel merges into
-//      an app's config whether or not the app published that file, and
-//   2. every literal read in src/**/*.php outside its Testing/ directories (env(, Env::get(, getenv(, $_ENV[, $_SERVER[ and the
-//      Application::normalizeCachePath('NAME', …) helper), minus SOURCE_EXCLUDED: request data,
-//      the terminal, flags the framework sets itself, names Laravel Cloud or Herd set, and the
-//      `artisan docs` settings.
-// The scanner counts these as used in a scope with an `artisan` file, never as references or
-// MISSING (scanner.md). Bump the tags deliberately and review the report before --write.
+//   1. every literal env('NAME' …) in laravel/framework's own config/*.php, which Laravel merges
+//      into an app's config whether or not the app published that file,
+//   2. every literal read in laravel/framework's src/**/*.php outside its Testing/ directories
+//      (env(, Env::get(, getenv(, $_ENV[, $_SERVER[ and the Application::normalizeCachePath('NAME',
+//      …) helper), minus SOURCE_EXCLUDED: request data, the terminal, flags the framework sets
+//      itself, names Laravel Cloud or Herd set, and the `artisan docs` settings, and
+//   3. every literal env('NAME' …) in the laravel/laravel skeleton's config/*.php, the config
+//      every new app starts with.
+// Next to an `artisan` file the scanner counts these as used, and a read of one (APP_KEY aside)
+// as never MISSING (scanner.md). Bump the tags deliberately and review the report before --write.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -19,9 +22,12 @@ import { parseArgs } from 'node:util';
 
 /** The latest tag of each supported major, as of 2026-10-08, with the commit it points to. */
 const TAGS = [
-  { tag: 'v11.57.0', sha: '4fc41929c95024795d83a54309aa4e9922f74263' },
-  { tag: 'v12.69.3', sha: '58ea544a2a80dc03c168e13a5dc9a1d176a88717' },
-  { tag: 'v13.35.0', sha: 'a413a9da94884e5e9d58f4e6612884f712827804' },
+  { repo: 'laravel/framework', tag: 'v11.57.0', sha: '4fc41929c95024795d83a54309aa4e9922f74263' },
+  { repo: 'laravel/framework', tag: 'v12.69.3', sha: '58ea544a2a80dc03c168e13a5dc9a1d176a88717' },
+  { repo: 'laravel/framework', tag: 'v13.35.0', sha: 'a413a9da94884e5e9d58f4e6612884f712827804' },
+  { repo: 'laravel/laravel', tag: 'v11.6.1', sha: 'e417ebc95d76da3cbee761f0d2b77aebdf52cdc9' },
+  { repo: 'laravel/laravel', tag: 'v12.12.2', sha: '945f4e5a9fd3695dc0ee512f497c650fb82cfbb8' },
+  { repo: 'laravel/laravel', tag: 'v13.11.0', sha: '06d016a364a37430eec9cbc52209adce3d7667ce' },
 ];
 
 /** Source reads that aren't settings an app declares, by exact name or by prefix (ending in `_`). */
@@ -75,17 +81,17 @@ function git(args, cwd) {
   return result.stdout.trim();
 }
 
-/** A shallow checkout of `tag` in the cache, verified against the pinned commit. */
-function checkout({ tag, sha }) {
-  const dir = join(values.cache, tag);
+/** A shallow checkout of `repo` at `tag` in the cache, verified against the pinned commit. */
+function checkout({ repo, tag, sha }) {
+  const dir = join(values.cache, `${repo.replace('/', '__')}@${tag}`);
   if (existsSync(join(dir, '.git')) && git(['rev-parse', 'HEAD'], dir) === sha) return dir;
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   git(['init', '--quiet'], dir);
-  git(['fetch', '--quiet', '--depth', '1', 'https://github.com/laravel/framework.git', `refs/tags/${tag}`], dir);
+  git(['fetch', '--quiet', '--depth', '1', `https://github.com/${repo}.git`, `refs/tags/${tag}`], dir);
   git(['-c', 'advice.detachedHead=false', 'checkout', '--quiet', 'FETCH_HEAD'], dir);
   const head = git(['rev-parse', 'HEAD'], dir);
-  if (head !== sha) throw new Error(`${tag} is ${head}, pinned ${sha}: the tag moved, check before bumping`);
+  if (head !== sha) throw new Error(`${repo} ${tag} is ${head}, pinned ${sha}: the tag moved, check before bumping`);
   return dir;
 }
 
@@ -114,12 +120,15 @@ const union = new Set();
 for (const target of TAGS) {
   const dir = checkout(target);
   const config = namesIn(phpFiles(join(dir, 'config')), CONFIG_READ);
-  const source = [...namesIn(phpFiles(join(dir, 'src'), new Set(['Testing'])), SOURCE_READ)].filter((name) => !config.has(name));
+  // The skeleton's own code is an app's: only its config counts.
+  const framework = target.repo === 'laravel/framework';
+  const source = framework ? [...namesIn(phpFiles(join(dir, 'src'), new Set(['Testing'])), SOURCE_READ)].filter((name) => !config.has(name)) : [];
   const kept = source.filter((name) => !excluded(name)).sort();
   const names = new Set([...config, ...kept]);
   const added = [...names].filter((name) => !union.has(name)).sort();
   for (const name of names) union.add(name);
-  console.log(`${target.tag}: ${names.size} names (${config.size} from config/, ${kept.length} from src/; ${source.length - kept.length} src/ reads excluded)`);
+  const fromSource = framework ? `, ${kept.length} from src/; ${source.length - kept.length} src/ reads excluded` : '';
+  console.log(`${target.repo} ${target.tag}: ${names.size} names (${config.size} from config/${fromSource})`);
   console.log(`  adds ${added.length}${added.length ? `: ${added.join(' ')}` : ''}`);
 }
 const list = [...union].sort();
