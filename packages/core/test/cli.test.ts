@@ -86,9 +86,17 @@ describe('--dry-run', () => {
     expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
     expect(out.stdout).toContain('MISSING (5)');
     expect(out.stdout).not.toMatch(/DEPLOY_KEY|RELEASE_TOKEN/);
-    expect(out.stdout).toContain('OPTIONAL (8): a default in code, not defined in an env file');
-    expect(out.stdout).toMatch(/DEPLOY_TARGET\s+\(root\)/);
-    expect(out.stdout).toMatch(/SMTP_PORT\s+services\/mailer/);
+    // One line by default; --show-optional lists them; --json always does.
+    expect(out.stdout).toContain('OPTIONAL (8): read with a default; --show-optional lists them\n');
+    expect(out.stdout).not.toMatch(/DEPLOY_TARGET\s+\(root\)/);
+    const { io: shown, out: shownOut } = makeIo({ cwd: DEFAULTS });
+    expect(await run(['--dry-run', '--show-optional'], shown)).toBe(EXIT.ok);
+    expect(shownOut.stdout).toContain('OPTIONAL (8): a default in code, not defined in an env file');
+    expect(shownOut.stdout).toMatch(/DEPLOY_TARGET\s+\(root\)/);
+    expect(shownOut.stdout).toMatch(/SMTP_PORT\s+services\/mailer/);
+    const { io: json, out: jsonOut } = makeIo({ cwd: DEFAULTS });
+    expect(await run(['--dry-run', '--json'], json)).toBe(EXIT.ok);
+    expect(JSON.parse(jsonOut.stdout).variables.filter((v: { optional?: boolean; defined_in: string[] }) => v.optional && v.defined_in.length === 0)).toHaveLength(8);
     expect(out.stdout).toContain('No .env.example in the repository root: 5 variables referenced (--json lists them).');
     expect(out.stdout).toContain('Skipped (the platform or runtime provides them): CI, GITHUB_SHA, NODE_ENV, VERCEL_URL, npm_package_version.');
   });
