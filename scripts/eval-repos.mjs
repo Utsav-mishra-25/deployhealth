@@ -26,6 +26,12 @@ const REPOS = [
   { repo: 'laravel/laravel', sha: 'f4000aeb018fcbf71d4a13e3ee4b80c7e2d45be5' },
   { repo: 'BookStackApp/BookStack', sha: 'ff661b59f6f605bf768fe850c0d0a8a2dc09d203' },
   { repo: 'koel/koel', sha: '72ab1e8d9bc4b744b2043a5259e1a06d733a9a29' },
+  // Java/Kotlin and Spring (Phase 5), default branches as of 2026-10-08. alf.io commits a root
+  // .env, so it gives real MISSING/UNUSED counts; the others ship no env file (references only).
+  { repo: 'spring-projects/spring-petclinic', sha: '500158f732419217507c7656904b8e6aa1bcc0d6' },
+  { repo: 'spring-petclinic/spring-petclinic-kotlin', sha: 'c77f77ba5d43c2dbff7fa777c40be1d7ec321e40' },
+  { repo: 'alfio-event/alf.io', sha: '34a842cb77c3e895538619bb71a313e674748183' },
+  { repo: 'langchain4j/langchain4j-examples', sha: '790431c9fa6764a4501461a322d7ccdb60869e26' },
 ];
 
 const ROOT = resolve(import.meta.dirname, '..');
