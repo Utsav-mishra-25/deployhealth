@@ -35,9 +35,11 @@ before changing `apps/web/src/lib/github-webhook.ts`, `apps/worker/src/github/` 
 `coverage.ts#treeCoverage` runs in the isolate with the file selection (task `select`) and works
 only from the two tree listings (path, blob sha, size): the supported source files read in head per
 language (`SUPPORTED_LANGUAGES`, core `languages.ts`), all files read (source, env and declaration
-files, Compose files), how many of them the pull request changes (added, deleted, or a different
-sha between merge base and head), and the source files it doesn't read (`UNREAD_SOURCE_EXTENSIONS`,
-counts by extension only, never paths; same skip, vendored and test rules). Each pass is linear,
+files, Compose files, Symfony config YAML, Laravel's `artisan`; the summary counts the non-source
+ones as "env or config files"), how many of them the pull request changes (added, deleted, or a
+different sha between merge base and head), and the source files it doesn't read
+(`UNREAD_SOURCE_EXTENSIONS`, counts by extension only, never paths; same skip, vendored,
+build-output and test rules, with each side's `treeMarkers`). Each pass is linear,
 with Maps; `test/coverage.test.ts` holds a 15 s bound on 100k entries a side (about 0.8 s in a
 sandbox; a quadratic version ran past 98 s). `build.ts` decides the outcome from it **before any
 blob is downloaded**. The outcomes, in order:

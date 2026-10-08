@@ -28,6 +28,8 @@ LICENSE               FSL-1.1-MIT (everything except packages/core, which has it
 .github/workflows/publish-cli.yml    manual: publish deployhealth-scan to npm with provenance
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
+scripts/laravel-framework-names.mjs  `pnpm laravel:names`: regenerates core's LARAVEL_FRAMEWORK_NAMES from
+                           pinned laravel/framework tags (manual, not in CI, not shipped)
 scripts/load-demo.mjs      `pnpm load:demo`: p50/p95/errors/rps of the public pages on `next start` (manual)
 ```
 
@@ -69,6 +71,7 @@ pnpm build
 pnpm e2e             # Playwright smoke test (see below)
 pnpm scan:self       # run deployhealth's own scanner on this repo; must report nothing
 pnpm eval:repos      # manual: counts per repo on pinned public repos (--cli "npx --yes deployhealth-scan@x.y.z" to compare)
+pnpm laravel:names   # manual: report and check the Laravel framework names (--write to regenerate)
 pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections × 30 s per public page (--url, --no-build)
 ```
 
