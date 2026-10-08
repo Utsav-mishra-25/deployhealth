@@ -42,7 +42,8 @@ Options:
                        fixtures/, playwright/, testing/, *.test.*, *.spec.*, *.e2e.*,
                        *_test.go, vitest.config.*, ...)
   --dry-run            print the findings instead of sending them
-  --json               with --dry-run, print JSON
+  --show-optional      with --dry-run, list each variable read with a default (OPTIONAL)
+  --json               with --dry-run, print JSON (always lists them)
   -v, --version        print the version
   -h, --help           show this help
 `;
@@ -58,6 +59,7 @@ const OPTIONS = {
   'include-tests': { type: 'boolean' },
   exclude: { type: 'string', multiple: true },
   'dry-run': { type: 'boolean' },
+  'show-optional': { type: 'boolean' },
   json: { type: 'boolean' },
   version: { type: 'boolean', short: 'v' },
   help: { type: 'boolean', short: 'h' },
@@ -96,7 +98,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     if (values.json) {
       if (!canCheck) io.stderr(`${NO_SOURCE_FILES_LINE}\n`);
       io.stdout(`${JSON.stringify(toJson(result), null, 2)}\n`);
-    } else io.stdout(renderText(result));
+    } else io.stdout(renderText(result, values['show-optional'] === true));
     return EXIT.ok;
   }
 
@@ -193,7 +195,7 @@ function toJson(result: ScanResult) {
 
 const TITLES: Record<FindingKind, string> = { missing: 'MISSING', unused: 'UNUSED', mismatch: 'MISMATCH' };
 
-function renderText(result: ScanResult): string {
+function renderText(result: ScanResult, showOptional: boolean): string {
   const scopes = result.scopes.map((s) => s || '(root)').join(', ');
   const out = [`deployhealth-scan: ${result.sourceFiles} source files, scopes: ${scopes}`, ''];
   if (result.sourceFiles === 0) out.push(NO_SOURCE_FILES_LINE, '');
@@ -209,8 +211,11 @@ function renderText(result: ScanResult): string {
     out.push('');
   }
 
+  // One line by default: a Laravel app reads dozens of settings with a default, which aren't findings.
   const optional = result.variables.filter((v) => v.optional && v.defined_in.length === 0);
-  if (optional.length > 0) {
+  if (optional.length > 0 && !showOptional) {
+    out.push(`OPTIONAL (${optional.length}): read with a default; --show-optional lists them`, '');
+  } else if (optional.length > 0) {
     out.push(`OPTIONAL (${optional.length}): a default in code, not defined in an env file`);
     for (const v of optional) out.push(`  ${v.var_name.padEnd(28)} ${v.scope || '(root)'}`);
     out.push('');
