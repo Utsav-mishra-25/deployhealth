@@ -8,7 +8,7 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
 
 ```
     src/ingest.ts     zod payload schema, token generate/hash/hint, GitHub Action snippet
-    src/cli.ts        deployhealth-scan (bundled by tsup into one 35 KB file, `CLI_BUNDLE_KB`; served by web)
+    src/cli.ts        deployhealth-scan (bundled by tsup into one 40 KB file, `CLI_BUNDLE_KB`; served by web)
     src/version.ts    CLI_VERSION, printed by --version; equals npm/package.json's version
     npm/              the published npm package `deployhealth-scan`: manifest + README (committed);
                       `build:npm` adds dist/ and LICENSE (gitignored)
@@ -37,7 +37,7 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
 ## A directory it can't check (0.3.2)
 
 - When the scan reads no supported source file (after the skip, vendored and test rules), the CLI
-  prints `NO_SOURCE_FILES_LINE` (core `languages.ts`): "No JS/TS, Python, Go, Ruby or PHP source files
+  prints `NO_SOURCE_FILES_LINE` (core `languages.ts`): "No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source files
   found: deployhealth can't check this directory yet." In `--dry-run` text it follows the header;
   with `--json` it goes to stderr and the JSON gains `"source_files": <n>` and `"can_check":
   <bool>` (always present; `can_check` is `source_files > 0`); without `--dry-run` it is printed
@@ -58,8 +58,11 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   can't-check line, `source_files` / `can_check` in `--json`, no UNUSED without supported source)
   and 0.4.0 (PHP and Laravel, Symfony's `%env()%`, the Laravel path rules, and OPTIONAL as one
   line in the text output: `--show-optional` lists the rows, `--json` is unchanged; the ingest
-  payload didn't change) are on npm; 0.4.0 is `CLI_VERSION`, `PUBLISHED_CLI_VERSION` and every
-  pin. Java/Kotlin ships in 0.5.0.
+  payload didn't change) are on npm; 0.4.0 is `PUBLISHED_CLI_VERSION` and every pin. 0.5.0 is
+  `CLI_VERSION`, not yet published: Java and Kotlin (`System.getenv`, `@Value`), Spring's config
+  placeholders and relaxed binding, and Maven's and Gradle's build output skipped. The ingest
+  payload is unchanged (no language or syntax field; config file paths are plain strings), so the
+  server needs nothing before it's published.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow

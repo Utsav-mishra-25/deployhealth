@@ -3,7 +3,7 @@
 What the scanner reads and reports, the rules that keep a first scan quiet and accurate, the env
 parser, the fixtures, and the timing rule for every parser of untrusted input. Read before
 changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts`, `pydantic.ts`,
-`compose.ts`, `symfony.ts`, `laravel.ts`, `build-dirs.ts`, `env-files.ts`, `env-parser.ts`,
+`compose.ts`, `spring.ts`, `symfony.ts`, `laravel.ts`, `build-dirs.ts`, `env-files.ts`, `env-parser.ts`,
 `gitignore.ts`, `test-paths.ts`, `vendored.ts`, `findings.ts`, `default-ignore.ts`) or the fixtures.
 
 ## Layout
@@ -13,16 +13,20 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
     src/scan.ts       scanProject(): walks the repo, env scopes (+ envScopes, defaultIgnored), findings rows
     src/languages.ts  SUPPORTED_LANGUAGES (id, label, extensions), the display strings, the unread
                       extensions for messages, NO_SOURCE_FILES_LINE, LANGUAGES_SENTENCE (browser-safe)
-    src/scanner.ts    per-language regexes (JS/TS incl. .mjs/.cjs/.mts/.cts, Python, Go, Ruby, PHP),
+    src/scanner.ts    per-language regexes (JS/TS incl. .mjs/.cjs/.mts/.cts, Python, Go, Ruby, PHP,
+                      Java/Kotlin incl. @Value placeholders),
                       same-line inline defaults (Reference.hasDefault), one reference per name per line;
                       USED_ONLY reads (PHP's $_SERVER) that only mark a name used
     src/pydantic.ts   pydantic-settings fields as references (Python logical lines, env_prefix, aliases)
     src/compose.ts    Docker Compose files and the names they interpolate (used, never MISSING)
+    src/spring.ts     Spring: placeholders (@Value, application*/bootstrap* config), config keys' env
+                      forms, @ConfigurationProperties prefixes, springUsedNames() (relaxed binding)
     src/symfony.ts    Symfony's %env(…)% in config/**/*.yaml|yml (references; not source files)
     src/laravel.ts    LARAVEL_MARKER (`artisan`), LARAVEL_FRAMEWORK_NAMES (framework and skeleton,
                       generated: `pnpm laravel:names`), LARAVEL_REQUIRED_NAMES (APP_KEY)
     src/build-dirs.ts build output known by context: bootstrap/cache, public/build, storage/ beside
-                      artisan; treeMarkers() / inContextualSkipDir() for tree listings (linear)
+                      artisan, target/ beside pom.xml or a Gradle file, build/ beside a Gradle file;
+                      treeMarkers() / inContextualSkipDir() for tree listings (linear)
     src/env-files.ts  which file names are env files / declaration files; display order (browser-safe)
     src/vendored.ts   VENDORED_DIRS, generated file names, MAX_SOURCE_FILE_BYTES (512 KB)
     src/findings.ts   analyzeScope() / summarize(): MISSING, UNUSED, MISMATCH; newMissingVars() /
@@ -79,11 +83,11 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
 - **One list of languages** (`languages.ts`, 0.3.2): `SUPPORTED_LANGUAGES` names each language
   the scanner reads and its extensions; `scanner.ts` builds its extension map from it and
   `test/languages.test.ts` pins the two together, so they can't drift. `SUPPORTED_LANGUAGES_OR` /
-  `_AND` ("JS/TS, Python, Go, Ruby or PHP" / "… and PHP") word every message (the App's check
-  runs, the CLI, the web app, the README, whose opening line and "Languages" limitation are tested
-  against the constants). `UNREAD_SOURCE_EXTENSIONS` (`.java`, `.kt`, `.properties`, `.rs`, `.cs`,
-  …) is only for saying what a repo holds that isn't read (counts by extension, never paths),
-  never for scanning. `passesTreeRules()` (`scan.ts`) is the skip, vendored, build-output and
+  `_AND` ("JS/TS, Python, Go, Ruby, PHP or Java/Kotlin" / "… and Java/Kotlin") word every message
+  (the App's check runs, the CLI, the web app, the README, whose opening line and "Languages"
+  limitation are tested against the constants). `UNREAD_SOURCE_EXTENSIONS` (`.rs`, `.cs`,
+  `.swift`, …) is only for saying what a repo holds that isn't read (counts by extension, never
+  paths), never for scanning. `passesTreeRules()` (`scan.ts`) is the skip, vendored, build-output and
   test-path part of `selectTreeFiles`, which the App's coverage counts use for unread files too
   (with the tree's `treeMarkers`, so `storage/` beside `artisan` never counts).
 - **PHP and Laravel** (Phase 5; the App on deploy, the CLI from 0.4.0). `.php` (Blade templates
@@ -116,6 +120,35 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
   `*Test.php` and `phpunit.xml(.dist)` are test tooling (`tests/` already was). Known misses:
   a call split across lines, dynamic names, `%env()%` in PHP or XML config, and names read only
   by Composer packages' unpublished config (UNUSED).
+- **Java, Kotlin and Spring** (Phase 5; the App on deploy, the CLI from 0.5.0). `.java`, `.kt`,
+  `.kts` (Gradle's `build.gradle.kts` too): `System.getenv("X")`, `System.getenv().get("X")`,
+  Kotlin's `System.getenv()["X"]`, `System.getenv().getOrDefault("X", d)` (optional unless `d` is
+  `null`). Same-line defaults after a read: Kotlin's `?: d` (not `null`, `throw`, `error(…)`,
+  `TODO(…)`, `requireNotNull`, `checkNotNull`) and `Optional.ofNullable(…).orElse(d)` /
+  `.orElseGet(…)`. **Placeholders** (`spring.ts#springPlaceholders`, one pass with a stack):
+  `${X}` is a read, `${X:d}` optional, a placeholder inside another's default optional too;
+  only UPPER_SNAKE names followed by `}` or `:` count (`${server.port}` is a property). In code,
+  only after `@Value` on the same line, and in Kotlin only the escaped `\${…}` (a bare `${…}`
+  is string interpolation). In `application*` / `bootstrap*` `.properties` and `.yml|yaml`
+  (any depth; `application-test.*` is test tooling) placeholders are references that can be
+  MISSING (decision 12: a missing one fails startup); `#` (and `!` in properties) comment lines
+  are skipped; the files are read but aren't source files. **Relaxed binding** (decision 13,
+  `springUsedNames`): in a scope where some Java/Kotlin source mentions `org.springframework`
+  (not merely a scope with a config file: Rails' figaro keeps a `config/application.yml` too), a
+  declared name is used when it's (a) the env form of a key the scope's config sets (uppercase,
+  `-` dropped, `.` and `[` to `_`, `]` dropped: `cache.ttl-seconds` → `CACHE_TTLSECONDS`;
+  properties `key=value` / `key: value` / `key value`; YAML keys joined along indentation, block
+  scalars and list items skipped, paths past 256 characters not built), (b) starts with
+  `SPRING_`, `SERVER_`, `MANAGEMENT_` or `LOGGING_`, or (c) starts with a
+  `@ConfigurationProperties("app.mail")` / `(prefix = …)` prefix's env form plus `_`. It only
+  marks names used (`usedOutsideCode`), never a reference or MISSING; prefixes are matched with a
+  character trie, linear in each name. Limits: properties set only on the platform, prefixes in
+  constants or split across lines, keys inside list items, profiles activated only on the
+  platform; (b) can hide a genuinely unused `SERVER_…`. **Paths**: `.gradle` and `.mvn` are
+  VENDORED_DIRS; `target/` is skipped beside `pom.xml` or a Gradle build file and `build/` beside
+  a Gradle build file (`build.gradle(.kts)`, `settings.gradle(.kts)`), so a JS `build/` or a Go
+  `target` package is still read. `*Test.java|kt`, `*Tests.java|kt`, `*IT.java|kt` are test
+  tooling (`src/test/` already was).
 - **No supported source, no UNUSED** (decision 18, 0.3.2): when a whole scan reads no supported
   source file (`sourceFiles` 0, after the skip, vendored and test rules), `scanFiles` emits no
   UNUSED findings: nothing it reads could use them. MISMATCH stays (`.env` vs `.env.example` doesn't
@@ -130,7 +163,11 @@ changing anything the CLI and the GitHub App use to scan (`scan.ts`, `scanner.ts
   no env file) for `test/scan-defaults.test.ts`; `fixtures/accuracy` covers 0.3.0 (each declaration
   file name, commented declarations, test tooling, duplicate reads, pydantic-settings, Compose) for
   `test/scan-accuracy.test.ts`, whose vendored directories and >512 KB file are written at test
-  time. `fixtures/laravel` covers PHP (`test/scan-php.test.ts`): every read and default form, the
+  time. `fixtures/spring` covers Java/Kotlin (`test/scan-jvm.test.ts`, with `test/spring.test.ts`
+  for the parsers): every read and default form, `@Value` and config placeholders, relaxed
+  binding (prefixes, key env forms, `@ConfigurationProperties`), a Gradle scope without Spring
+  where it's off, `*IT.java`, a test profile; its `target/`, `.mvn/`, Gradle `build/`, `target/`
+  and `.gradle/` decoys are written at test time. `fixtures/laravel` covers PHP (`test/scan-php.test.ts`): every read and default form, the
   framework names (a `legacy/` scope without `artisan` where they're ordinary), `$_SERVER`, a
   `symfony/` scope, `*Test.php`; its `storage/`, `bootstrap/cache`, `public/build`,
   `.phpunit.cache` and `vendor/` decoys are written at test time. Their `.env`, `.env.local`, `.env.*.local`, `.env.production`, `.env.development` and
