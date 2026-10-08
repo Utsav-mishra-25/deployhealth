@@ -391,7 +391,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     expect(await prCheck(JOB, deps)).toBe('success');
     expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
     expect(NOTHING_CHANGED_TITLE).toBe('No JS/TS, Python, Go, Ruby or PHP files or env files changed');
-    expect(runs(mock)[0]!.summary).toContain('Read 3 files (JS/TS 2, 1 env or Compose file)');
+    expect(runs(mock)[0]!.summary).toContain('Read 3 files (JS/TS 2, 1 env or config file)');
     expect(mock.state.comments.size).toBe(0);
     expect(blobs(mock)).toEqual([]);
   });
@@ -419,6 +419,56 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     expect([...mock.state.comments.values()][0]!.body).toContain('**1 possible secret in added lines**');
   });
 
+  describe('a Laravel repo', () => {
+    const LARAVEL = {
+      artisan: '#!/usr/bin/env php',
+      '.env.example': 'APP_KEY=\nBCRYPT_ROUNDS=12\n',
+      'config/app.php': "<?php return ['key' => env('APP_KEY'), 'name' => env('APP_NAME', 'Laravel')];",
+      'tests/Feature/HomeTest.php': "<?php env('TEST_ONLY');",
+    };
+    // Laravel's compiled views and cached config: never downloaded, whatever they read.
+    const CACHES = {
+      'storage/framework/views/0a1b.php': "<?php echo env('COMPILED_VIEW_VAR'); ?>",
+      'bootstrap/cache/config.php': "<?php return ['k' => getenv('CACHED_CONFIG_VAR')];",
+    };
+    const laravelRepo = (base: Record<string, string>, head: Record<string, string>, files: Array<{ filename: string; patch?: string }>) =>
+      repo({ commits: { base1: base, head1: head }, pulls: { 42: { ...PR, author: 'octocat', files } } });
+
+    it('flags a new undeclared env() read, never downloads storage/ or bootstrap/cache, and fails in strict mode', async () => {
+      const added = "<?php\nclass Pay { public function key() { return env('STRIPE_SECRET'); } }";
+      const files = [{ filename: 'app/Services/Pay.php', patch: "@@ -0,0 +1 @@\n+return env('STRIPE_SECRET');" }];
+      const withCaches = mockOctokit(laravelRepo({ ...LARAVEL, ...CACHES }, { ...LARAVEL, ...CACHES, 'app/Services/Pay.php': added }, files));
+      const { deps, rows } = harness(withCaches, { mode: 'strict' });
+      expect(await prCheck(JOB, deps)).toBe('failure');
+      expect(runs(withCaches)[0]).toMatchObject({ conclusion: 'failure', title: '1 env var added (1 not in .env.example)' });
+      expect(rows[0]!.undeclaredVars).toEqual(['STRIPE_SECRET']);
+      expect(JSON.stringify([rows, ...withCaches.state.comments.values(), ...runs(withCaches)])).not.toMatch(/COMPILED_VIEW_VAR|CACHED_CONFIG_VAR|BCRYPT_ROUNDS/);
+      const without = mockOctokit(laravelRepo(LARAVEL, { ...LARAVEL, 'app/Services/Pay.php': added }, files));
+      await prCheck(JOB, harness(without, { mode: 'strict' }).deps);
+      expect(blobs(withCaches)).toHaveLength(blobs(without).length);
+    });
+
+    it('a pull request that changes only storage/ and a .java file: the nothing-changed title, no downloads', async () => {
+      const head = { ...LARAVEL, ...CACHES, 'storage/framework/views/0a1b.php': "<?php echo env('NEW_COMPILED'); ?>", 'tools/Gen.java': 'class Gen {}' };
+      const mock = mockOctokit(laravelRepo({ ...LARAVEL, ...CACHES }, head, [{ filename: 'tools/Gen.java', patch: '@@ -0,0 +1 @@\n+class Gen {}' }]));
+      const { deps } = harness(mock, { mode: 'strict' });
+      expect(await prCheck(JOB, deps)).toBe('success');
+      expect(runs(mock)[0]).toMatchObject({ conclusion: 'success', title: NOTHING_CHANGED_TITLE });
+      expect(runs(mock)[0]!.summary).toContain('Read 3 files (PHP 1, 2 env or config files)');
+      expect(runs(mock)[0]!.summary).toContain("This pull request also changed 1 .java file, which deployhealth doesn't read yet.");
+      expect(mock.state.comments.size).toBe(0);
+      expect(blobs(mock)).toEqual([]);
+    });
+
+    it('a clean pass names PHP', async () => {
+      const head = { ...LARAVEL, 'config/app.php': "<?php return ['key' => env('APP_KEY'), 'name' => env('APP_NAME', 'Shop')];" };
+      const mock = mockOctokit(laravelRepo(LARAVEL, head, [{ filename: 'config/app.php', patch: "@@ -1 +1 @@\n+'Shop'" }]));
+      const { deps } = harness(mock);
+      expect(await prCheck(JOB, deps)).toBe('success');
+      expect(runs(mock)[0]!.title).toBe('Checked 3 files (PHP), 1 changed: no undeclared env vars');
+    });
+  });
+
   it('a clean pass says what it read, per language, and stays under 255 characters with every language', async () => {
     const all = { ...BASE, 'svc/main.go': 'package main', 'api/app.py': 'import os', 'lib/task.rb': 'puts 1', 'src/new.ts': 'export const x = 1;' };
     const mock = mockOctokit(repo({ commits: { base1: BASE, head1: all } }));
@@ -427,7 +477,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     const run = runs(mock)[0]!;
     expect(run.title).toBe('Checked 7 files (JS/TS, Python, Go, Ruby), 4 changed: no undeclared env vars');
     expect(run.title.length).toBeLessThan(255);
-    expect(run.summary).toContain('Read 7 files (JS/TS 3, Python 1, Go 1, Ruby 1, 1 env or Compose file), 4 changed in this pull request.');
+    expect(run.summary).toContain('Read 7 files (JS/TS 3, Python 1, Go 1, Ruby 1, 1 env or config file), 4 changed in this pull request.');
   });
 
   it('keeps today\'s comment and conclusion for a pull request that adds an undeclared var', async () => {
