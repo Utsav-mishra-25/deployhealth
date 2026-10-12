@@ -58,11 +58,10 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   can't-check line, `source_files` / `can_check` in `--json`, no UNUSED without supported source)
   and 0.4.0 (PHP and Laravel, Symfony's `%env()%`, the Laravel path rules, and OPTIONAL as one
   line in the text output: `--show-optional` lists the rows, `--json` is unchanged; the ingest
-  payload didn't change) are on npm; 0.4.0 is `PUBLISHED_CLI_VERSION` and every pin. 0.5.0 is
-  `CLI_VERSION`, not yet published: Java and Kotlin (`System.getenv`, `@Value`), Spring's config
-  placeholders and relaxed binding, and Maven's and Gradle's build output skipped. The ingest
-  payload is unchanged (no language or syntax field; config file paths are plain strings), so the
-  server needs nothing before it's published.
+  payload didn't change) and 0.5.0 (Java and Kotlin: `System.getenv`, `@Value`, Spring's config
+  placeholders and relaxed binding, Maven's and Gradle's build output skipped, Gradle's
+  `*.gradle.kts` scripts as build tooling; the ingest payload didn't change) are on npm; 0.5.0 is
+  `CLI_VERSION`, `PUBLISHED_CLI_VERSION` and every pin.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow
