@@ -360,8 +360,10 @@ test('docs: linked from the landing page and the footer, one page per stack, ind
 
 test('security: public page linked from the footer, and security.txt', async ({ page, request }) => {
   await page.goto('/login');
-  await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Security' }).click();
-  await expect(page).toHaveURL(/\/security$/);
+  // Footer links are checked by their target and followed with goto, which waits for the page (a
+  // click can race next dev's first compile of the route).
+  await expect(page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Security' })).toHaveAttribute('href', '/security');
+  await page.goto('/security');
   await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible();
   await expect(page.getByTestId('security')).toContainText('never values');
   await expect(page.getByTestId('security')).toContainText('72 hours');
@@ -380,13 +382,13 @@ test('privacy and terms: public pages linked from the footer', async ({ page }) 
   await page.goto('/');
   const footer = page.getByRole('navigation', { name: 'Footer' });
   await expect(footer.getByRole('link')).toHaveText(['Docs', 'Security', 'Privacy', 'Terms', 'Source on GitHub']);
-  await footer.getByRole('link', { name: 'Privacy' }).click();
-  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+  await expect(footer.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+  await page.goto('/privacy');
   await expect(page.getByTestId('privacy')).toContainText('Utsav Mishra (India)');
   await expect(page.getByTestId('privacy')).toContainText('even if it is private on GitHub');
   await expect(page.getByTestId('last-updated')).toHaveText(/^Last updated: \d{1,2} [A-Z][a-z]+ \d{4}$/);
-  await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Terms' }).click();
-  await expect(page).toHaveURL(/\/terms$/);
+  await page.goto('/terms');
   await expect(page.getByTestId('terms')).toContainText('Only monitor endpoints you own or are authorised to check.');
 });
 
