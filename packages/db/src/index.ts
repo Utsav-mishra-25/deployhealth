@@ -1,6 +1,7 @@
 export * from './schema';
 export * from './client';
 export * from './queries';
+export * from './deploy-history';
 export * from './clients';
 export * from './monitoring';
 export * from './handoff';
