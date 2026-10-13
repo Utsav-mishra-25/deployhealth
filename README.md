@@ -27,7 +27,7 @@ newly left undefined:
 And when a contract ends, or a month does, it writes the paperwork: a **handoff document** for the
 client and a **monthly report** you can share with a link.
 
-![Every client with its projects: env findings, last deploy, and uptime ("Acme API down for 22m")](docs/screenshots/clients.png)
+![Every client with its projects, worst first under a summary line: each with one status (Down, Needs attention, Healthy), its non-zero findings, and the last deploy](docs/screenshots/clients.png)
 
 ## What you get
 
@@ -37,7 +37,7 @@ Each project gets a GitHub Action. On every push it scans the repo and reports w
 unused or out of sync, per env scope (so `apps/web` is checked against `apps/web/.env.example`),
 with `file:line` for every finding and a history per deploy.
 
-![Findings grouped by kind with file:line, and the deploy history with each deploy's counts](docs/screenshots/findings-and-deploys.png)
+![Findings grouped by kind with file:line, and the deploy history: what each deploy added or fixed, and the outage that followed one](docs/screenshots/findings-and-deploys.png)
 
 Setup is one repository secret and one workflow file ([setup](#setup-two-options)). The scanner is the MIT-licensed npm package
 [`deployhealth-scan`](https://www.npmjs.com/package/deployhealth-scan), pinned to an exact version:
