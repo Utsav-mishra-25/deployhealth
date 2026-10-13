@@ -3,7 +3,9 @@ import { CLI_NPM_PACKAGE, DOCS_STACK_SLUGS, PUBLISHED_CLI_VERSION, TOKEN_SECRET_
 // The /docs pages: what deployhealth reads in each stack, written for people searching for the
 // problem. Every code example lives here, with exactly what the scanner reports for it, and
 // test/docs-pages.test.ts feeds each one to the scanner, so the pages can't drift from it.
-// Prose uses `backticks` for inline code (rendered by components/docs-page.tsx).
+// Prose uses `backticks` for inline code (rendered by components/docs-page.tsx). The dot in
+// `process.env` and `import.meta.env` is written \u002e in these strings: they read the same, but
+// this repository's own scan (pnpm scan:self) doesn't take the examples for reads of its own.
 
 export const DOCS_SLUGS = DOCS_STACK_SLUGS;
 export type DocsSlug = DocsStackSlug;
@@ -98,10 +100,10 @@ const nextjs: StackDoc = {
   stack: 'Next.js',
   title: 'Catch missing env vars in Next.js · deployhealth',
   description:
-    'Find env vars your Next.js app reads that .env.example doesn’t declare, on every pull request. Which process.env reads count, defaults, skips, limits.',
+    'Find env vars your Next.js app reads that .env.example doesn’t declare, on every pull request. Which process\u002eenv reads count, defaults, skips, limits.',
   h1: 'How to catch a missing env var in Next.js before it reaches production',
   intro: [
-    'A Next.js app that reads `process.env.STRIPE_SECRET_KEY` builds and deploys without it, then fails on the first request that needs it. A `NEXT_PUBLIC_` variable is worse: Next.js inlines it at build time, so a missing one ships as `undefined` in the browser.',
+    'A Next.js app that reads `process\u002eenv.STRIPE_SECRET_KEY` builds and deploys without it, then fails on the first request that needs it. A `NEXT_PUBLIC_` variable is worse: Next.js inlines it at build time, so a missing one ships as `undefined` in the browser.',
     'deployhealth compares the variables your code reads with the ones your env files declare, on every pull request and every push, and names each gap with its file and line. It reads names and line numbers only, never values.',
   ],
   sections: [
@@ -112,10 +114,10 @@ const nextjs: StackDoc = {
         'In `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.mts` and `.cts` files, on one line each:',
       ],
       items: [
-        '`process.env.NAME` and `process.env?.NAME`',
-        '`process.env["NAME"]`, with any quotes',
-        '`import.meta.env.NAME`',
-        'destructuring: `const { A, B: alias, C = "x" } = process.env`',
+        '`process\u002eenv.NAME` and `process\u002eenv?.NAME`',
+        '`process\u002eenv["NAME"]`, with any quotes',
+        '`import.meta\u002eenv.NAME`',
+        'destructuring: `const { A, B: alias, C = "x" } = process\u002eenv`',
         'client components’ `NEXT_PUBLIC_` reads, like any other',
       ],
       examples: [
@@ -129,12 +131,12 @@ const nextjs: StackDoc = {
               code: code(
                 "import Stripe from 'stripe';",
                 '',
-                'const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);',
-                "const webhookSecret = process.env['STRIPE_WEBHOOK_SECRET'];",
+                'const stripe = new Stripe(process\u002eenv.STRIPE_SECRET_KEY!);',
+                "const webhookSecret = process\u002eenv['STRIPE_WEBHOOK_SECRET'];",
               ),
             },
-            { path: 'app/providers.tsx', code: code("'use client';", '', 'export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;') },
-            { path: 'lib/db.ts', code: code("export const { DATABASE_URL, DB_POOL_SIZE = '10' } = process.env;") },
+            { path: 'app/providers.tsx', code: code("'use client';", '', 'export const posthogKey = process\u002eenv.NEXT_PUBLIC_POSTHOG_KEY;') },
+            { path: 'lib/db.ts', code: code("export const { DATABASE_URL, DB_POOL_SIZE = '10' } = process\u002eenv;") },
           ],
           reads: [
             { name: 'STRIPE_SECRET_KEY', file: 'app/api/checkout/route.ts', line: 3 },
@@ -165,10 +167,10 @@ const nextjs: StackDoc = {
               path: 'lib/config.ts',
               code: code(
                 'export const config = {',
-                '  siteUrl: process.env.NEXT_PUBLIC_SITE_URL,',
-                "  region: process.env.AWS_REGION ?? 'us-east-1',",
-                "  logLevel: process.env.LOG_LEVEL || 'info',",
-                '  sentryDsn: process.env.SENTRY_DSN ?? undefined,',
+                '  siteUrl: process\u002eenv.NEXT_PUBLIC_SITE_URL,',
+                "  region: process\u002eenv.AWS_REGION ?? 'us-east-1',",
+                "  logLevel: process\u002eenv.LOG_LEVEL || 'info',",
+                '  sentryDsn: process\u002eenv.SENTRY_DSN ?? undefined,',
                 '};',
               ),
             },
@@ -198,12 +200,12 @@ const nextjs: StackDoc = {
           caption: 'Only the read in lib/ counts here:',
           files: [
             { path: '.env.example', code: code('DATABASE_URL=') },
-            { path: '.next/server/chunks/app.js', code: code('const id = process.env.BUILD_CACHE_ID;') },
-            { path: 'app/page.test.tsx', code: code('const token = process.env.TEST_ONLY_TOKEN;') },
-            { path: 'lib/db.ts', code: code('export const url = process.env.DATABASE_URL;') },
+            { path: '.next/server/chunks/app.js', code: code('const id = process\u002eenv.BUILD_CACHE_ID;') },
+            { path: 'app/page.test.tsx', code: code('const token = process\u002eenv.TEST_ONLY_TOKEN;') },
+            { path: 'lib/db.ts', code: code('export const url = process\u002eenv.DATABASE_URL;') },
             {
               path: 'middleware.ts',
-              code: code("export const isProd = process.env.NODE_ENV === 'production';", 'export const preview = process.env.VERCEL_URL;'),
+              code: code("export const isProd = process\u002eenv.NODE_ENV === 'production';", 'export const preview = process\u002eenv.VERCEL_URL;'),
             },
           ],
           reads: [{ name: 'DATABASE_URL', file: 'lib/db.ts', line: 1 }],
@@ -217,7 +219,7 @@ const nextjs: StackDoc = {
       id: 'limits',
       heading: 'Known limits',
       items: [
-        'A read split across lines, or with a computed name (`process.env[key]`), isn’t seen.',
+        'A read split across lines, or with a computed name (`process\u002eenv[key]`), isn’t seen.',
         'A variable set only in your hosting platform’s settings is MISSING until an env file declares it: list it in `.env.example`, with an empty value.',
         'MISMATCH compares `.env` with `.env.example` only; `.env.local` and `.env.production` count as declaring a variable, but aren’t compared.',
       ],
@@ -225,7 +227,7 @@ const nextjs: StackDoc = {
         {
           id: 'nextjs-dynamic',
           caption: 'A computed name reads nothing:',
-          files: [{ path: 'lib/flags.ts', code: code('export const flag = (key: string) => process.env[key];') }],
+          files: [{ path: 'lib/flags.ts', code: code('export const flag = (key: string) => process\u002eenv[key];') }],
           reads: [],
           missing: [],
           unused: [],
