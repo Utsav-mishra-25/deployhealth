@@ -1,5 +1,6 @@
-import { failingFor, type UptimeStatus } from '@deployhealth/core/browser';
+import { failingFor } from '@deployhealth/core/browser';
 import type { EndpointStatus } from '@deployhealth/db';
+import { STATUS_LABELS, type ProjectStatus } from '@/lib/project-status';
 
 const TONES = {
   green: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -17,17 +18,16 @@ function Badge({ tone, label, testId }: { tone: keyof typeof TONES; label: strin
   );
 }
 
-const UPTIME: Record<UptimeStatus, [keyof typeof TONES, string]> = {
-  up: ['green', 'Up'],
-  degraded: ['amber', 'Degraded'],
-  down: ['red', 'Down'],
-  no_endpoints: ['gray', 'No endpoints'],
+const PROJECT_TONES: Record<ProjectStatus, keyof typeof TONES> = {
+  down: 'red',
+  attention: 'amber',
+  not_set_up: 'gray',
+  healthy: 'green',
 };
 
-/** A project's overall uptime badge on the clients pages. */
-export function UptimeBadge({ status }: { status: UptimeStatus }) {
-  const [tone, label] = UPTIME[status];
-  return <Badge tone={tone} label={label} testId="uptime-badge" />;
+/** A project's status on the project lists: always a text label, the colour only repeats it. */
+export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
+  return <Badge tone={PROJECT_TONES[status]} label={STATUS_LABELS[status]} testId="project-status" />;
 }
 
 const ENDPOINT: Record<EndpointStatus, [keyof typeof TONES, string]> = {
