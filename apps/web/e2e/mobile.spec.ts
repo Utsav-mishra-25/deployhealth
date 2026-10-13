@@ -33,12 +33,12 @@ test('public pages fit a 375 px phone, signed out', async ({ page }) => {
     await expectNoSidewaysScroll(page, path);
   }
 
-  // The demo overview shows each project's uptime status next to its name, on screen.
+  // The demo overview shows each project's status under its name, on screen, with its reasons.
   await page.goto('/demo');
-  const badge = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' }).getByTestId('uptime-badge');
+  const badge = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' }).getByTestId('project-status');
   await expect(badge).toHaveText('Down');
   await expect(badge).toBeInViewport({ ratio: 1 });
-  await expect(page.getByTestId('project-row').filter({ hasText: 'acme-storefront' }).getByTestId('failing-for')).toBeInViewport({ ratio: 1 });
+  await expect(page.getByTestId('project-row').filter({ hasText: 'acme-storefront' }).getByTestId('status-reasons')).toBeInViewport({ ratio: 1 });
 });
 
 test('signed-in pages and a shared report fit a 375 px phone', async ({ page, browser }) => {

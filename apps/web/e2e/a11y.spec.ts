@@ -32,7 +32,7 @@ test('public pages have no serious or critical accessibility violations', async 
   }
 });
 
-test('the signed-in settings page and a shared report have none either', async ({ page, browser }) => {
+test('the signed-in lists, a project with a deploy, its settings and a shared report have none either', async ({ page, browser }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Continue as dev user' }).click();
   await expect(page).toHaveURL(/\/clients$/);
@@ -48,9 +48,20 @@ test('the signed-in settings page and a shared report have none either', async (
   await page.getByLabel('Project name').fill(`a11y-${suffix}`);
   await page.getByLabel('GitHub repository').fill('acme/a11y');
   await page.getByRole('button', { name: 'Create project' }).click();
+  // A scan, so the project page has a deploy row with a commit link to GitHub.
+  const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
+  const scan = await page.request.post('/api/ingest/scan', {
+    headers: { authorization: `Bearer ${token}` },
+    data: { sha: '0123456789abcdef0123456789abcdef01234567', branch: 'main', timestamp: new Date().toISOString(), findings: [] },
+  });
+  expect(scan.status()).toBe(201);
   await page.getByRole('link', { name: 'Go to project' }).click();
   await expect(page.getByRole('heading', { name: `a11y-${suffix}` })).toBeVisible();
-  await expectAccessible(page, `${new URL(page.url()).pathname}/settings`);
+  const projectPath = new URL(page.url()).pathname;
+  await expectAccessible(page, projectPath);
+  await expectAccessible(page, `${projectPath}/settings`);
+  await expectAccessible(page, '/clients');
+  await expectAccessible(page, clientPath);
 
   await page.goto(`${clientPath}/report`);
   await page.getByRole('button', { name: 'Share report' }).click();
