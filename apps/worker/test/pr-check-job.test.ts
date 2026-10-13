@@ -554,3 +554,51 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     expect(mock.state.comments.get(7)!.body).not.toContain('env var added');
   });
 });
+
+describe('the comment footer links the docs page for the framework head uses', () => {
+  const ADDED = `redis(${ENV}.REDIS_URL);`;
+  const files = [{ filename: 'src/cache.ts', patch: '@@ -0,0 +1 @@\n+redis();' }];
+  const footer = async (head: Record<string, string>) => {
+    const base = { '.env.example': 'DATABASE_URL=\n', 'src/db.ts': `connect(${ENV}.DATABASE_URL);` };
+    const mock = mockOctokit(repo({ commits: { base1: { ...base, ...head }, head1: { ...base, ...head, 'src/cache.ts': ADDED } }, pulls: { 42: { ...repo().pulls[42]!, files } } }));
+    await prCheck(JOB, harness(mock).deps);
+    const body = [...mock.state.comments.values()][0]!.body;
+    return { link: body.match(/\[What this checks\]\(([^)]+)\)/)?.[1], body, mock };
+  };
+  const NEXT_PKG = JSON.stringify({ name: 'shop', dependencies: { next: '15.5.0', react: '19.0.0' } });
+
+  it('Next.js: a package.json that depends on next (downloaded within the caps, once)', async () => {
+    const { link, mock } = await footer({ 'package.json': NEXT_PKG });
+    expect(link).toBe('https://deployhealth.dev/docs/nextjs');
+    expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toHaveLength(4); // .env.example, src/db.ts, src/cache.ts, package.json
+  });
+
+  it('Laravel: an artisan file', async () => {
+    expect((await footer({ artisan: '#!/usr/bin/env php' })).link).toBe('https://deployhealth.dev/docs/laravel');
+  });
+
+  it('Spring Boot: Java or Kotlin source that mentions org.springframework', async () => {
+    const java = 'import org.springframework.boot.SpringApplication;\nclass App {}';
+    expect((await footer({ 'src/main/java/App.java': java })).link).toBe('https://deployhealth.dev/docs/spring-boot');
+  });
+
+  it('no framework: /docs, and nothing else in the footer changes', async () => {
+    const { link, body } = await footer({});
+    expect(link).toBe('https://deployhealth.dev/docs');
+    expect(body).toMatch(/<sub>Checked `head1` · mode: comment · names and file:line only, never values · \[What this checks\]\(https:\/\/deployhealth\.dev\/docs\) · \[deployhealth\]\(https:\/\/deployhealth\.dev\)<\/sub>\n$/);
+  });
+
+  it("ignores what isn't the app's: next only in node_modules, artisan under vendor/, Spring only in a test", async () => {
+    const { link } = await footer({
+      'node_modules/next/package.json': JSON.stringify({ name: 'next', dependencies: { next: '1' } }),
+      'vendor/laravel/framework/artisan': '#!/usr/bin/env php',
+      'src/test/java/AppTest.java': 'import org.springframework.boot.test.context.SpringBootTest;',
+      'package.json': JSON.stringify({ name: 'tools', devDependencies: { prettier: '3' } }),
+    });
+    expect(link).toBe('https://deployhealth.dev/docs');
+  });
+
+  it('a monorepo with two frameworks links /docs, which lists each stack', async () => {
+    expect((await footer({ 'web/package.json': NEXT_PKG, 'api/artisan': '#!/usr/bin/env php' })).link).toBe('https://deployhealth.dev/docs');
+  });
+});

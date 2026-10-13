@@ -6,10 +6,12 @@ import {
   SUPPORTED_LANGUAGES_AND,
   SUPPORTED_LANGUAGES_OR,
   UNREAD_LANGUAGES_TEXT,
+  type DocsStackSlug,
 } from '@deployhealth/core';
 import type { PrCheck, PrCheckMode, PrEnvFile } from '@deployhealth/db';
 import type { CheckRunOutput } from '../github/api';
 import { describeExtensionCounts, type Coverage } from './coverage';
+import { docsUrl } from './framework';
 import type { EnvVarDiff } from './diff';
 import { secretRuleLabel, type SecretHit } from './secrets';
 
@@ -46,6 +48,8 @@ export interface PrReport extends EnvVarDiff {
    */
   outcome?: 'cant-check' | 'nothing-changed' | 'checked';
   coverage?: Coverage;
+  /** The frameworks head uses (framework.ts), for the footer's "What this checks" link. */
+  frameworks?: DocsStackSlug[];
 }
 
 /** The check run's title when the repo holds nothing the scanner reads and nothing else was found. */
@@ -262,7 +266,10 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
       lines.push('', `**${plural(n.secrets, 'possible secret')} in added lines** (see the \`deployhealth / env\` check run for where).`);
     }
   }
-  const footer = ['', `<sub>Checked ${code(headSha.slice(0, 7))} · mode: ${mode} · names and file:line only, never values · [deployhealth](https://deployhealth.dev)</sub>`];
+  const footer = [
+    '',
+    `<sub>Checked ${code(headSha.slice(0, 7))} · mode: ${mode} · names and file:line only, never values · [What this checks](${docsUrl(r.frameworks ?? [])}) · [deployhealth](https://deployhealth.dev)</sub>`,
+  ];
   return `${fitLines(lines, MAX_GITHUB_TEXT - 1, footer)}\n`;
 }
 
