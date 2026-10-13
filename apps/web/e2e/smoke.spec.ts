@@ -40,11 +40,18 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.getByRole('link', { name: 'Acme Corp' })).toBeVisible();
   await expect(page.getByRole('rowheader', { name: 'No client' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'New client' })).toHaveCount(0);
+  // One status per project, worst first, under a summary line; reasons list non-zero findings only.
+  await expect(page.getByTestId('status-summary')).toHaveText('3 of 3 projects need attention · 1 down');
+  await expect(page.getByTestId('project-row')).toHaveText([/acme-storefront/, /northwind-site/, /portfolio/]);
   const storefrontRow = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' });
-  await expect(storefrontRow.getByTestId('uptime-badge')).toHaveText('Down');
+  await expect(storefrontRow.getByTestId('project-status')).toHaveText('Down');
   // Fresh at any hour: the worker reseeds every 30 minutes, so it's always been down for under an hour.
-  await expect(storefrontRow.getByTestId('failing-for')).toHaveText(/^Acme API down for [1-5]?\dm$/);
-  await expect(page.getByTestId('project-row').filter({ hasText: 'northwind-site' }).getByTestId('failing-for')).toHaveCount(0);
+  await expect(storefrontRow.getByTestId('status-reasons')).toContainText(/^Acme API down for [1-5]?\dm · 3 missing · 1 mismatch · /);
+  const northwindRow = page.getByTestId('project-row').filter({ hasText: 'northwind-site' });
+  await expect(northwindRow.getByTestId('project-status')).toHaveText('Needs attention');
+  await expect(northwindRow.getByTestId('status-reasons')).toContainText('1 open PR adds undeclared env vars');
+  await expect(northwindRow.getByTestId('status-reasons')).not.toContainText(/down for|0 missing|0 mismatch/);
+  await expect(page.getByTestId('project-row').filter({ hasText: 'portfolio' }).getByTestId('status-reasons')).toHaveText('no .env.example: 2 vars undeclared');
 
   // The project: the real alert, named endpoints, percentages kept, nothing editable.
   await storefrontRow.getByRole('link', { name: 'acme-storefront' }).click();
@@ -58,6 +65,16 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(apiCard.getByTestId('failing-for')).toHaveText(/^Down for [1-5]?\dm$/);
   await expect(apiCard.locator('header')).toContainText(/24h\s*[\d.]+%\s*7d\s*[\d.]+%/);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Acme Corp');
+  // Deploy history: what each deploy changed and the outage after the incident's deploy. The demo's
+  // repositories are made up, so commits aren't linked, and there's no source column.
+  const deploys = page.getByRole('region', { name: 'Deploys' });
+  const latestDeploy = deploys.getByTestId('deploy-row').first();
+  await expect(latestDeploy.getByTestId('deploy-change')).toHaveText('+2 missing: REDIS_URL, STRIPE_KEY');
+  await expect(latestDeploy.getByTestId('deploy-outage')).toHaveText('Outage started 4m after this deploy (Acme API), still down');
+  await expect(deploys.getByTestId('deploy-outage')).toHaveCount(1);
+  await expect(deploys.getByTestId('deploy-row').last().getByTestId('deploy-change')).toHaveText('first scan');
+  await expect(deploys.getByTestId('commit-link')).toHaveCount(0);
+  await expect(deploys.getByRole('columnheader', { name: 'Source' })).toHaveCount(0);
   await expect(page.locator('main form')).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Settings/ })).toHaveCount(0);
 
@@ -199,6 +216,10 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   await expect(page).toHaveTitle(`${projectName} · deployhealth`);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(clientName);
   await expect(page.getByRole('cell', { name: 'src/server.ts:4' })).toBeVisible();
+  // A real project's commit links to GitHub; its only deploy is the first scan.
+  const firstDeploy = page.getByRole('region', { name: 'Deploys' }).getByTestId('deploy-row');
+  await expect(firstDeploy.getByTestId('commit-link')).toHaveAttribute('href', 'https://github.com/acme/smoke/commit/0123456789abcdef0123456789abcdef01234567');
+  await expect(firstDeploy.getByTestId('deploy-change')).toHaveText('first scan');
   const projectUrl = page.url();
 
   // Add a named endpoint; without a worker it shows "No checks yet".
