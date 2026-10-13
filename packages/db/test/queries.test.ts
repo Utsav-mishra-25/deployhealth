@@ -13,6 +13,7 @@ import {
   rotateProjectToken,
   upsertGithubUser,
 } from '../src/queries';
+import { markPullRequestClosed, upsertInstallation, upsertPrCheck } from '../src/github';
 import { makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
@@ -91,6 +92,71 @@ describe('projects', () => {
       counts: { missing: 1, unused: 1, mismatch: 1 },
     });
     expect(list[1]).toMatchObject({ id: quiet.id, lastDeploy: null, counts: null });
+  });
+
+  it('lists what the project status reads: scan and PR check times, open PRs flagged per kind, scopes with no env file', async () => {
+    const owner = await makeUser(db);
+    const empty = await makeProject(db, owner.id, 'empty');
+    const project = await makeProject(db, owner.id, 'flagged', 'acme/flagged');
+    const scanned = await recordScan(db, {
+      projectId: project.id,
+      sha: 'aaaaaaa',
+      branch: 'main',
+      deployedAt: at('2026-09-01T00:00:00Z'),
+      findings: [],
+      // Scope 'api' has no env file: its two non-optional variables are undeclared, the optional one isn't.
+      variables: [
+        { scope: '', var_name: 'DECLARED', defined_in: ['.env.example'] },
+        { scope: 'api', var_name: 'A', defined_in: [] },
+        { scope: 'api', var_name: 'B', defined_in: [] },
+        { scope: 'api', var_name: 'C', defined_in: [], optional: true },
+      ],
+      envScopes: [
+        { scope: '', env_files: ['.env.example'] },
+        { scope: 'api', env_files: [] },
+      ],
+    });
+    const inst = await upsertInstallation(db, { githubInstallationId: 77, accountLogin: 'acme', accountType: 'Organization', installerGithubId: 1 }, ['acme/flagged']);
+    const pr = (prNumber: number, headSha: string, extra: Partial<Parameters<typeof upsertPrCheck>[1]>) =>
+      upsertPrCheck(db, { projectId: project.id, installationId: inst.id, prNumber, headSha, baseSha: 'b', authorLogin: 'dev', conclusion: 'neutral', ...extra });
+    // PR 1's latest head fixed what its first head flagged; PR 2-4 flag one kind each; PR 5 is closed.
+    await pr(1, 'h1', { undeclaredVars: ['X'] });
+    await pr(1, 'h2', { conclusion: 'success' });
+    await pr(2, 'h3', { undeclaredVars: ['Y'] });
+    await pr(3, 'h4', { committedEnvFiles: [{ path: '.env', added: true }] });
+    await pr(4, 'h5', { secretHits: 1 });
+    await pr(5, 'h6', { undeclaredVars: ['Z'], secretHits: 2 });
+    await markPullRequestClosed(db, 77, 'acme/flagged', 5, new Date());
+
+    const list = await listProjectsForOwner(db, owner.id);
+    const flagged = list.find((p) => p.id === project.id)!;
+    expect(flagged).toMatchObject({ openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, undeclaredInBareScopes: 2 });
+    expect(flagged.latestScanAt).toBeInstanceOf(Date);
+    expect(flagged.latestPrCheckAt).toBeInstanceOf(Date);
+    expect(scanned.scanId).toBeTruthy();
+    expect(list.find((p) => p.id === empty.id)).toMatchObject({
+      latestScanAt: null,
+      latestPrCheckAt: null,
+      openPrsWithUndeclared: 0,
+      openPrsWithEnvFiles: 0,
+      openPrsWithSecrets: 0,
+      undeclaredInBareScopes: 0,
+    });
+  });
+
+  it('counts no undeclared variables for a scan without env scopes (CLI 0.1.0)', async () => {
+    const owner = await makeUser(db);
+    const project = await makeProject(db, owner.id, 'old-cli');
+    await recordScan(db, {
+      projectId: project.id,
+      sha: 'aaaaaaa',
+      branch: 'main',
+      deployedAt: at('2026-09-01T00:00:00Z'),
+      findings: [],
+      variables: [{ scope: '', var_name: 'A', defined_in: [] }],
+    });
+    const [item] = await listProjectsForOwner(db, owner.id);
+    expect(item!.undeclaredInBareScopes).toBe(0);
   });
 });
 

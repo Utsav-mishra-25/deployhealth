@@ -150,6 +150,19 @@ export interface ProjectListItem {
   failingEndpoints: string[];
   /** Open pull requests whose latest GitHub App check found undeclared env vars. */
   openPrsWithUndeclared: number;
+  /** Open pull requests whose latest check found a committed env file. */
+  openPrsWithEnvFiles: number;
+  /** Open pull requests whose latest check found a secret-shaped string. */
+  openPrsWithSecrets: number;
+  /** When the latest deploy's latest scan was received; null without one. */
+  latestScanAt: Date | null;
+  /** The latest pull request check of any pull request (open or closed); null without one. */
+  latestPrCheckAt: Date | null;
+  /**
+   * Non-optional variables the latest scan found referenced in scopes with no env file at all
+   * (which have no MISSING rows by design). 0 for scans from CLIs before 0.2.0.
+   */
+  undeclaredInBareScopes: number;
 }
 
 /** The owner's projects, newest first, each with its latest deploy and that deploy's latest scan. */
@@ -174,10 +187,18 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     down_endpoints: EndpointRef[];
     failing_endpoint_refs: EndpointRef[];
     open_prs_with_undeclared: number;
+    open_prs_with_env_files: number;
+    open_prs_with_secrets: number;
+    latest_pr_check_at: string | null;
+    latest_scan_at: string | null;
+    undeclared_in_bare_scopes: number;
   }>(sql`
-    select p.id, p.name, p.repo_full_name, p.client_id, p.created_at, prs.open_prs_with_undeclared,
+    select p.id, p.name, p.repo_full_name, p.client_id, p.created_at,
+           prs.open_prs_with_undeclared, prs.open_prs_with_env_files, prs.open_prs_with_secrets,
+           (select max(pc.updated_at) from ${prChecks} pc where pc.project_id = p.id) as latest_pr_check_at,
            d.sha, d.branch, d.deployed_at,
-           s.missing_count, s.unused_count, s.mismatch_count,
+           s.missing_count, s.unused_count, s.mismatch_count, s.created_at as latest_scan_at,
+           coalesce(bare.undeclared, 0) as undeclared_in_bare_scopes,
            u.enabled_endpoints, u.open_alerts, u.failing_endpoints, u.down_since, u.failing_since,
            u.down_endpoints, u.failing_endpoint_refs
     from ${projects} p
@@ -186,9 +207,17 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
       where project_id = p.id order by deployed_at desc limit 1
     ) d on true
     left join lateral (
-      select missing_count, unused_count, mismatch_count from ${scans}
+      select id, missing_count, unused_count, mismatch_count, created_at, env_scopes from ${scans}
       where deploy_id = d.id order by created_at desc limit 1
     ) s on true
+    left join lateral (
+      select count(*)::int as undeclared from ${scanVariables} sv
+      where sv.scan_id = s.id and not sv.optional
+        and exists (
+          select 1 from jsonb_array_elements(s.env_scopes) es
+          where es->>'scope' = sv.scope and jsonb_array_length(es->'env_files') = 0
+        )
+    ) bare on s.env_scopes is not null
     left join lateral (
       select count(*)::int as enabled_endpoints,
              count(*) filter (where ep.open_alert)::int as open_alerts,
@@ -209,13 +238,15 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
       ) ep
     ) u on true
     left join lateral (
-      select count(*)::int as open_prs_with_undeclared
+      select count(*) filter (where jsonb_array_length(latest.undeclared_vars) > 0)::int as open_prs_with_undeclared,
+             count(*) filter (where jsonb_array_length(latest.committed_env_files) > 0)::int as open_prs_with_env_files,
+             count(*) filter (where latest.secret_hits > 0)::int as open_prs_with_secrets
       from (
-        select distinct on (pc.pr_number) pc.undeclared_vars, pc.closed_at
+        select distinct on (pc.pr_number) pc.undeclared_vars, pc.committed_env_files, pc.secret_hits, pc.closed_at
         from ${prChecks} pc where pc.project_id = p.id
         order by pc.pr_number, pc.created_at desc
       ) latest
-      where latest.closed_at is null and jsonb_array_length(latest.undeclared_vars) > 0
+      where latest.closed_at is null
     ) prs on true
     where p.owner_id = ${ownerId}
     order by p.created_at desc
@@ -237,6 +268,11 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
         : { missing: row.missing_count, unused: row.unused_count ?? 0, mismatch: row.mismatch_count ?? 0 },
     ...uptimeAndSince(row),
     openPrsWithUndeclared: row.open_prs_with_undeclared,
+    openPrsWithEnvFiles: row.open_prs_with_env_files,
+    openPrsWithSecrets: row.open_prs_with_secrets,
+    latestScanAt: row.latest_scan_at ? new Date(row.latest_scan_at) : null,
+    latestPrCheckAt: row.latest_pr_check_at ? new Date(row.latest_pr_check_at) : null,
+    undeclaredInBareScopes: row.undeclared_in_bare_scopes,
   }));
 }
 
