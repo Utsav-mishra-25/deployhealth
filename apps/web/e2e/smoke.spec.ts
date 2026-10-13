@@ -336,15 +336,18 @@ test('the old CLI download is still served, marked deprecated', async ({ request
 });
 
 test('docs: linked from the landing page and the footer, one page per stack, indexed, with what each example reports', async ({ page }) => {
+  // The links are checked by their target, then followed with goto, which waits for the page
+  // (a click can race next dev's first compile of /docs).
   await page.goto('/');
-  await page.getByTestId('landing').getByRole('link', { name: /^Docs/ }).click();
-  await expect(page).toHaveURL('/docs');
+  await expect(page.getByTestId('landing').getByRole('link', { name: /^Docs/ })).toHaveAttribute('href', '/docs');
+  await expect(page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/docs');
+  await page.goto('/docs');
   await expect(page).toHaveTitle('Docs: catch missing env vars early · deployhealth');
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/docs$/);
   await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
 
-  await page.getByRole('link', { name: /^Laravel/ }).click();
-  await expect(page).toHaveURL('/docs/laravel');
+  await expect(page.getByRole('link', { name: /^Laravel/ })).toHaveAttribute('href', '/docs/laravel');
+  await page.goto('/docs/laravel');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('How to catch a missing env var in Laravel before it reaches production');
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/docs\/laravel$/);
   const reads = page.locator('[data-example="laravel-reads"]').getByTestId('docs-result');
@@ -352,8 +355,6 @@ test('docs: linked from the landing page and the footer, one page per stack, ind
   await expect(reads).toContainText('MISSING MAPS_API_KEY, STRIPE_WEBHOOK_SECRET');
   await expect(page.getByText('npx -y deployhealth-scan --dry-run', { exact: true })).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Docs' }).click();
-  await expect(page).toHaveURL('/docs');
   expect((await page.request.get('/docs/django')).status()).toBe(404);
 });
 
