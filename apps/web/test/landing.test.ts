@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Landing } from '@/components/landing';
-import { LANDING_DEPLOY_SHA, landingAlertMessage } from '@/lib/landing';
+import { LANDING_DEPLOY_SHA, LANDING_SUPPORTING_LINE, landingAlertMessage } from '@/lib/landing';
 
 describe('the landing page example alert', () => {
   it('is the demo incident, worded by the real alert message builder', () => {
@@ -33,5 +33,24 @@ describe('the landing page languages line', () => {
       "Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.",
     );
     expect(html).toContain(LANGUAGES_SENTENCE.replace(/'/g, '&#x27;'));
+  });
+});
+
+describe('the landing page supporting line', () => {
+  it('sits under the headline and above the languages line, and links the docs', () => {
+    expect(LANDING_SUPPORTING_LINE).toBe(
+      "Like Dependabot, but for your .env.example: a GitHub App that comments on every pull request that reads an env var it doesn't declare.",
+    );
+    const html = renderToStaticMarkup(createElement(Landing, { demo: false }));
+    const at = (needle: string) => html.indexOf(needle);
+    expect(at('</h1>')).toBeGreaterThan(-1);
+    expect(at('data-testid="landing-supporting-line"')).toBeGreaterThan(at('</h1>'));
+    expect(at('data-testid="landing-languages"')).toBeGreaterThan(at('data-testid="landing-supporting-line"'));
+    expect(html).toContain('href="/docs"');
+  });
+
+  it('makes no claim of affiliation and carries no marks', () => {
+    const html = renderToStaticMarkup(createElement(Landing, { demo: true }));
+    expect(html).not.toMatch(/endorsed|partner|official|affiliat|<img|<svg[^>]*dependabot/i);
   });
 });
