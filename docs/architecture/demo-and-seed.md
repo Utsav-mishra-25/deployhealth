@@ -41,8 +41,10 @@ never match a real GitHub account) owns, in **one transaction**, with:
 - four endpoints, three **named** ("Acme API", "Acme storefront", "Northwind site"; portfolio's is
   unnamed to show the host fallback), with 7 days of checks (deterministic PRNG);
 - every deploy's scan with **variables** consistent with its MISSING findings, **env scopes**, and
-  deploy notes for two projects (handoff demo). **portfolio has no env file**, so its page shows the
-  "No .env.example here" notice and its handoff a starting `.env.example`; acme's `PORT` is optional;
+  deploy notes for two projects (handoff demo). **portfolio is the healthy project**: a
+  `.env.example` declares both variables it reads and nothing is flagged, so /demo reads "2 of 3
+  projects need attention · 1 down". (The "No .env.example here" notice and the handoff's starting
+  `.env.example` are covered by a signed-in e2e project instead.) acme's `PORT` is optional;
 - the **scripted incident**: acme-storefront's last deploy (b52952e, 12 minutes ago) introduces
   REDIS_URL and STRIPE_KEY; "Acme API" (`<DEMO_BASE_URL>/api/demo/broken`, always 503) fails from
   4 minutes later. Those failing checks are replayed through the real `recordCheck()`, so the open

@@ -6,7 +6,7 @@ import { agentPrStats, listPrChecksForOwner } from '../src/github';
 import { getHandoffData } from '../src/handoff';
 import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_PROJECT_IDS } from '../src/demo';
 import { getProjectMonitoring, listOpenAlerts } from '../src/monitoring';
-import { findProjectByTokenHash, getLatestScan, getProjectForOwner, listDeploys } from '../src/queries';
+import { findProjectByTokenHash, getLatestScan, getProjectForOwner, listDeploys, listProjectsForOwner } from '../src/queries';
 import { alerts, checks, clients, endpoints, installations, prChecks, projects, users } from '../src/schema';
 import { DEMO_DEPLOY_COUNT, DEMO_FRESHNESS, DEMO_PROJECT, demoBrokenUrl, demoDeploys, SCENARIO, seed } from '../src/seed';
 import { makeUser, openTestDb, truncateAll } from './test-db';
@@ -253,15 +253,23 @@ describe('seed', () => {
     expect((await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.portfolio, NOW))?.deployNotes).toBeNull();
   });
 
-  it('shows the quieter scan: portfolio has no env file (a notice, no MISSING rows), and PORT is optional', async () => {
+  it('shows the quieter scan: portfolio is the healthy project (a .env.example declares what it reads), and PORT is optional', async () => {
     const result = await seed(db, NOW);
     const [portfolioDeploy] = await listDeploys(db, DEMO_PROJECT_IDS.portfolio);
     const portfolio = await getLatestScan(db, DEMO_PROJECT_IDS.portfolio, portfolioDeploy!.deploy.id);
     expect(portfolio?.findings).toEqual([]);
-    expect(portfolio?.scopesWithoutEnvFiles).toEqual([{ scope: '', variables: 2 }]);
+    expect(portfolio?.scopesWithoutEnvFiles).toEqual([]);
     expect(portfolio?.noEnvVarReferences).toBe(false);
     const handoff = await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.portfolio, NOW);
-    expect(handoff?.envScopes).toEqual([{ scope: '', env_files: [] }]);
+    expect(handoff?.envScopes).toEqual([{ scope: '', env_files: ['.env.example'] }]);
+    const listed = (await listProjectsForOwner(db, result.userId)).find((p) => p.id === DEMO_PROJECT_IDS.portfolio);
+    expect(listed).toMatchObject({
+      counts: { missing: 0, unused: 0, mismatch: 0 },
+      undeclaredInBareScopes: 0,
+      openPrsWithUndeclared: 0,
+      openPrsWithEnvFiles: 0,
+      openPrsWithSecrets: 0,
+    });
 
     const storefront = await getHandoffData(db, result.userId, DEMO_PROJECT_IDS.storefront, NOW);
     expect(storefront?.variables).toContainEqual({ var_name: 'PORT', scope: 'apps/api', defined_in: ['.env.example'], optional: true });
