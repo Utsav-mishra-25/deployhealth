@@ -58,7 +58,7 @@ export function DeployList({
                     <code className="font-mono text-gray-700">{shortSha(deploy.sha)}</code>
                   )}
                 </td>
-                <td className="max-w-48 px-3 py-2 break-all text-gray-700">{deploy.branch}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">{deploy.branch}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-600">
                   <TimeAgo date={deploy.deployedAt} />
                 </td>

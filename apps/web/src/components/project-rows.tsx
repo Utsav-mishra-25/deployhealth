@@ -1,5 +1,6 @@
 import type { ProjectListItem } from '@deployhealth/db';
 import Link from 'next/link';
+import { Fragment } from 'react';
 import { shortSha } from '@/lib/format';
 import { APP_PATHS, type ViewPaths } from '@/lib/paths';
 import type { ProjectStatusView } from '@/lib/project-status';
@@ -37,16 +38,19 @@ export function ProjectRows({
               <ProjectStatusBadge status={p.status} />
               <span className="text-xs break-words text-gray-700" data-testid="status-reasons">
                 {p.reasons.map((reason, i) => (
-                  <span key={reason.text}>
+                  <Fragment key={reason.text}>
                     {i > 0 && ' · '}
                     {reason.anchor ? (
-                      <Link href={`${paths.project(p.id)}#${reason.anchor}`} className="underline decoration-gray-300 underline-offset-2 hover:text-gray-900 hover:decoration-gray-500">
+                      <Link
+                        href={`${paths.project(p.id)}#${reason.anchor}`}
+                        className="underline decoration-gray-300 underline-offset-2 hover:text-gray-900 hover:decoration-gray-500 sm:whitespace-nowrap"
+                      >
                         {reason.text}
                       </Link>
                     ) : (
-                      reason.text
+                      <span className="sm:whitespace-nowrap">{reason.text}</span>
                     )}
-                  </span>
+                  </Fragment>
                 ))}
                 {p.status === 'healthy' && p.checkedAt && (
                   <span className="text-gray-500">
