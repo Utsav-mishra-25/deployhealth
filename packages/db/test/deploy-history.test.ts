@@ -1,7 +1,7 @@
-import type { CheckOutcome, FindingRow } from '@deployhealth/core';
+import type { FindingRow } from '@deployhealth/core';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { listDeployHistory } from '../src/deploy-history';
-import { recordCheck } from '../src/monitoring';
+import { recordCheck, type CheckOutcome } from '../src/monitoring';
 import { recordScan } from '../src/queries';
 import { alerts, checks, deploys } from '../src/schema';
 import { makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
