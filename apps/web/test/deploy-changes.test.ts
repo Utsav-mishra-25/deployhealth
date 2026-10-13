@@ -1,4 +1,8 @@
+import type { DeployHistoryItem } from '@deployhealth/db';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { DeployList } from '@/components/deploy-list';
 import { changeLine, commitUrl, outageLine } from '@/lib/deploy-changes';
 
 const T0 = new Date('2026-10-13T12:00:00Z');
@@ -56,5 +60,36 @@ describe('commitUrl', () => {
     expect(commitUrl('', sha, false)).toBeNull();
     expect(commitUrl('acme/storefront', sha, true)).toBeNull();
     expect(commitUrl('acme/storefront', 'main"><x', false)).toBeNull();
+  });
+});
+
+describe('DeployList renders the commit', () => {
+  const row = (sha: string): DeployHistoryItem => ({
+    deploy: { id: '0d3e0000-0000-4000-8000-0000000000aa', projectId: 'p', sha, branch: 'main', deployedAt: T0, source: 'ingest', createdAt: T0 },
+    counts: { missing: 0, unused: 0, mismatch: 0 },
+    scanCount: 1,
+    change: { kind: 'first' },
+    outage: null,
+  });
+  const render = (sha: string, readOnly = false) =>
+    renderToStaticMarkup(createElement(DeployList, { projectPath: '/projects/p', repoFullName: 'acme/shop', deploys: [row(sha)], selectedId: undefined, readOnly }));
+
+  it('as a GitHub link for a hex sha', () => {
+    const html = render('b52952e0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6');
+    expect(html).toContain('href="https://github.com/acme/shop/commit/b52952e0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  it('as plain text for a sha that is not hex (ingest rejects those, but the page never trusts it)', () => {
+    for (const sha of ['zzzzzzz', 'main"><x', 'javascript:alert(1)', 'b52952e0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a']) {
+      const html = render(sha);
+      expect(html).not.toContain('github.com');
+      expect(html).not.toContain('data-testid="commit-link"');
+      expect(html).toMatch(/<code class="font-mono text-gray-700">[^<]*<\/code>/);
+    }
+  });
+
+  it('as plain text on the demo', () => {
+    expect(render('b52952e0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6', true)).not.toContain('github.com');
   });
 });
