@@ -115,6 +115,14 @@ pull_requests: write; events: pull_request; installation events arrive regardles
   A cap → neutral "too large to check"; the isolate failing → neutral "Couldn't be checked", no
   comment, no retry. Conclusion: success when nothing is undeclared and no env files or secrets;
   else neutral (comment) or failure (strict).
+- **"What this checks".** The comment's footer links a docs page (`framework.ts`, in the isolate):
+  `/docs/laravel` for an `artisan` file, `/docs/spring-boot` for Java or Kotlin source that mentions
+  `org.springframework`, `/docs/nextjs` for a `package.json` that lists `next` in dependencies or
+  devDependencies; exactly one of them → its page, none or several (a monorepo) → `/docs`. To see
+  the last, a check that reads code also downloads head's `package.json` files (vendored, build-output
+  and test paths left out, up to 512 KB each), reserved against the same caps; nothing from them is
+  kept. A check that downloads no code (can't check, nothing changed) only knows Laravel, from the
+  tree. Parsing is `JSON.parse` in a try/catch, timed in `test/hostile-inputs.test.ts`.
 - **Idempotent output.** One `pr_checks` row per project + PR + head (upsert keeps comment and check
   run ids). One comment per PR: stored id → else the latest row's → else the comment with the
   `<!-- deployhealth-env-check -->` marker whose `performed_via_github_app.id` is this App's

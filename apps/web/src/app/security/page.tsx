@@ -101,8 +101,10 @@ export default function SecurityPage() {
           and bootstrap config, Symfony config YAML and Laravel&apos;s <code>artisan</code> file, whose contents
           aren&apos;t read; never tests, fixtures, vendored code or build output such as Laravel&apos;s{' '}
           <code>storage/</code> and <code>bootstrap/cache/</code> or Maven&apos;s and Gradle&apos;s <code>target/</code>{' '}
-          and <code>build/</code>), plus the pull request&apos;s diff and commit messages. From config files it keeps
-          only variable and key names, never values. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
+          and <code>build/</code>), the head&apos;s <code>package.json</code> files (only to see whether the app depends on
+          Next.js, so the comment can link the right docs page), plus the pull request&apos;s diff and commit messages.
+          From config files it keeps only variable and key names, never values, and nothing from{' '}
+          <code>package.json</code>. At most {MAX_PR_CHECK_FILES.toLocaleString('en')} files and {MAX_PR_CHECK_BYTES / 1024 / 1024} MB per
           pull request, fetched only from api.github.com.
         </p>
         <p>
