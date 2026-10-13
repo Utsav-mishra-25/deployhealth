@@ -81,8 +81,8 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 - **e2e** re-seeds the database in `apps/web/.env.local`, starts `next dev` on :3100 with the dev
   login and the demo on, and runs: the landing page (signed out, one click to the demo); the public
   demo without a session (overview → project with its sample PR checks → handoff page and `.md`
-  download → monthly report); portfolio's "No .env.example here" notice → the handoff's starting
-  `.env.example` (page and `.md`); the signed-in flow as the dev user (`/` → /clients, client → project
+  download → monthly report); a signed-in project with no env file: its "No .env.example here"
+  notice → the handoff's starting `.env.example` (page and `.md`); the signed-in flow as the dev user (`/` → /clients, client → project
   → scan with variables → named endpoint → SSRF rejection → untrusted deploy notes in the handoff
   → share a report → open the link in a fresh context → tampered link 404s); /privacy and /terms;
   the security headers; and `mobile.spec.ts`, which checks at 375×812 that no public or signed-in

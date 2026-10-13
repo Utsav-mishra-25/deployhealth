@@ -222,15 +222,15 @@ function northwindDeploys(now: Date): SeedDeploy[] {
 }
 
 /**
- * portfolio has no env file at all, as many small projects start: its variables are listed (with
- * no MISSING rows), and the project page shows "No .env.example here" with a copyable one.
+ * portfolio is the healthy one: a .env.example declares both variables it reads, nothing flagged,
+ * its endpoint up. (A project with no env file is covered by the signed-in e2e flow instead.)
  */
 function portfolioDeploys(now: Date): SeedDeploy[] {
   const variables: RequiredVariable[] = [
-    { var_name: 'CONTACT_FORM_ENDPOINT', scope: '', defined_in: [] },
-    { var_name: 'NEXT_PUBLIC_SITE_URL', scope: '', defined_in: [] },
+    { var_name: 'CONTACT_FORM_ENDPOINT', scope: '', defined_in: ['.env.example'] },
+    { var_name: 'NEXT_PUBLIC_SITE_URL', scope: '', defined_in: ['.env.example'] },
   ];
-  const envScopes: EnvScope[] = [{ scope: '', env_files: [] }];
+  const envScopes: EnvScope[] = [{ scope: '', env_files: ['.env.example'] }];
   return [
     { sha: sha('portfolio-1'), branch: 'main', deployedAt: hoursAgo(now, 130), source: 'ingest', findings: [], variables, envScopes },
     { sha: sha('portfolio-2'), branch: 'main', deployedAt: hoursAgo(now, 50), source: 'ingest', findings: [], variables, envScopes },

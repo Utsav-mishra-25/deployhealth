@@ -41,7 +41,7 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.getByRole('rowheader', { name: 'No client' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'New client' })).toHaveCount(0);
   // One status per project, worst first, under a summary line; reasons list non-zero findings only.
-  await expect(page.getByTestId('status-summary')).toHaveText('3 of 3 projects need attention · 1 down');
+  await expect(page.getByTestId('status-summary')).toHaveText('2 of 3 projects need attention · 1 down');
   await expect(page.getByTestId('project-row')).toHaveText([/acme-storefront/, /northwind-site/, /portfolio/]);
   const storefrontRow = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' });
   await expect(storefrontRow.getByTestId('project-status')).toHaveText('Down');
@@ -51,7 +51,9 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(northwindRow.getByTestId('project-status')).toHaveText('Needs attention');
   await expect(northwindRow.getByTestId('status-reasons')).toContainText('1 open PR adds undeclared env vars');
   await expect(northwindRow.getByTestId('status-reasons')).not.toContainText(/down for|0 missing|0 mismatch/);
-  await expect(page.getByTestId('project-row').filter({ hasText: 'portfolio' }).getByTestId('status-reasons')).toHaveText('no .env.example: 2 vars undeclared');
+  const portfolioRow = page.getByTestId('project-row').filter({ hasText: 'portfolio' });
+  await expect(portfolioRow.getByTestId('project-status')).toHaveText('Healthy');
+  await expect(portfolioRow.getByTestId('status-reasons')).toHaveText(/^checked (just now|.+ ago|yesterday)$/);
 
   // The project: the real alert, named endpoints, percentages kept, nothing editable.
   await storefrontRow.getByRole('link', { name: 'acme-storefront' }).click();
@@ -118,23 +120,54 @@ test('public demo without a session: clients, project, handoff and report', asyn
 });
 
 test('a project with no env file: one notice instead of MISSING rows, and a starting .env.example', async ({ page }) => {
-  const PORTFOLIO = '0d3e0000-0000-4000-8000-000000000003';
-  await page.goto(`/demo/projects/${PORTFOLIO}`);
+  // The demo's projects all have env files, so this one is reported through ingest as the CLI would.
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue as dev user' }).click();
+  await expect(page).toHaveURL(/\/clients$/);
+  await page.goto('/projects/new');
+  const projectName = `no-env-${Date.now()}`;
+  await page.getByLabel('Project name').fill(projectName);
+  await page.getByLabel('GitHub repository').fill('acme/no-env');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
+  const response = await page.request.post('/api/ingest/scan', {
+    headers: { authorization: `Bearer ${token}` },
+    data: {
+      sha: '89abcdef0123456789abcdef0123456789abcdef',
+      branch: 'main',
+      timestamp: new Date().toISOString(),
+      findings: [],
+      variables: [
+        { var_name: 'CONTACT_FORM_ENDPOINT', scope: '', defined_in: [] },
+        { var_name: 'NEXT_PUBLIC_SITE_URL', scope: '', defined_in: [] },
+      ],
+      env_scopes: [{ scope: '', env_files: [] }],
+    },
+  });
+  expect(response.status()).toBe(201);
+  await page.getByRole('link', { name: 'Go to project' }).click();
+  await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
+  const projectPath = new URL(page.url()).pathname;
+
   const notice = page.getByTestId('no-env-file-notice');
   await expect(notice).toHaveCount(1);
   await expect(notice).toContainText('No .env.example here: 2 variables referenced');
   await expect(page.locator('#findings-missing')).toContainText('0 findings');
 
   await notice.getByRole('link', { name: 'Copy them as a starting .env.example' }).click();
-  await expect(page).toHaveURL(new RegExp(`/demo/projects/${PORTFOLIO}/handoff#variables$`));
+  await expect(page).toHaveURL(new RegExp(`${projectPath}/handoff#variables$`));
   const scope = page.getByTestId('handoff-scope').filter({ hasText: 'Repository root' });
   await expect(scope.getByRole('row', { name: /CONTACT_FORM_ENDPOINT/ })).toContainText('no env file yet');
   await expect(scope.getByTestId('env-example')).toContainText('CONTACT_FORM_ENDPOINT=\nNEXT_PUBLIC_SITE_URL=');
   await expect(scope.getByRole('button', { name: 'Copy as .env.example' })).toBeVisible();
 
   // The Markdown download carries the same starting file.
-  const markdown = await (await page.request.get(`/demo/projects/${PORTFOLIO}/handoff.md`)).text();
+  const markdown = await (await page.request.get(`${projectPath}/handoff.md`)).text();
   expect(markdown).toContain('```dotenv\nCONTACT_FORM_ENDPOINT=\nNEXT_PUBLIC_SITE_URL=\n```');
+
+  // On the project list it needs attention for the same reason.
+  await page.goto('/clients');
+  await expect(page.getByTestId('project-row').filter({ hasText: projectName }).getByTestId('status-reasons')).toHaveText('no .env.example: 2 vars undeclared');
 });
 
 test('GitHub App setup page: signed out, sign in and come back; a repo link pre-fills the new project', async ({ page }) => {
