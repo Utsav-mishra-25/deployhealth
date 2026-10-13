@@ -47,6 +47,18 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   `EndpointMonitoring.failingSince` and `ProjectListItem.failingSince`, and labelled by
   `failingFor()` in core.
 
+## Deploy history
+
+- The project page's deploy history (`listDeployHistory`, db `deploy-history.ts`) diffs each
+  deploy's latest scan against the latest scan of the previous deploy (by `deployed_at`) that has
+  one, with the report's `findingsDiff` (by kind + variable), so a re-scan of the same sha
+  replaces the first. Finding names are stored per scan, so no new storage.
+- **Outage marker:** an outage is an alert's run of failed checks; it starts at the first failed
+  check after the last ok check before the alert opened (the moment `alertOpenedMessage()`
+  measures from), or the alert's open time once those checks are pruned
+  (`CHECK_RETENTION_DAYS`). It is shown under the deploy it started after and before the next one,
+  with "N more outages" when several did. Unlike `related_deploy_id`, there is no 30-minute window.
+
 ## Report data model
 
 - **Months are UTC** (`parseMonth('YYYY-MM')` → `[from, to)`). A month in progress counts up to now.

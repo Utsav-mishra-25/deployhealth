@@ -332,6 +332,43 @@ railway run --service Postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" pnp
 Never copy the public URL into a file, a shell history line or a chat; the command above never
 prints it.
 
+## 11. Check usage
+
+To see whether people use deployhealth, without analytics: one read-only command in the web
+container, as in step 10, so no secret leaves Railway. It prints counts only, never names, logins
+or repository names, and changes nothing (one read-only transaction).
+
+```sh
+railway ssh --service deployhealth
+# in the container, from the app directory (the one holding packages/; /app on Railpack):
+node packages/db/dist/stats.js --exclude-login <your-github-login> --exclude-login <another-of-yours>
+```
+
+```
+                                   total  last 7 days  last 30 days
+users                                 12            3             5
+GitHub App installations               4            1             2
+  on a user account                    3
+  on an organization                   1
+projects                              20            4             9
+
+weekly active projects                 7  (a scan or pull request check in the last 7 days)
+scans, last 7 days                    40
+pull request checks, last 7 days      12
+
+Left out: the demo and dev users, and 2 users matching 2 --exclude-login values.
+```
+
+- **Weekly active projects** is the number to watch: projects that had a scan (the Action) or a
+  pull request check (the App) in the last 7 days.
+- The demo (GitHub id -1) and dev (-2) users and the demo's installation are always left out.
+  `--exclude-login` (repeatable, case-insensitive) leaves out your own accounts, with their
+  projects and the installations linked to them or installed from them. The last line says how
+  many users the values matched, so a typo shows up as fewer than you expect.
+- Installations nobody has linked yet (installed, but the installer hasn't signed in) are counted.
+- Locally: `pnpm --filter @deployhealth/db stats --exclude-login <login>` (reads `DATABASE_URL`
+  from `packages/db/.env`).
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

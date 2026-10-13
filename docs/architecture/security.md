@@ -49,6 +49,8 @@ a URL, a query's scoping, share links, headers, or those pages.
     owned by the client's own user. Owner routes must find the client with
     `getClientBySlug(db, userId, slug)` first. `test/reports.test.ts` checks client A's report never
     contains client B's data.
+  - Operator commands (`delete-user`, `stats` in packages/db) aren't owner-scoped either: they run
+    only from a shell in the web container, aren't exported from the package and have no route.
 
 ## Share links
 
