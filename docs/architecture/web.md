@@ -72,7 +72,8 @@ And in core, for client components:
   logos or marks, nothing implying an affiliation), then `LANGUAGES_SENTENCE`; it links /docs.
 - **Docs pages** (`/docs`, `/docs/nextjs`, `/docs/laravel`, `/docs/spring-boot`; the slugs are
   `DOCS_STACK_SLUGS` in core, shared with the worker's PR comment footer): static server components
-  rendered from `lib/docs-pages.ts`, no session or user data, indexed, canonical URLs, titles under
+  rendered from `lib/docs-pages.ts`, no session or user data, indexed, canonical URLs (from the
+  request's host, like `metadataBase` and the sitemap, until the public origin is settled), titles under
   60 characters and descriptions under 155, in the sitemap, linked from the landing page and the
   footer. Each stack page is problem-first ("How to catch a missing env var in <stack> before it
   reaches production"): read forms, defaults and OPTIONAL, skips, known limits, setup, the no-signup
