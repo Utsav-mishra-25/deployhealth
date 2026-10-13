@@ -67,7 +67,16 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow
   (`.github/workflows/publish-cli.yml`), which adds provenance once npm trusted publishing is set up.
   (2) Only once it's on npm, bump `PUBLISHED_CLI_VERSION` and the dogfood workflow.
+  (3) Then the Action, in its own repository
+  ([Utsav-mishra-25/deployhealth-action](https://github.com/Utsav-mishra-25/deployhealth-action)):
+  bump the pinned `deployhealth-scan@x.y.z` in its `action.yml` and README, merge, release a new
+  tag (`v1.x.y`) and move `v1` to it. This repository's pin tests can't see that one, so this step
+  is the guard; the docs pages (`lib/docs-pages.ts`) reference the Action by `@v1` only.
 - Published versions are immutable. Snippets and docs pin an exact version (`npx --yes deployhealth-scan@x.y.z`).
+  The settings page keeps that exact-pinned line: an Action tag can move, an npm version can't. The
+  README and the docs pages offer the **deployhealth env check** Action (`…/deployhealth-action@v1`,
+  a composite action that runs the same pinned `npx` line, token through `DEPLOYHEALTH_TOKEN` only)
+  as an alternative.
 - The generated workflow: push events only (never `pull_request` from forks: it reads a secret),
   job-level `permissions: contents: read`, `persist-credentials: false`, and
   `package-manager-cache: false` on setup-node (v5 otherwise looks for pnpm/yarn and fails). Sha and

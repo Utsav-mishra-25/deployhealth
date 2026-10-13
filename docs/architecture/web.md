@@ -51,8 +51,8 @@ And in core, for client components:
 
 ## Conventions
 
-- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/security`, `/privacy`, `/terms`, and
-  `/github/installed` signed out): no
+- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/security`, `/privacy`, `/terms`, `/docs/...`,
+  and `/github/installed` signed out): no
   external assets (fonts, scripts, images, analytics), server components unless interactivity is
   unavoidable, and no sideways scroll at 375 px (`e2e/mobile.spec.ts`; wide tables go inside their
   own `overflow-x-auto` box, or `.doc-scroll` on printable pages, which prints full width; long
@@ -67,7 +67,20 @@ And in core, for client components:
   (`lib/landing.ts`, tested against the seed); the demo button shows only with `DEMO_PUBLIC=1`, and
   "Sign in with GitHub" links to /login (no inline server action, so the guard test's list holds).
   "Free while in beta", never prices. The bundle size it states is `CLI_BUNDLE_KB` (core), pinned to
-  the built CLI by `test/npm-package.test.ts`.
+  the built CLI by `test/npm-package.test.ts`. Under the unchanged headline, the supporting line is
+  `LANDING_SUPPORTING_LINE` ("Like Dependabot, but for your .env.example: …"; a comparison only, no
+  logos or marks, nothing implying an affiliation), then `LANGUAGES_SENTENCE`; it links /docs.
+- **Docs pages** (`/docs`, `/docs/nextjs`, `/docs/laravel`, `/docs/spring-boot`; the slugs are
+  `DOCS_STACK_SLUGS` in core, shared with the worker's PR comment footer): static server components
+  rendered from `lib/docs-pages.ts`, no session or user data, indexed, canonical URLs, titles under
+  60 characters and descriptions under 155, in the sitemap, linked from the landing page and the
+  footer. Each stack page is problem-first ("How to catch a missing env var in <stack> before it
+  reaches production"): read forms, defaults and OPTIONAL, skips, known limits, setup, the no-signup
+  `npx -y deployhealth-scan --dry-run`. **Every example lives in `lib/docs-pages.ts` with exactly what
+  the scanner reports for it** (reads with file:line and OPTIONAL, MISSING, UNUSED), and
+  `test/docs-pages.test.ts` scans each one (`selectTreeFiles` then `scanFiles`, as the App does):
+  change the scanner and a page that no longer matches fails. Unknown stacks 404
+  (`dynamicParams = false`).
   Under the headline, one line names the languages the scanner reads: `LANGUAGES_SENTENCE` (core
   `languages.ts`), the same line as the README's opening and the npm README's (tests pin all three).
 - **Setup copy** is worded once in `lib/setup-copy.ts` (browser-safe: `TokenReveal` is rendered by

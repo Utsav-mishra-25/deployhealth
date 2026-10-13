@@ -116,7 +116,15 @@ Pick either or both, per project:
   token saved as a repository secret named `DEPLOYHEALTH_TOKEN`: the repository's **Settings →
   Secrets and variables → Actions → Secrets tab → New repository secret**. Not a Variable (the
   Variables tab shows values in plain text to anyone with access to the repository), and not an
-  environment secret (the workflow declares no environment, so it wouldn't see one).
+  environment secret (the workflow declares no environment, so it wouldn't see one). The project's
+  settings page gives a workflow that runs the CLI pinned to an exact npm version; the
+  [deployhealth env check](https://github.com/Utsav-mishra-25/deployhealth-action) Action
+  (`uses: Utsav-mishra-25/deployhealth-action@v1` with `token: ${{ secrets.DEPLOYHEALTH_TOKEN }}`)
+  is an alternative.
+
+What each stack's code is read for, with examples the scanner is tested against:
+[Next.js](https://deployhealth.dev/docs/nextjs), [Laravel](https://deployhealth.dev/docs/laravel),
+[Spring Boot](https://deployhealth.dev/docs/spring-boot).
 
 ## Try the demo
 
