@@ -356,7 +356,7 @@ test('security: public page linked from the footer, and security.txt', async ({ 
 test('privacy and terms: public pages linked from the footer', async ({ page }) => {
   await page.goto('/');
   const footer = page.getByRole('navigation', { name: 'Footer' });
-  await expect(footer.getByRole('link')).toHaveText(['Security', 'Privacy', 'Terms', 'Source on GitHub']);
+  await expect(footer.getByRole('link')).toHaveText(['Docs', 'Security', 'Privacy', 'Terms', 'Source on GitHub']);
   await footer.getByRole('link', { name: 'Privacy' }).click();
   await expect(page).toHaveURL(/\/privacy$/);
   await expect(page.getByTestId('privacy')).toContainText('Utsav Mishra (India)');
