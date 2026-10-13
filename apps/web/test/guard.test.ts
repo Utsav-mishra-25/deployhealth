@@ -76,7 +76,8 @@ beforeEach(() => {
   dbCalls.length = 0;
 });
 
-describe('read-only guard for the public demo user', () => {
+// Importing every server action module cold takes a few seconds, more under the parallel full run.
+describe('read-only guard for the public demo user', { timeout: 20_000 }, () => {
   it('finds every server action module', async () => {
     const names = (await exportedActions()).map(([name]) => name);
     // A floor, so the test can't pass by discovering nothing. New actions are picked up automatically.
