@@ -5,6 +5,13 @@ export const TOKEN_PREFIX = 'dh_';
 /** Name of the repository secret the GitHub Actions snippet expects. */
 export const TOKEN_SECRET_NAME = 'DEPLOYHEALTH_TOKEN';
 
+/**
+ * The stacks with a docs page at /docs/<slug> (apps/web lib/docs-pages.ts); the pull request
+ * comment links the one it detects. Here so the web app and the worker share one list.
+ */
+export const DOCS_STACK_SLUGS = ['nextjs', 'laravel', 'spring-boot'] as const;
+export type DocsStackSlug = (typeof DOCS_STACK_SLUGS)[number];
+
 /** The CLI's npm package, and the exact version snippets and docs pin. */
 export const CLI_NPM_PACKAGE = 'deployhealth-scan';
 /** Bump only after that version is on npm (it can trail src/version.ts while a release is pending). */

@@ -1,12 +1,12 @@
-import { CLI_NPM_PACKAGE, PUBLISHED_CLI_VERSION, TOKEN_SECRET_NAME } from '@deployhealth/core/browser';
+import { CLI_NPM_PACKAGE, DOCS_STACK_SLUGS, PUBLISHED_CLI_VERSION, TOKEN_SECRET_NAME, type DocsStackSlug } from '@deployhealth/core/browser';
 
 // The /docs pages: what deployhealth reads in each stack, written for people searching for the
 // problem. Every code example lives here, with exactly what the scanner reports for it, and
 // test/docs-pages.test.ts feeds each one to the scanner, so the pages can't drift from it.
 // Prose uses `backticks` for inline code (rendered by components/docs-page.tsx).
 
-export const DOCS_SLUGS = ['nextjs', 'laravel', 'spring-boot'] as const;
-export type DocsSlug = (typeof DOCS_SLUGS)[number];
+export const DOCS_SLUGS = DOCS_STACK_SLUGS;
+export type DocsSlug = DocsStackSlug;
 
 export interface DocsFile {
   /** Relative to the repository root, as the scanner reports it. */
