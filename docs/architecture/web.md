@@ -22,7 +22,9 @@ apps/
                       worker-health.ts (the deep health check's response), github-app.ts (project
                       prefill and safe return paths for the App's next steps), security.ts
                       (security.txt and the security contact), app-url.ts (the public base URL from
-                      the request's headers), db.ts (the shared database handle)
+                      the request's headers), db.ts (the shared database handle), project-status.ts
+                      (one status per project, its reasons, ordering, the summary line),
+                      deploy-changes.ts (a deploy's "what changed" and outage lines, commit links)
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
                       project, handoff, report (props: ownerId/data, paths, readOnly)
     src/app/          / (landing when signed out, else → /clients), /login, /clients, /clients/new,
@@ -55,8 +57,8 @@ And in core, for client components:
   unavoidable, and no sideways scroll at 375 px (`e2e/mobile.spec.ts`; wide tables go inside their
   own `overflow-x-auto` box, or `.doc-scroll` on printable pages, which prints full width; long
   names and paths get `break-all`/`break-words`). No new env vars for them without a decision.
-- **Accessibility:** every public page, the signed-in project settings page and a shared report
-  have no serious or critical axe violations (WCAG 2.1 A/AA tags; `e2e/a11y.spec.ts`; add new
+- **Accessibility:** every public page, the signed-in /clients, a client page, a project page with
+  a deploy, its settings page and a shared report have no serious or critical axe violations (WCAG 2.1 A/AA tags; `e2e/a11y.spec.ts`; add new
   public pages there). Small text and buttons with white text use emerald-700, never emerald-600
   (3.65:1 on white); muted text on white or gray-50 is gray-500, never gray-400. The icon and the
   OG image keep `BRAND_GREEN` (emerald-600): a graphic and large text need only 3:1.
@@ -77,6 +79,24 @@ And in core, for client components:
   project (`TokenReveal`) and `/github/installed` (`SetupOptions`, signed in or out) show both.
   Short copy, no wizard. A token value appears only in `TokenReveal`'s box, once
   (`test/setup-copy.test.ts`).
+- **Project lists** (/clients, a client's page, /demo and /demo/clients/…): one status per project
+  from `projectStatus()` (`lib/project-status.ts`, whose comment names every field it reads):
+  **Down** (an open alert), **Needs attention** (MISSING or MISMATCH in the latest deploy's latest
+  scan, a scope with no env file reading non-optional variables, an open pull request whose latest
+  check flagged undeclared env vars, a committed env file or a secret, or an endpoint failing with no
+  alert yet), **Not set up** (no scan and no pull request check) and **Healthy**. UNUSED never
+  changes the status but is listed. Rows show the status as a text label (colour only repeats it),
+  then non-zero findings and flags only ("3 missing · 1 mismatch"), each linking to its section of
+  the project page; Healthy rows add "checked <time>" (the later of the latest scan and pull request
+  check). Projects sort worst first, then by name; client groups by their worst project, then name,
+  "No client" last. One line on top: "2 of 5 projects need attention · 1 down" (`statusSummary()`).
+- **Deploy history** (project page, `listDeployHistory` in db): each row says what that deploy's
+  latest scan changed against the previous scanned deploy's ("+1 missing: REDIS_URL · fixed 1
+  unused: OLD_FLAG", "no change", "first scan", "not scanned"; names capped like alerts), and the
+  deploy an outage followed says so in plain text ("Outage started 4m after this deploy (Acme API),
+  still down"). Commits link to `https://github.com/<repo>/commit/<sha>`, except on /demo (made-up
+  repositories). There is no source column (`deploys.source` stays in the schema and shows nowhere).
+  The latest scan's counts are the cards at the top of the page, not repeated per row.
 - **Project page notices:** "The last scan found no env var references. deployhealth reads JS/TS,
   Python, Go and Ruby." (`NoReferencesNotice`) shows when the displayed scan recorded its env
   scopes (CLI 0.2.0+) and referenced no variable at all (`ScanDetail.noEnvVarReferences`); older

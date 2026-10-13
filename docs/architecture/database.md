@@ -10,7 +10,10 @@ query (authorization rules for queries are in [security.md](security.md)).
     src/schema.ts     users, clients, projects, deploys, scans (+ env_scopes), findings, scan_variables (+ optional),
                       endpoints, checks, check_hosts, endpoint_daily_stats, alerts, installations,
                       installation_repos, pr_checks, webhook_deliveries, worker_heartbeats
-    src/queries.ts    users, projects, ingest (recordScan + variables), deploys/scans reads
+    src/queries.ts    users, projects (+ what a project's status reads), ingest (recordScan + variables),
+                      deploys/scans reads
+    src/deploy-history.ts  listDeployHistory(): each deploy's changes vs the previous scanned deploy
+                      (findingsDiff) and the outage that started after it (owner-scoped)
     src/clients.ts    clients CRUD, /clients overview, project settings (client, webhook, deploy notes)
     src/monitoring.ts endpoints CRUD, claimDueEndpoints(), recordCheck() (+ alert lifecycle), stats,
                       uptimeBetween() (rollups + raw), rollupChecks(), prune
@@ -22,6 +25,8 @@ query (authorization rules for queries are in [security.md](security.md)).
     src/migrations-status.ts  pendingMigrations(): the bundled drizzle journal vs drizzle.__drizzle_migrations
     src/delete-user.ts  planUserDeletion() / deleteUser(): an account and everything it owns (operator only)
     src/delete-user-cli.ts  `pnpm --filter @deployhealth/db delete-user`; built to dist/delete-user.js
+    src/stats.ts      usageStats(): counts for the operator, in one READ ONLY transaction
+    src/stats-cli.ts  `pnpm --filter @deployhealth/db stats`; built to dist/stats.js
 ```
 
 ## Schema changes
@@ -42,3 +47,17 @@ query (authorization rules for queries are in [security.md](security.md)).
   and counts only (installations also by account type, user or organization, for the reply). A table that gets a user's rows without cascading from `users`, `projects` or
   `installations` must join `DELETION_TABLES` and `countOwned()`; `test/delete-user.test.ts` checks
   that only the other user's rows remain.
+
+## Usage counts
+
+- `stats` (`--exclude-login <login>`, repeatable) prints counts only, never names, logins or
+  repository names: users, GitHub App installations (on user accounts and organizations) and
+  projects, each in total and created in the last 7 and 30 days; **weekly active projects** (a
+  scan or a pull request check, by `pr_checks.updated_at`, in the last 7 days); scans and pull
+  request checks (by `created_at`) in the last 7 days. It always leaves out the demo (-1) and dev
+  (-2) users, the demo's installation, the `--exclude-login` users (case-insensitive), what they
+  own, and installations linked to them or installed from their GitHub account; installations
+  nobody has linked yet count. Everything runs in one `READ ONLY` transaction on the database
+  clock (`test/stats.test.ts` checks that writes are refused and no table changes). Like
+  delete-user it's operator-only: not owner-scoped, not exported, no route. Runbook:
+  [docs/deploy-railway.md](../deploy-railway.md) step 11.
