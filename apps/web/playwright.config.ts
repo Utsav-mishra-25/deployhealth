@@ -12,8 +12,9 @@ export default defineConfig({
   workers: 1,
   timeout: 120_000,
   // `next dev` compiles each route on first visit (Recharts makes the project page slow), so
-  // give assertions more room than the 5s default.
-  expect: { timeout: 15_000 },
+  // give assertions more room than the 5s default: a navigation by click waits on that compile,
+  // which took over 15 s on a loaded machine.
+  expect: { timeout: 30_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
