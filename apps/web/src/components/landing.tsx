@@ -1,7 +1,7 @@
 import { CLI_BUNDLE_KB, LANGUAGES_SENTENCE } from '@deployhealth/core';
 import { DEMO_PROJECT_IDS } from '@deployhealth/db';
 import Link from 'next/link';
-import { landingAlertMessage } from '@/lib/landing';
+import { LANDING_SUPPORTING_LINE, landingAlertMessage } from '@/lib/landing';
 import { REPO_URL } from '@/lib/legal';
 import { DEMO_PATHS } from '@/lib/paths';
 import { AlertCard } from './alert-card';
@@ -43,6 +43,9 @@ export function Landing({ demo }: { demo: boolean }) {
           deployhealth checks your env vars on every push and pull request, watches your endpoints, and tells you which deploy
           broke what.
         </h1>
+        <p className="max-w-3xl text-base text-gray-700" data-testid="landing-supporting-line">
+          {LANDING_SUPPORTING_LINE}
+        </p>
         <p className="max-w-3xl text-sm text-gray-600" data-testid="landing-languages">
           {LANGUAGES_SENTENCE}
         </p>
@@ -57,6 +60,9 @@ export function Landing({ demo }: { demo: boolean }) {
             className={demo ? `${button} border border-gray-300 bg-white hover:bg-gray-50` : `${button} bg-emerald-700 text-white hover:bg-emerald-800`}
           >
             Sign in with GitHub
+          </Link>
+          <Link href="/docs" className="text-sm font-medium text-emerald-700 hover:underline">
+            Docs: Next.js, Laravel, Spring Boot
           </Link>
           <span className="text-sm text-gray-600">Free while in beta.</span>
         </div>

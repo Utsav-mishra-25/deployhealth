@@ -1,5 +1,12 @@
 import { alertOpenedMessage } from '@deployhealth/core';
 
+/**
+ * The line under the landing headline. "Like Dependabot" is a comparison only: no logos or marks,
+ * nothing that implies an affiliation with GitHub or Dependabot.
+ */
+export const LANDING_SUPPORTING_LINE =
+  "Like Dependabot, but for your .env.example: a GitHub App that comments on every pull request that reads an env var it doesn't declare.";
+
 /** The demo incident's deploy (acme-storefront's last deploy in the seed). */
 export const LANDING_DEPLOY_SHA = 'b52952e8192c38c054e53b5447ea20de88f2e2e9';
 
