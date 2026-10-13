@@ -11,7 +11,6 @@ export { treeMarkers, type TreeMarkers } from './build-dirs';
 export { LARAVEL_MARKER } from './laravel';
 export { usesSpring } from './spring';
 export { DEFAULT_SKIP_DIRS } from './walker';
-export { MAX_SOURCE_FILE_BYTES } from './vendored';
 export { isTestPath, TEST_DIRS } from './test-paths';
 export * from './ingest';
 export * from './limits';
