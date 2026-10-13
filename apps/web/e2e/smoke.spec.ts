@@ -335,6 +335,28 @@ test('the old CLI download is still served, marked deprecated', async ({ request
   expect(await response.text()).toMatch(/^#!\/usr\/bin\/env node\n/);
 });
 
+test('docs: linked from the landing page and the footer, one page per stack, indexed, with what each example reports', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('landing').getByRole('link', { name: /^Docs/ }).click();
+  await expect(page).toHaveURL('/docs');
+  await expect(page).toHaveTitle('Docs: catch missing env vars early · deployhealth');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/docs$/);
+  await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
+
+  await page.getByRole('link', { name: /^Laravel/ }).click();
+  await expect(page).toHaveURL('/docs/laravel');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How to catch a missing env var in Laravel before it reaches production');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/docs\/laravel$/);
+  const reads = page.locator('[data-example="laravel-reads"]').getByTestId('docs-result');
+  await expect(reads).toContainText('STRIPE_WEBHOOK_SECRET config/services.php:7 · required');
+  await expect(reads).toContainText('MISSING MAPS_API_KEY, STRIPE_WEBHOOK_SECRET');
+  await expect(page.getByText('npx -y deployhealth-scan --dry-run', { exact: true })).toBeVisible();
+
+  await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Docs' }).click();
+  await expect(page).toHaveURL('/docs');
+  expect((await page.request.get('/docs/django')).status()).toBe(404);
+});
+
 test('security: public page linked from the footer, and security.txt', async ({ page, request }) => {
   await page.goto('/login');
   await page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Security' }).click();

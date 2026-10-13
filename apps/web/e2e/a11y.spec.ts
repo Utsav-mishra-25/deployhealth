@@ -27,6 +27,10 @@ test('public pages have no serious or critical accessibility violations', async 
     '/security',
     '/privacy',
     '/terms',
+    '/docs',
+    '/docs/nextjs',
+    '/docs/laravel',
+    '/docs/spring-boot',
   ]) {
     await expectAccessible(page, path);
   }

@@ -28,6 +28,10 @@ test('public pages fit a 375 px phone, signed out', async ({ page }) => {
     '/security',
     '/privacy',
     '/terms',
+    '/docs',
+    '/docs/nextjs',
+    '/docs/laravel',
+    '/docs/spring-boot',
     '/github/installed',
   ]) {
     await expectNoSidewaysScroll(page, path);
