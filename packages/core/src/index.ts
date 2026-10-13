@@ -8,7 +8,10 @@ export { analyzeScope, compareFindings, newMissingVars, newUndeclaredVars, summa
 export { DEFAULT_IGNORE } from './default-ignore';
 export { passesTreeRules, scanFiles, scanProject, selectTreeFiles, type ScanOptions, type ScanResult } from './scan';
 export { treeMarkers, type TreeMarkers } from './build-dirs';
+export { LARAVEL_MARKER } from './laravel';
+export { usesSpring } from './spring';
 export { DEFAULT_SKIP_DIRS } from './walker';
+export { MAX_SOURCE_FILE_BYTES } from './vendored';
 export { isTestPath, TEST_DIRS } from './test-paths';
 export * from './ingest';
 export * from './limits';
