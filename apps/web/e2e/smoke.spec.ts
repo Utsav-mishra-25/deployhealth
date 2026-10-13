@@ -46,10 +46,12 @@ test('public demo without a session: clients, project, handoff and report', asyn
   const storefrontRow = page.getByTestId('project-row').filter({ hasText: 'acme-storefront' });
   await expect(storefrontRow.getByTestId('project-status')).toHaveText('Down');
   // Fresh at any hour: the worker reseeds every 30 minutes, so it's always been down for under an hour.
-  await expect(storefrontRow.getByTestId('status-reasons')).toContainText(/^Acme API down for [1-5]?\dm · 3 missing · 1 mismatch · /);
+  await expect(storefrontRow.getByTestId('status-reasons')).toHaveText(
+    /^Acme API down for [1-5]?\dm · 3 missing · 1 mismatch · 1 open PR: committed env file, secret-shaped string · 2 unused$/,
+  );
   const northwindRow = page.getByTestId('project-row').filter({ hasText: 'northwind-site' });
   await expect(northwindRow.getByTestId('project-status')).toHaveText('Needs attention');
-  await expect(northwindRow.getByTestId('status-reasons')).toContainText('1 open PR adds undeclared env vars');
+  await expect(northwindRow.getByTestId('status-reasons')).toHaveText('1 open PR: undeclared env vars, committed env file · 1 unused');
   await expect(northwindRow.getByTestId('status-reasons')).not.toContainText(/down for|0 missing|0 mismatch/);
   const portfolioRow = page.getByTestId('project-row').filter({ hasText: 'portfolio' });
   await expect(portfolioRow.getByTestId('project-status')).toHaveText('Healthy');

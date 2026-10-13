@@ -8,7 +8,8 @@ import type { ProjectListItem } from '@deployhealth/db';
  * - attention: the latest deploy's latest scan has MISSING or MISMATCH rows (`counts`), a scope
  *   with no env file references non-optional variables (`undeclaredInBareScopes`), an open pull
  *   request's latest check flagged undeclared env vars, a committed env file or a secret
- *   (`openPrsWith…`), or an endpoint is failing with no alert yet (`uptime === 'degraded'`);
+ *   (`openPrsFlagged`, and `openPrsWith…` for which kinds), or an endpoint is failing with no
+ *   alert yet (`uptime === 'degraded'`);
  * - not_set_up: no scan and no pull request check yet (`latestScanAt`, `latestPrCheckAt`);
  * - healthy: everything else. UNUSED alone never changes the status; it's still listed.
  */
@@ -46,6 +47,7 @@ export type StatusInput = Pick<
   | 'openPrsWithUndeclared'
   | 'openPrsWithEnvFiles'
   | 'openPrsWithSecrets'
+  | 'openPrsFlagged'
   | 'latestScanAt'
   | 'latestPrCheckAt'
   | 'undeclaredInBareScopes'
@@ -65,14 +67,15 @@ export function projectStatus(p: StatusInput, now = new Date()): ProjectStatusVi
   if (p.undeclaredInBareScopes > 0) {
     reasons.push({ text: `no .env.example: ${plural(p.undeclaredInBareScopes, 'var')} undeclared`, anchor: 'findings' });
   }
-  if (p.openPrsWithUndeclared > 0) {
-    reasons.push({ text: `${openPrs(p.openPrsWithUndeclared, 'adds', 'add')} undeclared env vars`, anchor: 'pull-requests' });
-  }
-  if (p.openPrsWithEnvFiles > 0) {
-    reasons.push({ text: `${openPrs(p.openPrsWithEnvFiles, 'commits', 'commit')} ${p.openPrsWithEnvFiles === 1 ? 'an env file' : 'env files'}`, anchor: 'pull-requests' });
-  }
-  if (p.openPrsWithSecrets > 0) {
-    reasons.push({ text: `${openPrs(p.openPrsWithSecrets, 'adds', 'add')} ${p.openPrsWithSecrets === 1 ? 'a secret-shaped string' : 'secret-shaped strings'}`, anchor: 'pull-requests' });
+  // One reason for every flagged open pull request, then what they flagged:
+  // "1 open PR: committed env file, secret-shaped string".
+  if (p.openPrsFlagged > 0) {
+    const kinds = [
+      p.openPrsWithUndeclared > 0 && 'undeclared env vars',
+      p.openPrsWithEnvFiles > 0 && 'committed env file',
+      p.openPrsWithSecrets > 0 && 'secret-shaped string',
+    ].filter((k): k is string => Boolean(k));
+    reasons.push({ text: `${plural(p.openPrsFlagged, 'open PR')}: ${kinds.join(', ')}`, anchor: 'pull-requests' });
   }
   const needsAttention = reasons.length > 0 && p.uptime !== 'down';
   if (counts.unused > 0) reasons.push({ text: `${counts.unused} unused`, anchor: 'findings' });
@@ -85,11 +88,6 @@ export function projectStatus(p: StatusInput, now = new Date()): ProjectStatusVi
   else status = 'healthy';
   if (status === 'not_set_up') reasons.push({ text: 'No scan or pull request check yet' });
   return { status, reasons, checkedAt };
-}
-
-/** "1 open PR adds", "2 open PRs add". */
-function openPrs(n: number, verb: string, pluralVerb: string): string {
-  return n === 1 ? `1 open PR ${verb}` : `${n} open PRs ${pluralVerb}`;
 }
 
 /** "Acme API", or "Acme API +1 more" when several endpoints are behind the status. */
