@@ -25,7 +25,7 @@ export function DeployList({
   readOnly: boolean;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-gray-200">
+    <div className="relative overflow-x-auto rounded-lg bg-white ring-1 ring-gray-200">
       <table className="w-full text-left text-sm">
         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
           <tr>
