@@ -54,28 +54,3 @@ describe('pull request check timing on hostile inputs', () => {
     expect(performance.now() - started).toBeLessThan(2_000);
   });
 });
-
-describe('framework detection on hostile package.json files (the 512 KB the App would fetch)', () => {
-  it('reads deep nesting, a huge dependency list and 2,000 such files in linear time, never throwing', async () => {
-    const { dependsOnNext, detectFrameworks } = await import('../src/pr-check/framework');
-    const size = 512 * 1024;
-    const deep = `{"dependencies":${'['.repeat(size / 2 - 20)}${']'.repeat(size / 2 - 20)}}`;
-    const wide = `{"dependencies":{${Array.from({ length: 20_000 }, (_, i) => `"p${i}":"1"`).join(',')}},"devDependencies":{"next":"15"}}`;
-    const broken = `{"dependencies":{"next":"${'x'.repeat(size - 40)}`;
-    let started = performance.now();
-    expect(dependsOnNext(deep)).toBe(false);
-    expect(dependsOnNext(wide)).toBe(true);
-    expect(dependsOnNext(broken)).toBe(false);
-    expect(performance.now() - started).toBeLessThan(2_000);
-
-    // Up to the caps a check can fetch: 20 MB in all, as 40 files of 512 KB or 2,000 of 10 KB.
-    const big = `{"name":"x","dependencies":{${Array.from({ length: 30_000 }, (_, i) => `"p${i}":"1"`).join(',')}}}`.slice(0, size);
-    const small = JSON.stringify({ dependencies: Object.fromEntries(Array.from({ length: 600 }, (_, i) => [`p${i}`, '1'])) });
-    for (const [count, text] of [[40, big], [2_000, small]] as const) {
-      started = performance.now();
-      const packageJsons = Array.from({ length: count }, (_, i) => [`p${i}/package.json`, text] as const);
-      expect(detectFrameworks({ headTree: packageJsons.map(([path]) => path), headFiles: [], packageJsons })).toEqual([]);
-      expect(performance.now() - started).toBeLessThan(5_000);
-    }
-  });
-});

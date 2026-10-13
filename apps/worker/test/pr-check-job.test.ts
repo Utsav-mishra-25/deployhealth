@@ -558,19 +558,23 @@ describe('what the check read: repos it can\'t read, pull requests that change n
 describe('the comment footer links the docs page for the framework head uses', () => {
   const ADDED = `redis(${ENV}.REDIS_URL);`;
   const files = [{ filename: 'src/cache.ts', patch: '@@ -0,0 +1 @@\n+redis();' }];
+  const BASE_FILES = { '.env.example': 'DATABASE_URL=\n', 'src/db.ts': `connect(${ENV}.DATABASE_URL);` };
   const footer = async (head: Record<string, string>) => {
-    const base = { '.env.example': 'DATABASE_URL=\n', 'src/db.ts': `connect(${ENV}.DATABASE_URL);` };
-    const mock = mockOctokit(repo({ commits: { base1: { ...base, ...head }, head1: { ...base, ...head, 'src/cache.ts': ADDED } }, pulls: { 42: { ...repo().pulls[42]!, files } } }));
+    const mock = mockOctokit(
+      repo({ commits: { base1: { ...BASE_FILES, ...head }, head1: { ...BASE_FILES, ...head, 'src/cache.ts': ADDED } }, pulls: { 42: { ...repo().pulls[42]!, files } } }),
+    );
     await prCheck(JOB, harness(mock).deps);
     const body = [...mock.state.comments.values()][0]!.body;
     return { link: body.match(/\[What this checks\]\(([^)]+)\)/)?.[1], body, mock };
   };
-  const NEXT_PKG = JSON.stringify({ name: 'shop', dependencies: { next: '15.5.0', react: '19.0.0' } });
 
-  it('Next.js: a package.json that depends on next (downloaded within the caps, once)', async () => {
-    const { link, mock } = await footer({ 'package.json': NEXT_PKG });
-    expect(link).toBe('https://deployhealth.dev/docs/nextjs');
-    expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toHaveLength(4); // .env.example, src/db.ts, src/cache.ts, package.json
+  it('Next.js: a next.config file (.js, .mjs, .cjs or .ts), seen in the tree listing', async () => {
+    for (const name of ['next.config.js', 'next.config.mjs', 'next.config.cjs', 'next.config.ts', 'apps/web/next.config.ts']) {
+      const { link, mock } = await footer({ [name]: 'export default {};' });
+      expect(link, name).toBe('https://deployhealth.dev/docs/nextjs');
+      // The config is a JS/TS source file the check reads anyway; nothing extra is fetched to detect it.
+      expect(mock.calls.filter((c) => c.startsWith('git.getBlob')), name).toHaveLength(4);
+    }
   });
 
   it('Laravel: an artisan file', async () => {
@@ -583,22 +587,45 @@ describe('the comment footer links the docs page for the framework head uses', (
   });
 
   it('no framework: /docs, and nothing else in the footer changes', async () => {
-    const { link, body } = await footer({});
+    const { link, body } = await footer({ 'next.config.example.js': '', 'package.json': JSON.stringify({ dependencies: { next: '15' } }) });
     expect(link).toBe('https://deployhealth.dev/docs');
     expect(body).toMatch(/<sub>Checked `head1` · mode: comment · names and file:line only, never values · \[What this checks\]\(https:\/\/deployhealth\.dev\/docs\) · \[deployhealth\]\(https:\/\/deployhealth\.dev\)<\/sub>\n$/);
   });
 
-  it("ignores what isn't the app's: next only in node_modules, artisan under vendor/, Spring only in a test", async () => {
+  it("ignores markers that aren't the app's: in node_modules, vendor/, build output or tests", async () => {
     const { link } = await footer({
-      'node_modules/next/package.json': JSON.stringify({ name: 'next', dependencies: { next: '1' } }),
+      'node_modules/some-lib/next.config.js': 'module.exports = {};',
+      '.next/standalone/next.config.js': 'module.exports = {};',
+      'e2e/fixtures/next.config.mjs': 'export default {};',
       'vendor/laravel/framework/artisan': '#!/usr/bin/env php',
       'src/test/java/AppTest.java': 'import org.springframework.boot.test.context.SpringBootTest;',
-      'package.json': JSON.stringify({ name: 'tools', devDependencies: { prettier: '3' } }),
     });
     expect(link).toBe('https://deployhealth.dev/docs');
   });
 
   it('a monorepo with two frameworks links /docs, which lists each stack', async () => {
-    expect((await footer({ 'web/package.json': NEXT_PKG, 'api/artisan': '#!/usr/bin/env php' })).link).toBe('https://deployhealth.dev/docs');
+    expect((await footer({ 'web/next.config.ts': 'export default {};', 'api/artisan': '#!/usr/bin/env php' })).link).toBe('https://deployhealth.dev/docs');
+  });
+
+  it("knows Next.js and Laravel when the check downloads no code (nothing it reads changed, or it can't check)", async () => {
+    const { buildReport } = await import('../src/pr-check/build');
+    const run = async (base: Record<string, string>, head: Record<string, string>, changed: string) => {
+      const mock = mockOctokit(repo({ commits: { base1: base, head1: head }, pulls: { 42: { ...repo().pulls[42]!, files: [{ filename: changed, patch: '@@ -0,0 +1 @@\n+x' }] } } }));
+      const api = githubApi(mock.octokit, 'acme/shop', { appId: MOCK_APP_ID });
+      const report = await buildReport(api, await api.pullRequest(42), { openIsolate: openPrCheckIsolate });
+      return { report, blobs: mock.calls.filter((c) => c.startsWith('git.getBlob')) };
+    };
+    // A Next.js app whose pull request changes only README.md: nothing it reads changed.
+    const next = { ...BASE_FILES, 'next.config.ts': 'export default {};', 'README.md': '# shop' };
+    const nothing = await run(next, { ...next, 'README.md': '# shop, now with docs' }, 'README.md');
+    expect(nothing.report.outcome).toBe('nothing-changed');
+    expect(nothing.blobs).toEqual([]);
+    expect(nothing.report.frameworks).toEqual(['nextjs']);
+    // A Laravel app with no PHP yet (only artisan and a .env.example): can't check, still Laravel.
+    const laravel = { '.env.example': 'APP_KEY=\n', artisan: '#!/usr/bin/env php', 'tools/gen.rs': 'fn main() {}' };
+    const cant = await run(laravel, { ...laravel, 'tools/gen.rs': 'fn main() { }' }, 'tools/gen.rs');
+    expect(cant.report.outcome).toBe('cant-check');
+    expect(cant.blobs).toEqual([]);
+    expect(cant.report.frameworks).toEqual(['laravel']);
   });
 });

@@ -1,5 +1,4 @@
-import { MAX_SOURCE_FILE_BYTES, passesTreeRules, scanFiles, selectTreeFiles, treeMarkers, type DocsStackSlug } from '@deployhealth/core';
-import { posix } from 'node:path';
+import { scanFiles, selectTreeFiles, type DocsStackSlug } from '@deployhealth/core';
 import type { PrEnvFile } from '@deployhealth/db';
 import type { PullFile, TreeBlob } from '../github/api';
 import { treeCoverage, type Coverage } from './coverage';
@@ -30,23 +29,13 @@ export interface Selection {
   head: string[];
   /** What those are, and what the pull request changes, from the listings alone (coverage.ts). */
   coverage: Coverage;
-  /**
-   * Head's package.json files outside vendored, build-output and test paths, up to 512 KB each:
-   * downloaded (within the caps) only when the check reads code, to see whether head uses Next.js.
-   */
-  packageJsons: string[];
 }
 
 /** Choose each side's files and work out the coverage: no file contents needed. */
 export function selectFiles({ base, head }: SelectInput): Selection {
   const pick = (blobs: SelectInput['base']) => selectTreeFiles(blobs.map((b) => b.path), { sizes: new Map(blobs.map((b) => [b.path, b.size])) });
   const [selectedBase, selectedHead] = [pick(base), pick(head)];
-  const markers = treeMarkers(head.map((b) => b.path));
-  const packageJsons = head
-    .filter((b) => posix.basename(b.path) === 'package.json' && b.size <= MAX_SOURCE_FILE_BYTES && passesTreeRules(b.path, { markers }))
-    .map((b) => b.path)
-    .sort();
-  return { base: selectedBase, head: selectedHead, coverage: treeCoverage(base, head, selectedBase, selectedHead), packageJsons };
+  return { base: selectedBase, head: selectedHead, coverage: treeCoverage(base, head, selectedBase, selectedHead) };
 }
 
 export interface AnalyzeInput {
@@ -57,8 +46,6 @@ export interface AnalyzeInput {
   baseTree: ReadonlyArray<Pick<TreeBlob, 'path' | 'sha'>>;
   headTree: ReadonlyArray<Pick<TreeBlob, 'path' | 'sha'>>;
   pullFiles: readonly PullFile[];
-  /** [path, text] of head's package.json files (Selection.packageJsons); empty when no code is read. */
-  packageJsons?: ReadonlyArray<readonly [string, string]>;
 }
 
 export interface Analysis extends EnvVarDiff {
@@ -85,6 +72,6 @@ export async function analyze(input: AnalyzeInput): Promise<Analysis> {
     envFiles: full.envFiles.slice(0, MAX_REPORTED_ROWS),
     secrets: full.secrets.slice(0, MAX_REPORTED_ROWS),
     counts: totals(full),
-    frameworks: detectFrameworks({ headTree: input.headTree.map((b) => b.path), headFiles: input.head, packageJsons: input.packageJsons ?? [] }),
+    frameworks: detectFrameworks({ headTree: input.headTree.map((b) => b.path), headFiles: input.head }),
   };
 }

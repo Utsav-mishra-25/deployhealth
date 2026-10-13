@@ -85,14 +85,10 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, { budget 
     const pullFiles = await api.pullFiles(pr.number);
     for (const file of pullFiles) budget.take(Buffer.byteLength(file.patch ?? ''));
 
-    // Head's package.json files too, only to see whether it uses Next.js (the comment's docs link).
-    const packageJsons = pick(headTree.blobs, chosen.packageJsons);
-
     // Reserve everything, then download (shared blobs once).
     for (const blob of baseFiles) reserve(blob);
     for (const blob of headFiles) reserve(blob);
-    for (const blob of packageJsons) reserve(blob);
-    await forEachLimited([...new Map([...baseFiles, ...headFiles, ...packageJsons].map((b) => [b.sha, b])).values()], DOWNLOAD_CONCURRENCY, download);
+    await forEachLimited([...new Map([...baseFiles, ...headFiles].map((b) => [b.sha, b])).values()], DOWNLOAD_CONCURRENCY, download);
 
     const read = async (files: readonly TreeBlob[]) => Promise.all(files.map(async (b) => [b.path, await download(b)] as const));
     const analysis = await isolate.run('analyze', {
@@ -101,7 +97,6 @@ export async function buildReport(api: GithubApi, pr: PullRequestInfo, { budget 
       baseTree: tree(baseTree.blobs),
       headTree: tree(headTree.blobs),
       pullFiles,
-      packageJsons: await read(packageJsons),
     });
     return { ...analysis, tooLarge: null, coverage, outcome: 'checked' };
   } finally {
