@@ -86,7 +86,9 @@ And in core, for client components:
   check flagged undeclared env vars, a committed env file or a secret, or an endpoint failing with no
   alert yet), **Not set up** (no scan and no pull request check) and **Healthy**. UNUSED never
   changes the status but is listed. Rows show the status as a text label (colour only repeats it),
-  then non-zero findings and flags only ("3 missing · 1 mismatch"), each linking to its section of
+  then non-zero findings and flags only ("3 missing · 1 mismatch · 1 open PR: committed env file,
+  secret-shaped string": flagged open pull requests are one reason, counted once each, with the
+  kinds they flagged), each linking to its section of
   the project page; Healthy rows add "checked <time>" (the later of the latest scan and pull request
   check). Projects sort worst first, then by name; client groups by their worst project, then name,
   "No client" last. One line on top: "2 of 5 projects need attention · 1 down" (`statusSummary()`).

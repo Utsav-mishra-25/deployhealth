@@ -130,7 +130,7 @@ describe('projects', () => {
 
     const list = await listProjectsForOwner(db, owner.id);
     const flagged = list.find((p) => p.id === project.id)!;
-    expect(flagged).toMatchObject({ openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, undeclaredInBareScopes: 2 });
+    expect(flagged).toMatchObject({ openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, openPrsFlagged: 3, undeclaredInBareScopes: 2 });
     expect(flagged.latestScanAt).toBeInstanceOf(Date);
     expect(flagged.latestPrCheckAt).toBeInstanceOf(Date);
     expect(scanned.scanId).toBeTruthy();
@@ -140,8 +140,28 @@ describe('projects', () => {
       openPrsWithUndeclared: 0,
       openPrsWithEnvFiles: 0,
       openPrsWithSecrets: 0,
+      openPrsFlagged: 0,
       undeclaredInBareScopes: 0,
     });
+  });
+
+  it('counts an open pull request flagged for several kinds once in openPrsFlagged', async () => {
+    const owner = await makeUser(db);
+    const project = await makeProject(db, owner.id, 'one-pr', 'acme/one-pr');
+    const inst = await upsertInstallation(db, { githubInstallationId: 78, accountLogin: 'acme', accountType: 'Organization', installerGithubId: 1 }, ['acme/one-pr']);
+    await upsertPrCheck(db, {
+      projectId: project.id,
+      installationId: inst.id,
+      prNumber: 88,
+      headSha: 'h',
+      baseSha: 'b',
+      authorLogin: 'dev',
+      conclusion: 'failure',
+      committedEnvFiles: [{ path: 'apps/web/.env.local', added: true }],
+      secretHits: 1,
+    });
+    const [item] = await listProjectsForOwner(db, owner.id);
+    expect(item).toMatchObject({ openPrsWithUndeclared: 0, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, openPrsFlagged: 1 });
   });
 
   it('counts no undeclared variables for a scan without env scopes (CLI 0.1.0)', async () => {

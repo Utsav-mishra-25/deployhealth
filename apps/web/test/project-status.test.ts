@@ -13,6 +13,7 @@ const base: StatusInput = {
   openPrsWithUndeclared: 0,
   openPrsWithEnvFiles: 0,
   openPrsWithSecrets: 0,
+  openPrsFlagged: 0,
   latestScanAt: ago(120),
   latestPrCheckAt: null,
   undeclaredInBareScopes: 0,
@@ -36,13 +37,33 @@ describe('projectStatus', () => {
     expect(status({ counts: { missing: 0, unused: 0, mismatch: 1 } }).status).toBe('attention');
   });
 
-  it('Needs attention: an open pull request flagged undeclared env vars, an env file or a secret', () => {
-    expect(status({ openPrsWithUndeclared: 1 })).toMatchObject({ status: 'attention', reasons: [{ text: '1 open PR adds undeclared env vars', anchor: 'pull-requests' }] });
-    expect(texts({ openPrsWithUndeclared: 2 })).toEqual(['2 open PRs add undeclared env vars']);
-    expect(texts({ openPrsWithEnvFiles: 1 })).toEqual(['1 open PR commits an env file']);
-    expect(texts({ openPrsWithEnvFiles: 3 })).toEqual(['3 open PRs commit env files']);
-    expect(texts({ openPrsWithSecrets: 1 })).toEqual(['1 open PR adds a secret-shaped string']);
-    expect(status({ openPrsWithSecrets: 1, latestScanAt: null, latestPrCheckAt: ago(3) }).status).toBe('attention');
+  it('Needs attention: open pull requests flagged something, one reason grouped by PR count', () => {
+    expect(status({ openPrsWithUndeclared: 1, openPrsFlagged: 1 })).toMatchObject({
+      status: 'attention',
+      reasons: [{ text: '1 open PR: undeclared env vars', anchor: 'pull-requests' }],
+    });
+    // One PR with an env file and a secret is counted once.
+    expect(texts({ openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, openPrsFlagged: 1 })).toEqual(['1 open PR: committed env file, secret-shaped string']);
+    expect(texts({ openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsFlagged: 2 })).toEqual(['2 open PRs: undeclared env vars, committed env file']);
+    expect(texts({ openPrsWithUndeclared: 3, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, openPrsFlagged: 3 })).toEqual([
+      '3 open PRs: undeclared env vars, committed env file, secret-shaped string',
+    ]);
+    expect(status({ openPrsWithSecrets: 1, openPrsFlagged: 1, latestScanAt: null, latestPrCheckAt: ago(3) }).status).toBe('attention');
+  });
+
+  it('keeps the order: down or failing, missing, mismatch, no env file, pull requests, unused last', () => {
+    expect(
+      texts({
+        uptime: 'down',
+        failingSince: ago(9),
+        failingEndpoints: ['Acme API'],
+        counts: { missing: 3, unused: 2, mismatch: 1 },
+        undeclaredInBareScopes: 1,
+        openPrsWithEnvFiles: 1,
+        openPrsWithSecrets: 1,
+        openPrsFlagged: 1,
+      }),
+    ).toEqual(['Acme API down for 9m', '3 missing', '1 mismatch', 'no .env.example: 1 var undeclared', '1 open PR: committed env file, secret-shaped string', '2 unused']);
   });
 
   it('Needs attention: a scope with no env file that reads non-optional variables', () => {
@@ -76,8 +97,8 @@ describe('projectStatus', () => {
   });
 
   it('lists only non-zero findings, never "0 missing"', () => {
-    const all = texts({ counts: { missing: 0, unused: 2, mismatch: 0 }, openPrsWithUndeclared: 1 });
-    expect(all).toEqual(['1 open PR adds undeclared env vars', '2 unused']);
+    const all = texts({ counts: { missing: 0, unused: 2, mismatch: 0 }, openPrsWithUndeclared: 1, openPrsFlagged: 1 });
+    expect(all).toEqual(['1 open PR: undeclared env vars', '2 unused']);
     expect(all.join(' ')).not.toMatch(/\b0 /);
   });
 });

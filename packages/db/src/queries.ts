@@ -154,6 +154,8 @@ export interface ProjectListItem {
   openPrsWithEnvFiles: number;
   /** Open pull requests whose latest check found a secret-shaped string. */
   openPrsWithSecrets: number;
+  /** Open pull requests whose latest check flagged any of the three above (each counted once). */
+  openPrsFlagged: number;
   /** When the latest deploy's latest scan was received; null without one. */
   latestScanAt: Date | null;
   /** The latest pull request check of any pull request (open or closed); null without one. */
@@ -189,12 +191,13 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     open_prs_with_undeclared: number;
     open_prs_with_env_files: number;
     open_prs_with_secrets: number;
+    open_prs_flagged: number;
     latest_pr_check_at: string | null;
     latest_scan_at: string | null;
     undeclared_in_bare_scopes: number;
   }>(sql`
     select p.id, p.name, p.repo_full_name, p.client_id, p.created_at,
-           prs.open_prs_with_undeclared, prs.open_prs_with_env_files, prs.open_prs_with_secrets,
+           prs.open_prs_with_undeclared, prs.open_prs_with_env_files, prs.open_prs_with_secrets, prs.open_prs_flagged,
            (select max(pc.updated_at) from ${prChecks} pc where pc.project_id = p.id) as latest_pr_check_at,
            d.sha, d.branch, d.deployed_at,
            s.missing_count, s.unused_count, s.mismatch_count, s.created_at as latest_scan_at,
@@ -240,7 +243,12 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     left join lateral (
       select count(*) filter (where jsonb_array_length(latest.undeclared_vars) > 0)::int as open_prs_with_undeclared,
              count(*) filter (where jsonb_array_length(latest.committed_env_files) > 0)::int as open_prs_with_env_files,
-             count(*) filter (where latest.secret_hits > 0)::int as open_prs_with_secrets
+             count(*) filter (where latest.secret_hits > 0)::int as open_prs_with_secrets,
+             count(*) filter (
+               where jsonb_array_length(latest.undeclared_vars) > 0
+                  or jsonb_array_length(latest.committed_env_files) > 0
+                  or latest.secret_hits > 0
+             )::int as open_prs_flagged
       from (
         select distinct on (pc.pr_number) pc.undeclared_vars, pc.committed_env_files, pc.secret_hits, pc.closed_at
         from ${prChecks} pc where pc.project_id = p.id
@@ -270,6 +278,7 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     openPrsWithUndeclared: row.open_prs_with_undeclared,
     openPrsWithEnvFiles: row.open_prs_with_env_files,
     openPrsWithSecrets: row.open_prs_with_secrets,
+    openPrsFlagged: row.open_prs_flagged,
     latestScanAt: row.latest_scan_at ? new Date(row.latest_scan_at) : null,
     latestPrCheckAt: row.latest_pr_check_at ? new Date(row.latest_pr_check_at) : null,
     undeclaredInBareScopes: row.undeclared_in_bare_scopes,

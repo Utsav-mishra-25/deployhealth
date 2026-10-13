@@ -108,10 +108,11 @@ describe("user A cannot read user B's data", () => {
       openPrsWithUndeclared: 0,
       openPrsWithEnvFiles: 0,
       openPrsWithSecrets: 0,
+      openPrsFlagged: 0,
       undeclaredInBareScopes: 0,
     });
     const [theirs] = await listProjectsForOwner(db, b.id);
-    expect(theirs).toMatchObject({ uptime: 'down', openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1 });
+    expect(theirs).toMatchObject({ uptime: 'down', openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1, openPrsFlagged: 1 });
   });
 
   it('endpoints, checks and alerts', async () => {
