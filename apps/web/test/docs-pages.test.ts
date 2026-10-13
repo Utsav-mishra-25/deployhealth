@@ -91,3 +91,27 @@ describe('docs metadata is written for search', () => {
     }
   });
 });
+
+describe('docs routes', () => {
+  it('are in the sitemap: /docs and every stack page', async () => {
+    const { SITEMAP_PATHS } = await import('@/app/sitemap');
+    expect(SITEMAP_PATHS).toEqual(expect.arrayContaining(['/docs', '/docs/nextjs', '/docs/laravel', '/docs/spring-boot']));
+  });
+
+  it('render only the known stacks, each with a canonical URL, and nothing else on demand', async () => {
+    const route = await import('@/app/docs/[stack]/page');
+    expect(route.dynamicParams).toBe(false);
+    expect(route.generateStaticParams()).toEqual(DOCS_SLUGS.map((stack) => ({ stack })));
+    const meta = await route.generateMetadata({ params: Promise.resolve({ stack: 'laravel' }) });
+    expect(meta).toEqual({ title: STACK_DOCS.laravel.title, description: STACK_DOCS.laravel.description, alternates: { canonical: '/docs/laravel' } });
+    expect(meta).not.toHaveProperty('robots');
+  });
+
+  it('read no session and no user data', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const file of ['src/app/docs/page.tsx', 'src/app/docs/[stack]/page.tsx', 'src/components/docs-page.tsx', 'src/lib/docs-pages.ts']) {
+      const source = readFileSync(file, 'utf8');
+      expect(source, file).not.toMatch(/@\/auth|@deployhealth\/db|getDb|cookies\(|headers\(|noindex/);
+    }
+  });
+});

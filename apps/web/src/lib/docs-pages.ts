@@ -1,4 +1,4 @@
-import { CLI_NPM_PACKAGE, PUBLISHED_CLI_VERSION, SUPPORTED_LANGUAGES_AND, TOKEN_SECRET_NAME } from '@deployhealth/core/browser';
+import { CLI_NPM_PACKAGE, PUBLISHED_CLI_VERSION, TOKEN_SECRET_NAME } from '@deployhealth/core/browser';
 
 // The /docs pages: what deployhealth reads in each stack, written for people searching for the
 // problem. Every code example lives here, with exactly what the scanner reports for it, and
@@ -564,6 +564,6 @@ export const DOCS_INDEX = {
   h1: 'Catch missing env vars before they reach production',
   intro: [
     'deployhealth compares the variables your code reads with the ones your env files declare. On every pull request, the GitHub App comments when the change reads an env var no `.env.example` declares; on every push, the scan records MISSING, UNUSED and MISMATCH per deploy, so an alert can name the deploy that broke things.',
-    `It reads ${SUPPORTED_LANGUAGES_AND}, and reports names, file paths and line numbers only, never values.`,
+    'It reports names, file paths and line numbers only, never values.',
   ],
 } as const;
