@@ -1,4 +1,12 @@
-import { getClientForOwner, getLatestScan, getProjectForOwner, getProjectMonitoring, listDeploys, listOpenAlerts, listPrChecksForOwner } from '@deployhealth/db';
+import {
+  getClientForOwner,
+  getLatestScan,
+  getProjectForOwner,
+  getProjectMonitoring,
+  listDeployHistory,
+  listOpenAlerts,
+  listPrChecksForOwner,
+} from '@deployhealth/db';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertsBanner } from '@/components/alerts-banner';
@@ -38,7 +46,7 @@ export async function ProjectView({
 
   const [client, deploys, openAlerts, monitoring, prChecks] = await Promise.all([
     project.clientId ? getClientForOwner(db, ownerId, project.clientId) : null,
-    listDeploys(db, project.id),
+    listDeployHistory(db, ownerId, project.id),
     listOpenAlerts(db, ownerId, project.id),
     getProjectMonitoring(db, ownerId, project.id),
     listPrChecksForOwner(db, ownerId, project.id),
@@ -156,7 +164,7 @@ export async function ProjectView({
             <h2 id="deploys" className="mb-3 text-lg font-semibold">
               Deploys
             </h2>
-            <DeployList projectPath={projectPath} deploys={deploys} selectedId={detail.deploy.id} />
+            <DeployList projectPath={projectPath} repoFullName={project.repoFullName} deploys={deploys} selectedId={detail.deploy.id} readOnly={readOnly} />
           </section>
         </>
       )}

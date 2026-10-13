@@ -8,29 +8,6 @@ export const KIND_STYLES: Record<FindingKind, { label: string; text: string; bg:
 
 const KINDS: FindingKind[] = ['missing', 'unused', 'mismatch'];
 
-/** Compact "2 missing · 1 unused · 0 mismatch" pills; greyed out when zero. */
-export function CountPills({ counts }: { counts: FindingCounts }) {
-  return (
-    <span className="inline-flex gap-1.5">
-      {KINDS.map((kind) => {
-        const s = KIND_STYLES[kind];
-        const n = counts[kind];
-        return (
-          <span
-            key={kind}
-            title={`${n} ${s.label.toLowerCase()}`}
-            className={`rounded px-1.5 py-0.5 text-xs font-medium tabular-nums ring-1 ring-inset ${
-              n > 0 ? `${s.bg} ${s.text} ${s.ring}` : 'bg-gray-50 text-gray-500 ring-gray-200'
-            }`}
-          >
-            {n} {s.label.toLowerCase()}
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
 /** The three big numbers at the top of a project page. */
 export function SummaryCards({ counts }: { counts: FindingCounts }) {
   return (
