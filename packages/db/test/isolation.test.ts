@@ -29,6 +29,7 @@ import {
   rotateProjectToken,
 } from '../src/queries';
 import { deleteUser } from '../src/delete-user';
+import { listDeployHistory } from '../src/deploy-history';
 import { getHandoffData } from '../src/handoff';
 import { agentPrStats, getGithubAppStatus, listPrChecksForOwner, updatePrCheckMode, upsertInstallation, upsertPrCheck } from '../src/github';
 import { alerts, clients, endpoints, projects } from '../src/schema';
@@ -80,6 +81,37 @@ describe("user A cannot read user B's data", () => {
     // Deploy and scan reads are only reachable through getProjectForOwner, but still scope by project.
     expect(await getLatestScan(db, (await makeProject(db, a.id)).id, bDeploy.deployId)).toBeNull();
     expect(await listDeploys(db, (await makeProject(db, a.id)).id)).toEqual([]);
+  });
+
+  it("deploy history: B's deploys, changes and outages never reach A, even with B's project id", async () => {
+    const { a, b, bProject } = await twoUsers();
+    expect(await listDeployHistory(db, a.id, bProject.id)).toEqual([]);
+    const own = await listDeployHistory(db, b.id, bProject.id);
+    expect(own).toHaveLength(1);
+    // B's open alert started after B's deploy, so it shows on B's history only.
+    expect(own[0]!.outage).not.toBeNull();
+  });
+
+  it("project statuses: B's scans, pull request checks and alerts never count in A's list", async () => {
+    const { a, b, aProject, bProject } = await twoUsers();
+    const inst = await upsertInstallation(db, { githubInstallationId: 2, accountLogin: 'bob', accountType: 'User', installerGithubId: b.githubId }, [bProject.repoFullName]);
+    await upsertPrCheck(db, { projectId: bProject.id, installationId: inst.id, prNumber: 1, headSha: 'h', baseSha: 'b', authorLogin: 'bob', conclusion: 'failure', undeclaredVars: ['X'], committedEnvFiles: [{ path: '.env', added: true }], secretHits: 1 });
+    await makeEndpoint(db, aProject.id);
+    const [mine] = await listProjectsForOwner(db, a.id);
+    expect(mine).toMatchObject({
+      id: aProject.id,
+      lastDeploy: null,
+      counts: null,
+      uptime: 'up',
+      latestScanAt: null,
+      latestPrCheckAt: null,
+      openPrsWithUndeclared: 0,
+      openPrsWithEnvFiles: 0,
+      openPrsWithSecrets: 0,
+      undeclaredInBareScopes: 0,
+    });
+    const [theirs] = await listProjectsForOwner(db, b.id);
+    expect(theirs).toMatchObject({ uptime: 'down', openPrsWithUndeclared: 1, openPrsWithEnvFiles: 1, openPrsWithSecrets: 1 });
   });
 
   it('endpoints, checks and alerts', async () => {
