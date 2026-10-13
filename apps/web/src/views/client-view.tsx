@@ -5,9 +5,10 @@ import { notFound } from 'next/navigation';
 import { deleteClientAction } from '@/app/clients/actions';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ConfirmButton } from '@/components/confirm-button';
-import { ProjectRows, ProjectTableHead } from '@/components/project-rows';
+import { ProjectRows, ProjectTableHead, StatusSummary } from '@/components/project-rows';
 import { getDb } from '@/lib/db';
 import type { ViewPaths } from '@/lib/paths';
+import { rankProjects, statusSummary } from '@/lib/project-status';
 
 /** One client: contact, notes and projects. Rendered at /clients/:slug and /demo/clients/:slug. */
 export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: string; slug: string; paths: ViewPaths; readOnly: boolean }) {
@@ -16,7 +17,7 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
   if (!client) notFound();
   const month = monthOf(new Date());
   const [overview, agentPrs] = await Promise.all([listClientsOverview(db, ownerId), agentPrStats(db, ownerId, client.id, month.from, month.to)]);
-  const projects = overview.clients.find((c) => c.id === client.id)?.projects ?? [];
+  const projects = rankProjects(overview.clients.find((c) => c.id === client.id)?.projects ?? []);
 
   return (
     <div className="space-y-8">
@@ -80,6 +81,9 @@ export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: 
               Add project
             </Link>
           )}
+        </div>
+        <div className="mb-3">
+          <StatusSummary text={statusSummary(projects.map((p) => p.status))} />
         </div>
         {projects.length === 0 ? (
           <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500">No projects for this client yet.</p>

@@ -1,12 +1,23 @@
 import { listClientsOverview } from '@deployhealth/db';
 import Link from 'next/link';
-import { ProjectRows, ProjectTableHead } from '@/components/project-rows';
+import { ProjectRows, ProjectTableHead, StatusSummary } from '@/components/project-rows';
 import { getDb } from '@/lib/db';
 import type { ViewPaths } from '@/lib/paths';
+import { rankProjects, statusSummary, worstStatusRank } from '@/lib/project-status';
 
-/** Every client with its projects, plus "No client". Rendered at /clients and /demo. */
+/**
+ * Every client with its projects, plus "No client", worst first: projects by status then name, and
+ * clients by their worst project then name ("No client" stays last). Rendered at /clients and /demo.
+ */
 export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerId: string; paths: ViewPaths; readOnly: boolean }) {
-  const { clients, unassigned } = await listClientsOverview(getDb(), ownerId);
+  const overview = await listClientsOverview(getDb(), ownerId);
+  const now = new Date();
+  const clients = overview.clients
+    .map((c) => ({ ...c, projects: rankProjects(c.projects, now) }))
+    .map((c) => ({ ...c, rank: worstStatusRank(c.projects.map((p) => p.status)) }))
+    .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+  const unassigned = rankProjects(overview.unassigned, now);
+  const summary = statusSummary([...clients.flatMap((c) => c.projects), ...unassigned].map((p) => p.status));
   const empty = clients.length === 0 && unassigned.length === 0;
 
   return (
@@ -25,19 +36,23 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
         )}
       </div>
 
+      <div className="mt-2">
+        <StatusSummary text={summary} />
+      </div>
+
       {empty ? (
         <div className="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
           <p className="font-medium">Nothing here yet</p>
           <p className="mt-1 text-sm text-gray-600">Add a client, then the projects you maintain for them.</p>
         </div>
       ) : (
-        <div className="mt-6 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full text-sm max-sm:block">
             <ProjectTableHead />
             {clients.map((client) => (
               <tbody key={client.id} className="divide-y divide-gray-100 border-t border-gray-200 first-of-type:max-sm:border-t-0 max-sm:block">
                 <tr className="bg-gray-50/60 max-sm:block">
-                  <th colSpan={4} scope="rowgroup" className="py-2 pr-4 pl-4 text-left max-sm:block">
+                  <th colSpan={3} scope="rowgroup" className="py-2 pr-4 pl-4 text-left max-sm:block">
                     <Link href={paths.client(client.slug)} className="font-semibold text-gray-900 hover:text-emerald-700">
                       {client.name}
                     </Link>
@@ -49,7 +64,7 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
                 </tr>
                 {client.projects.length === 0 ? (
                   <tr className="max-sm:block">
-                    <td colSpan={4} className="py-3 pl-8 text-sm text-gray-500 max-sm:block max-sm:pl-4">
+                    <td colSpan={3} className="py-3 pl-8 text-sm text-gray-500 max-sm:block max-sm:pl-4">
                       No projects yet
                     </td>
                   </tr>
@@ -61,7 +76,7 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
             {unassigned.length > 0 && (
               <tbody id="no-client" className="divide-y divide-gray-100 border-t border-gray-200 max-sm:block">
                 <tr className="bg-gray-50/60 max-sm:block">
-                  <th colSpan={4} scope="rowgroup" className="py-2 pr-4 pl-4 text-left font-semibold text-gray-500 max-sm:block">
+                  <th colSpan={3} scope="rowgroup" className="py-2 pr-4 pl-4 text-left font-semibold text-gray-500 max-sm:block">
                     No client
                   </th>
                 </tr>
