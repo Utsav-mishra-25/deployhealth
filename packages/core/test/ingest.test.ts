@@ -163,7 +163,9 @@ describe('githubActionSnippet', () => {
     const yaml = githubActionSnippet({ appUrl: 'https://dh.example.com/' });
     expect(yaml).toContain(`npx --yes deployhealth-scan@${PUBLISHED_CLI_VERSION} \\\n            --url "https://dh.example.com" \\`); // quoted, like every other argument
     expect(yaml).toContain('DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}');
-    expect(yaml).toContain('--token "$DEPLOYHEALTH_TOKEN"');
+    // The token stays in the step's env (the CLI's default), never in argv.
+    expect(yaml).not.toContain('--token');
+    expect(yaml).toContain('--url "https://dh.example.com" \\\n            --sha "$GITHUB_SHA"');
     expect(yaml).toContain('--sha "$GITHUB_SHA"');
     expect(yaml).toContain('--branch "$GITHUB_REF_NAME"');
     expect(yaml).toContain('branches: [main]');

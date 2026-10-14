@@ -110,6 +110,8 @@ export const CLI_NPX = cliNpx();
  * Copy-pasteable GitHub Actions workflow that scans the repo on every push to `branch` and
  * reports to the deployhealth instance at `appUrl`. It runs the pinned npm release with a
  * read-only token, and passes sha and branch through the runner's env (no `${{ }}` in the script).
+ * The token stays in the step's env (the CLI reads DEPLOYHEALTH_TOKEN since 0.3.1), never on the
+ * command line, so it isn't in the process's arguments.
  * `version` defaults to the published CLI; the npm README pins the version it ships with.
  */
 export function githubActionSnippet({ appUrl, branch = 'main', version }: { appUrl: string; branch?: string; version?: string }): string {
@@ -141,7 +143,6 @@ jobs:
         run: |
           ${cliNpx(version)} \\
             --url "${url}" \\
-            --token "$${TOKEN_SECRET_NAME}" \\
             --sha "$GITHUB_SHA" \\
             --branch "$GITHUB_REF_NAME"
 `;
