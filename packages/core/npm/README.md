@@ -144,7 +144,7 @@ jobs:
           DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}
         run: |
           npx --yes deployhealth-scan@0.5.0 \
-            --url https://deployhealth.dev \
+            --url "https://deployhealth.dev" \
             --token "$DEPLOYHEALTH_TOKEN" \
             --sha "$GITHUB_SHA" \
             --branch "$GITHUB_REF_NAME"

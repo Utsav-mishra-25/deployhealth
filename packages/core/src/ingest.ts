@@ -140,7 +140,7 @@ jobs:
           ${TOKEN_SECRET_NAME}: \${{ secrets.${TOKEN_SECRET_NAME} }}
         run: |
           ${cliNpx(version)} \\
-            --url ${url} \\
+            --url "${url}" \\
             --token "$${TOKEN_SECRET_NAME}" \\
             --sha "$GITHUB_SHA" \\
             --branch "$GITHUB_REF_NAME"
