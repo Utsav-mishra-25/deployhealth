@@ -221,12 +221,14 @@ describe('pull request checks', () => {
 });
 
 describe('project settings: App status and mode (owner-scoped)', () => {
-  it('reports not installed, active, suspended, or installed by another account', async () => {
+  it('reports not installed, active or suspended, from the user\'s own installations only', async () => {
     const alice = await userWithGithubId(101);
     const project = await makeProject(db, alice.id, 'shop');
     expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'not-installed' });
+    // Someone else's installation on the same repo reads exactly like none.
     await install(9, 999, ['acme/shop'], 'acme');
-    expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'other-account', accountLogin: 'acme' });
+    expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'not-installed' });
+    // Installed from alice's GitHub id: hers, linked or not yet.
     await install(1, 101, ['acme/shop'], 'alice');
     expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'active', accountLogin: 'alice' });
     await setInstallationSuspended(db, 1, T0);

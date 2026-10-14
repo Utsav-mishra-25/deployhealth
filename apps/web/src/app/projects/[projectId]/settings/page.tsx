@@ -1,9 +1,10 @@
 import { CLI_NPX, githubActionSnippet } from '@deployhealth/core';
-import { getClientForOwner, getGithubAppStatus, getProjectForOwner, listClients, type GithubAppStatus } from '@deployhealth/db';
+import { getClientForOwner, getGithubAppStatus, getProjectForOwner, listClients } from '@deployhealth/db';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/auth';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { CodeBlock } from '@/components/code-block';
+import { AppStatusLine } from '@/components/github-app-status';
 import { SecretSteps } from '@/components/secret-steps';
 import { serverEnv } from '@/env';
 import { appUrl } from '@/lib/app-url';
@@ -131,34 +132,5 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         <CodeBlock code={localRun} label="shell" />
       </section>
     </div>
-  );
-}
-
-function AppStatusLine({ status, repo }: { status: GithubAppStatus; repo: string }) {
-  const text = {
-    'not-installed': <>Not installed on {repo} yet.</>,
-    active: (
-      <>
-        <span className="font-medium text-emerald-700">Installed</span> on {'accountLogin' in status && status.accountLogin}: pull requests on {repo} are
-        checked.
-      </>
-    ),
-    suspended: (
-      <>
-        <span className="font-medium text-amber-700">Suspended</span> on {'accountLogin' in status && status.accountLogin}. Unsuspend it in GitHub&apos;s
-        settings to resume checks.
-      </>
-    ),
-    'other-account': (
-      <>
-        Installed on {'accountLogin' in status && status.accountLogin}, but by a GitHub account other than yours, so this project&apos;s pull
-        requests aren&apos;t checked. Install it yourself (you need admin rights on the repository), or sign in with the account that did.
-      </>
-    ),
-  }[status.state];
-  return (
-    <p className="text-sm text-gray-700" data-testid="github-app-status">
-      {text}
-    </p>
   );
 }
