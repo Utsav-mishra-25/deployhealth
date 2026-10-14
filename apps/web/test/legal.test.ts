@@ -1,4 +1,4 @@
-import { MAX_CLAIM_PER_OWNER, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
+import { HOST_CHECK_SPACING_MS, MAX_CLAIM_PER_OWNER, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
 import { CHECK_RETENTION_DAYS } from '@deployhealth/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -85,6 +85,14 @@ describe('/security states what the code does', () => {
     expect(text).toContain(`at most ${MAX_CLAIM_PER_OWNER} checks started per minute`);
     expect(text).toContain("requests that follow a redirect (up to 5 per check) aren't counted toward the spacing");
     expect(text).not.toMatch(/flood/);
+  });
+
+  it('says spacing is per hostname, so different names for one server are spaced separately', () => {
+    const text = plain(render(SecurityPage));
+    expect(text).toContain(`Checks are spaced per hostname: one hostname is checked at most once every ${HOST_CHECK_SPACING_MS / 1000} seconds, however many accounts monitor it.`);
+    expect(text).toContain('Different names for one server (another subdomain or alias, or its IP address) are spaced separately.');
+    // Never the stronger claim that a server (rather than a name) is protected.
+    expect(text).not.toMatch(/(spaced|checked) [^.]*per (server|IP)/i);
     expect(text).not.toContain('.gitignore');
   });
 });
