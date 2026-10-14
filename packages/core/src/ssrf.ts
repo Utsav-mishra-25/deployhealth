@@ -1,5 +1,6 @@
 import dns, { type LookupAddress } from 'node:dns';
 import { BlockList, isIP, type LookupFunction } from 'node:net';
+import { DNS_LOOKUP_DEADLINE_MS, DNS_QUERY_TIMEOUT_MS, DNS_QUERY_TRIES } from './limits';
 
 /**
  * SSRF guard for user-supplied URLs (monitored endpoints and alert webhooks).
@@ -11,6 +12,11 @@ import { BlockList, isIP, type LookupFunction } from 'node:net';
  *    refuses blocked addresses. Because the check happens on the address actually connected to,
  *    DNS rebinding (public at save time, private at fetch time) doesn't get through, and every
  *    redirect hop goes through it too.
+ *
+ * Both resolve with `resolveHostAddresses()`: A and AAAA asked in parallel on a
+ * dns.promises.Resolver with a per-query timeout and a deadline for the whole lookup, so a name
+ * server that never answers can't hold a check or a save open (it fails closed). GitHub API calls
+ * don't use it: `systemGuardedLookup` keeps them on the system resolver (getaddrinfo), as before.
  */
 
 export class BlockedUrlError extends Error {
@@ -118,12 +124,75 @@ export function parsePublicHttpUrl(raw: string): URL {
 
 export type Resolver = (hostname: string) => Promise<string[]>;
 
-export const resolveAllAddresses: Resolver = async (hostname) =>
-  (await dns.promises.lookup(hostname, { all: true, verbatim: true })).map((a) => a.address);
+/** The two queries `resolveHostAddresses()` makes; dns.promises.Resolver in production, fakes in tests. */
+export interface DnsQueries {
+  resolve4(hostname: string): Promise<string[]>;
+  resolve6(hostname: string): Promise<string[]>;
+  cancel(): void;
+}
+
+/** A fresh resolver per lookup (so cancelling one lookup's queries never touches another's). */
+export const systemDnsQueries = (): DnsQueries => new dns.promises.Resolver({ timeout: DNS_QUERY_TIMEOUT_MS, tries: DNS_QUERY_TRIES });
+
+/** DNS didn't answer in time. Lookups fail closed on it: no connection, no save. */
+export class DnsTimeoutError extends Error {
+  readonly code = 'ETIMEOUT';
+  constructor(hostname: string) {
+    super(`DNS lookup for ${hostname} timed out`);
+    this.name = 'DnsTimeoutError';
+  }
+}
+
+const isTimeout = (err: unknown) => (err as NodeJS.ErrnoException | undefined)?.code === 'ETIMEOUT';
+
+export interface ResolveOptions {
+  /** 4 or 6 asks only that family (what net passes as `family`); anything else asks both. */
+  family?: number | string;
+  queries?: () => DnsQueries;
+  deadlineMs?: number;
+}
+
+/**
+ * A and AAAA in parallel, IPv4 first. One family failing, timing out or answering nothing is fine
+ * when the other answers (only answered addresses are ever checked or connected to). With no
+ * address at all: a timeout on either family, or the deadline, throws `DnsTimeoutError`;
+ * otherwise the first DNS error (ENOTFOUND, ENODATA), so a name that doesn't exist reads as such.
+ */
+export async function resolveHostAddresses(hostname: string, options: ResolveOptions = {}): Promise<LookupAddress[]> {
+  const { queries = systemDnsQueries, deadlineMs = DNS_LOOKUP_DEADLINE_MS } = options;
+  const family = options.family === 4 || options.family === 'IPv4' ? 4 : options.family === 6 || options.family === 'IPv6' ? 6 : 0;
+  const families: Array<4 | 6> = family === 4 ? [4] : family === 6 ? [6] : [4, 6];
+  const q = queries();
+  const answers = new Map<4 | 6, string[]>();
+  const errors: unknown[] = [];
+  const asked = families.map((f) =>
+    (f === 4 ? q.resolve4(hostname) : q.resolve6(hostname)).then(
+      (addresses) => void answers.set(f, addresses),
+      (err: unknown) => void errors.push(err),
+    ),
+  );
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<'deadline'>((resolve) => {
+    timer = setTimeout(() => resolve('deadline'), deadlineMs);
+  });
+  const outcome = await Promise.race([Promise.all(asked).then(() => 'done' as const), deadline]);
+  clearTimeout(timer);
+  if (outcome === 'deadline') q.cancel();
+
+  const addresses: LookupAddress[] = families.flatMap((f) => (answers.get(f) ?? []).map((address) => ({ address, family: f })));
+  if (addresses.length > 0) return addresses;
+  if (outcome === 'deadline' || errors.some(isTimeout)) throw new DnsTimeoutError(hostname);
+  const first = errors[0];
+  if (first instanceof Error) throw first;
+  throw Object.assign(new Error(`No addresses for ${hostname}`), { code: 'ENOTFOUND' });
+}
+
+export const resolveAllAddresses: Resolver = async (hostname) => (await resolveHostAddresses(hostname)).map((a) => a.address);
 
 /**
  * Save-time check. Rejects if the host resolves to ANY blocked address. A host that doesn't
  * resolve (yet) is accepted; checks will record DNS failures and the connect-time guard still applies.
+ * A lookup that times out is refused (fail closed): the name might resolve to anything.
  */
 export async function assertPublicUrl(raw: string, resolve: Resolver = resolveAllAddresses): Promise<URL> {
   const url = parsePublicHttpUrl(raw);
@@ -133,7 +202,8 @@ export async function assertPublicUrl(raw: string, resolve: Resolver = resolveAl
   let addresses: string[];
   try {
     addresses = await resolve(host);
-  } catch {
+  } catch (err) {
+    if (isTimeout(err)) throw new BlockedUrlError(`Couldn't look up ${host} in time. Try again in a moment.`);
     return url;
   }
   const blocked = addresses.find(isBlockedAddress);
@@ -141,11 +211,30 @@ export async function assertPublicUrl(raw: string, resolve: Resolver = resolveAl
   return url;
 }
 
-type LookupAll = (
+export type LookupAll = (
   hostname: string,
   options: dns.LookupAllOptions,
   callback: (err: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => void,
 ) => void;
+
+/** `resolveHostAddresses()` in the callback shape a `lookup` uses; local names are refused up front. */
+export function createResolverLookupAll(options: Omit<ResolveOptions, 'family'> = {}): LookupAll {
+  return (hostname, lookupOptions, callback) => {
+    const host = hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.localhost')) {
+      callback(new BlockedUrlError(`${hostname} is a local address`), []);
+      return;
+    }
+    if (isIP(hostname)) {
+      callback(null, [{ address: hostname, family: isIP(hostname) }]);
+      return;
+    }
+    resolveHostAddresses(hostname, { ...options, family: lookupOptions.family }).then(
+      (addresses) => callback(null, addresses),
+      (err: NodeJS.ErrnoException) => callback(err, []),
+    );
+  };
+}
 
 /**
  * Build a `lookup` for http(s).request / net.connect that refuses to connect to blocked
@@ -172,4 +261,11 @@ export function createGuardedLookup(lookupAll: LookupAll = dns.lookup as LookupA
   return guarded as unknown as LookupFunction;
 }
 
-export const guardedLookup: LookupFunction = createGuardedLookup();
+/** Connect-time guard for user-supplied URLs (endpoint checks, alert webhooks): the bounded resolver. */
+export const guardedLookup: LookupFunction = createGuardedLookup(createResolverLookupAll());
+
+/**
+ * The same guard on the system resolver (getaddrinfo), for GitHub API calls only: they resolve
+ * exactly as they did before the bounded resolver, and never go to a user-supplied host.
+ */
+export const systemGuardedLookup: LookupFunction = createGuardedLookup(dns.lookup as LookupAll);

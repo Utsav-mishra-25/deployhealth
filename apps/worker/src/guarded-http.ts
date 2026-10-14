@@ -1,12 +1,13 @@
 import http from 'node:http';
 import https from 'node:https';
 import { isIP } from 'node:net';
-import { BlockedUrlError, guardedLookup, isBlockedAddress, type EndpointMethod } from '@deployhealth/core';
+import { BlockedUrlError, guardedLookup, isBlockedAddress, systemGuardedLookup, type EndpointMethod } from '@deployhealth/core';
 
 /**
  * The ONLY module that opens outbound HTTP connections from deployhealth's servers. Every request
  * goes through node:http(s) with the SSRF-guarded DNS lookup, which re-checks the address at
- * connect time (so redirects and DNS rebinding are covered); literal IPs are checked up front;
+ * connect time (so redirects and DNS rebinding are covered) on a bounded resolver (A and AAAA in
+ * parallel, a deadline, failing closed); literal IPs are checked up front;
  * connections aren't pooled; response bodies are never read. `test/no-unguarded-http.test.ts`
  * fails CI if any other file makes requests.
  */
@@ -83,8 +84,10 @@ export const MAX_GITHUB_RESPONSE_BYTES = 32 * 1024 * 1024;
 const GITHUB_TIMEOUT_MS = 30_000;
 const MAX_GITHUB_REDIRECTS = 3;
 
-// One keep-alive agent: a check can make hundreds of blob requests to the same host.
-const githubAgent = new https.Agent({ keepAlive: true, maxSockets: 8, lookup: guardedLookup });
+// One keep-alive agent: a check can make hundreds of blob requests to the same host. GitHub calls
+// keep the guard on the system resolver (getaddrinfo), not the bounded one user URLs get.
+const GITHUB_LOOKUP = systemGuardedLookup;
+const githubAgent = new https.Agent({ keepAlive: true, maxSockets: 8, lookup: GITHUB_LOOKUP });
 
 /**
  * `fetch` for Octokit, restricted to api.github.com: the guarded lookup, a keep-alive agent,
@@ -102,7 +105,7 @@ export async function githubFetch(input: string | URL | Request, init: RequestIn
   for (let hop = 0; ; hop++) {
     if (url.origin !== GITHUB_API_ORIGIN) throw new BlockedUrlError(`githubFetch only talks to ${GITHUB_API_ORIGIN}, not ${url.origin}`);
     const res = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
-      const req = https.request(url, { method, signal, lookup: guardedLookup, agent: githubAgent, headers }, (response) => {
+      const req = https.request(url, { method, signal, lookup: GITHUB_LOOKUP, agent: githubAgent, headers }, (response) => {
         const chunks: Buffer[] = [];
         let size = 0;
         response.on('data', (chunk: Buffer) => {
