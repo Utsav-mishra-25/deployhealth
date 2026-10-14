@@ -29,7 +29,7 @@ pnpm test            # all unit tests: core, db (real Postgres), web, worker (al
 pnpm typecheck
 pnpm lint
 pnpm build
-pnpm e2e             # Playwright smoke test (not in CI)
+pnpm e2e             # Playwright on a production build (next build + next start; also in CI)
 pnpm scan:self       # run deployhealth's own scanner on this repo; must report nothing
 pnpm eval:repos      # manual: counts per repo on pinned public repos
 pnpm laravel:names   # manual: check core's Laravel framework names against pinned tags

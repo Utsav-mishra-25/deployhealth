@@ -23,7 +23,7 @@ checks and deploy history, CLI 0.3.2) are built.
 ```
 docker-compose.yml    Postgres 16 (creates deployhealth and deployhealth_test)
 LICENSE               FSL-1.1-MIT (everything except packages/core, which has its own MIT LICENSE)
-.github/workflows/ci.yml   typecheck, lint, unit tests, build
+.github/workflows/ci.yml   typecheck, lint, unit tests, build; e2e on a production build (parallel job)
 .github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main
 .github/workflows/publish-cli.yml    manual, not used yet: build job, then a publish job behind the npm-publish environment
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
@@ -78,21 +78,38 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 - One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
 - **db tests** use `TEST_DATABASE_URL` (default `.../deployhealth_test`). Global setup drops and
   re-migrates that database's schema on every run, so never point it at real data.
-- **e2e** re-seeds the database in `apps/web/.env.local`, starts `next dev` on :3100 with the dev
-  login and the demo on, and runs: the landing page (signed out, one click to the demo); the public
+- **e2e** runs on a production build: `pnpm e2e` builds core and web (`next build`), then
+  Playwright starts `next start` on :3100 (never reusing a server already there) with the demo on,
+  `PUBLIC_ORIGIN=http://localhost:3100` and placeholder `AUTH_GITHUB_*` (required in production,
+  never contacted). Global setup re-seeds the database in `apps/web/.env.local` (or the
+  environment's `DATABASE_URL`) and signs the dev user in the only way a production build allows:
+  the dev login is never registered there (the server gets `AUTH_DEMO_LOGIN=1` and a test checks
+  /login still has no "Continue as dev user"), so it mints the Auth.js session cookie the `dev`
+  provider would have produced (`authjs.session-token`, no `__Secure-` prefix over http, salted
+  with its name, same claims as auth.ts's `jwt` callback) with `AUTH_SECRET`, into
+  `e2e/.auth/` (gitignored). `e2e/session.ts`'s `signInAsDev()` adds it and asserts /login sends
+  the user to /clients with "dev" in the header, so a rejected cookie fails at once. Assertions
+  wait at most 15 s (a production build has no first-visit compile). A full run takes about
+  110 s here, build included (on `next dev` it took about 250 s). The one dev-only step,
+  clicking the dev login on `/login?next=`, is replaced by adding the session and reloading. It
+  runs: the landing page (signed out, one click to the demo); the public
   demo without a session (overview → project with its sample PR checks → handoff page and `.md`
   download → monthly report); a signed-in project with no env file: its "No .env.example here"
   notice → the handoff's starting `.env.example` (page and `.md`); the signed-in flow as the dev user (`/` → /clients, client → project
   → scan with variables → named endpoint → SSRF rejection → untrusted deploy notes in the handoff
   → share a report → open the link in a fresh context → tampered link 404s); /privacy and /terms;
-  the security headers; and `mobile.spec.ts`, which checks at 375×812 that no public or signed-in
+  the security headers; that a spoofed Host or X-Forwarded-Host never reaches security.txt, the
+  sitemap, a docs page's canonical URL or a signed-in settings page's snippet; and `mobile.spec.ts`, which checks at 375×812 that no public or signed-in
   page (nor a shared report) scrolls sideways; and `a11y.spec.ts`, which runs axe on every public
   page (the four docs pages included), the signed-in /clients, a client page, a project page with a
   deploy, its settings page and a shared report (no serious or critical violations).
   First time:
   `pnpm --filter @deployhealth/web exec playwright install chromium` (or set
   `PLAYWRIGHT_CHROMIUM_PATH` to an existing Chromium).
-- CI runs typecheck, lint, unit tests and build. Playwright is not in CI.
+- CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests and build in one job, and
+  e2e in a second, parallel job: its own Postgres, `db:migrate`, a throwaway `AUTH_SECRET` per
+  run, Chromium downloaded with `playwright install --with-deps chromium`, then `pnpm e2e`;
+  Playwright traces are uploaded only when a test fails.
 
 ## Licensing
 

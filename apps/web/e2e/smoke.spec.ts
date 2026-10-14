@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import { addDevSession, signInAsDev } from './session';
 
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 const SCRIPTED_ALERT = 'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY';
@@ -27,6 +28,51 @@ test('landing page for a signed-out visitor, one click to the demo', async ({ pa
   await page.getByTestId('landing').getByRole('link', { name: 'Sign in with GitHub' }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('link', { name: 'See a live demo' })).toBeVisible();
+});
+
+test('a production build never offers the dev login, even with AUTH_DEMO_LOGIN=1', async ({ page }) => {
+  // The e2e server runs `next start` with AUTH_DEMO_LOGIN=1 (playwright.config.ts).
+  await page.goto('/login');
+  await expect(page.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue as dev user' })).toHaveCount(0);
+  await expect(page.getByText('AUTH_DEMO_LOGIN')).toHaveCount(0);
+  const providers = await (await page.request.get('/api/auth/providers')).json();
+  expect(Object.keys(providers)).toEqual(['github']);
+});
+
+test('public URLs come from PUBLIC_ORIGIN, never a spoofed Host or X-Forwarded-Host', async ({ page }) => {
+  const origin = 'http://localhost:3100'; // PUBLIC_ORIGIN in playwright.config.ts
+  const spoofed = { host: 'evil.example', 'x-forwarded-host': 'evil.example', 'x-forwarded-proto': 'https' };
+
+  const txt = await page.request.get('/.well-known/security.txt', { headers: spoofed });
+  expect(txt.status()).toBe(200);
+  expect(txt.headers()['cache-control']).toBe('no-store');
+  expect(await txt.text()).toContain(`\nPolicy: ${origin}/security\n`);
+
+  const sitemap = await (await page.request.get('/sitemap.xml', { headers: spoofed })).text();
+  expect(sitemap).toContain(`<loc>${origin}/docs/nextjs</loc>`);
+  expect(sitemap).not.toContain('evil.example');
+
+  const docs = await (await page.request.get('/docs/nextjs', { headers: spoofed })).text();
+  expect(docs).toContain(`<link rel="canonical" href="${origin}/docs/nextjs"/>`);
+  expect(docs).not.toContain('evil.example');
+
+  // Signed in: the Action snippet on a project's settings page, its --url quoted.
+  await signInAsDev(page);
+  await page.goto('/projects/new');
+  await page.getByLabel('Project name').fill(`origin-${Date.now()}`);
+  await page.getByLabel('GitHub repository').fill('acme/origin');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await page.getByRole('link', { name: 'Go to project' }).click();
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+  const projectPath = new URL(page.url()).pathname;
+  // Hosts only: with X-Forwarded-Proto https, Auth.js would look for the __Secure- cookie instead.
+  const settingsResponse = await page.request.get(`${projectPath}/settings`, { headers: { host: 'evil.example', 'x-forwarded-host': 'evil.example' }, maxRedirects: 0 });
+  expect(settingsResponse.status()).toBe(200);
+  const settings = await settingsResponse.text();
+  expect(settings).toMatch(/data-testid="current-user"[^>]*>dev</);
+  expect(settings).toContain(`--url &quot;${origin}&quot;`);
+  expect(settings).not.toContain('evil.example');
 });
 
 test('public demo without a session: clients, project, handoff and report', async ({ page }) => {
@@ -123,9 +169,7 @@ test('public demo without a session: clients, project, handoff and report', asyn
 
 test('a project with no env file: one notice instead of MISSING rows, and a starting .env.example', async ({ page }) => {
   // The demo's projects all have env files, so this one is reported through ingest as the CLI would.
-  await page.goto('/login');
-  await page.getByRole('button', { name: 'Continue as dev user' }).click();
-  await expect(page).toHaveURL(/\/clients$/);
+  await signInAsDev(page);
   await page.goto('/projects/new');
   const projectName = `no-env-${Date.now()}`;
   await page.getByLabel('Project name').fill(projectName);
@@ -177,8 +221,12 @@ test('GitHub App setup page: signed out, sign in and come back; a repo link pre-
   await expect(page.getByTestId('installed-signed-out')).toContainText('Sign in to deployhealth with the GitHub account you installed it with');
   await page.getByRole('link', { name: 'Sign in and come back' }).click();
   await expect(page).toHaveURL(/\/login\?next=%2Fgithub%2Finstalled$/);
-  await page.getByRole('button', { name: 'Continue as dev user' }).click();
+  // Signing in here (the dev login under `next dev`) can't be clicked on a production build: the
+  // session is added instead, and /login?next= sends the now signed-in user back.
+  await addDevSession(page);
+  await page.reload();
   await expect(page).toHaveURL(/\/github\/installed$/);
+  await expect(page.getByTestId('current-user')).toHaveText('dev');
   // The dev user has no installation linked: the page says what to check, and offers no next steps.
   await expect(page.getByTestId('installations-empty')).toBeVisible();
   await expect(page.getByTestId('app-next-steps')).toHaveCount(0);
@@ -198,10 +246,7 @@ test('GitHub App setup page: signed out, sign in and come back; a repo link pre-
 });
 
 test('signed in: client and project, a named endpoint, deploy notes, handoff and a shared report', async ({ page, browser }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: 'Continue as dev user' }).click();
-  await expect(page).toHaveURL(/\/clients$/);
-  await expect(page.getByTestId('current-user')).toHaveText('dev');
+  await signInAsDev(page);
   // Signed in, the home page is the clients page, as before.
   await page.goto('/');
   await expect(page).toHaveURL(/\/clients$/);
@@ -336,8 +381,7 @@ test('the old CLI download is still served, marked deprecated', async ({ request
 });
 
 test('docs: linked from the landing page and the footer, one page per stack, indexed, with what each example reports', async ({ page }) => {
-  // The links are checked by their target, then followed with goto, which waits for the page
-  // (a click can race next dev's first compile of /docs).
+  // The links are checked by their target, then followed with goto, which waits for the page.
   await page.goto('/');
   await expect(page.getByTestId('landing').getByRole('link', { name: /^Docs/ })).toHaveAttribute('href', '/docs');
   await expect(page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/docs');
@@ -360,8 +404,7 @@ test('docs: linked from the landing page and the footer, one page per stack, ind
 
 test('security: public page linked from the footer, and security.txt', async ({ page, request }) => {
   await page.goto('/login');
-  // Footer links are checked by their target and followed with goto, which waits for the page (a
-  // click can race next dev's first compile of the route).
+  // Footer links are checked by their target and followed with goto, which waits for the page.
   await expect(page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Security' })).toHaveAttribute('href', '/security');
   await page.goto('/security');
   await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible();

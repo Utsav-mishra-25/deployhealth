@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { signInAsDev } from './session';
 
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 
@@ -46,9 +47,7 @@ test('public pages fit a 375 px phone, signed out', async ({ page }) => {
 });
 
 test('signed-in pages and a shared report fit a 375 px phone', async ({ page, browser }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: 'Continue as dev user' }).click();
-  await expect(page).toHaveURL(/\/clients$/);
+  await signInAsDev(page);
 
   // A client with a long name, and a project with a scan, a long endpoint URL and a report to share.
   const suffix = Date.now();

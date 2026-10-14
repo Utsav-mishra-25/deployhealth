@@ -5,6 +5,8 @@ next-env.d.ts
 coverage/
 playwright-report/
 test-results/
+# The e2e dev session (global-setup.ts).
+apps/web/e2e/.auth/
 *.tsbuildinfo
 *.log
 .DS_Store
