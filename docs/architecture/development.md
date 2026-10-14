@@ -16,7 +16,12 @@ Phase 4.8 (security fixes: the PR check runs isolated with a time limit, linear-
 gitignore matching, an env parser that never reads a value as a name, more SSRF ranges, fair
 claims, CLI 0.3.1) and Phase 4.9 (unsupported stacks say so: the PR check and the CLI say what
 they read and "can't check" a repo in a language they don't read, setup split into pull request
-checks and deploy history, CLI 0.3.2) are built.
+checks and deploy history, CLI 0.3.2), Phase 5 (more stacks: PHP and Laravel, Java and Kotlin with Spring; CLI 0.5.0) and
+Phase 6 (readable data and stats, the docs pages, the **deployhealth env check** Action on the
+Marketplace, the footer docs link, and the security review's items: a hardened publish workflow,
+per-hostname spacing worded as it works, a bounded DNS resolver and a limit on endpoint saves, an
+App status that can't reveal other accounts' repositories, absolute URLs from `PUBLIC_ORIGIN`,
+the token kept out of the Action snippet's command line, and e2e on a production build) are built.
 
 ## Repository files
 
