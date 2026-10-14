@@ -161,7 +161,7 @@ describe('tokens', () => {
 describe('githubActionSnippet', () => {
   it('runs the pinned npm release with the token from a repo secret, and passes sha and branch', () => {
     const yaml = githubActionSnippet({ appUrl: 'https://dh.example.com/' });
-    expect(yaml).toContain(`npx --yes deployhealth-scan@${PUBLISHED_CLI_VERSION} \\\n            --url https://dh.example.com \\`);
+    expect(yaml).toContain(`npx --yes deployhealth-scan@${PUBLISHED_CLI_VERSION} \\\n            --url "https://dh.example.com" \\`); // quoted, like every other argument
     expect(yaml).toContain('DEPLOYHEALTH_TOKEN: ${{ secrets.DEPLOYHEALTH_TOKEN }}');
     expect(yaml).toContain('--token "$DEPLOYHEALTH_TOKEN"');
     expect(yaml).toContain('--sha "$GITHUB_SHA"');
