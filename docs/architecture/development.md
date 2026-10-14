@@ -25,7 +25,7 @@ docker-compose.yml    Postgres 16 (creates deployhealth and deployhealth_test)
 LICENSE               FSL-1.1-MIT (everything except packages/core, which has its own MIT LICENSE)
 .github/workflows/ci.yml   typecheck, lint, unit tests, build
 .github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main
-.github/workflows/publish-cli.yml    manual: publish deployhealth-scan to npm with provenance
+.github/workflows/publish-cli.yml    manual, not used yet: build job, then a publish job behind the npm-publish environment
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
 scripts/laravel-framework-names.mjs  `pnpm laravel:names`: regenerates core's LARAVEL_FRAMEWORK_NAMES from
