@@ -18,6 +18,19 @@ export const HOST_CHECK_SPACING_MS = 10_000;
  */
 export const MAX_CLAIM_PER_OWNER = 50;
 
+/**
+ * DNS for user-supplied URLs (save time and connect time): each A or AAAA query times out after
+ * this long per try, with this many tries (dns.promises.Resolver's `timeout` and `tries`)...
+ */
+export const DNS_QUERY_TIMEOUT_MS = 2_000;
+export const DNS_QUERY_TRIES = 2;
+/** ...and a whole lookup (A and AAAA in parallel) gives up after this long, failing closed. */
+export const DNS_LOOKUP_DEADLINE_MS = DNS_QUERY_TIMEOUT_MS * DNS_QUERY_TRIES;
+
+/** Saving monitored endpoints (create and edit): at most this many saves per user per window. */
+export const ENDPOINT_SAVES_PER_WINDOW = 30;
+export const ENDPOINT_SAVE_WINDOW_MS = 10 * 60_000;
+
 /** POST /api/ingest/scan request body. */
 export const MAX_INGEST_BODY_BYTES = 5 * 1024 * 1024;
 

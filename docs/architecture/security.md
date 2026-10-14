@@ -28,6 +28,18 @@ a URL, a query's scoping, share links, headers, or those pages.
   `assertPublicUrl()` when saved, and must be fetched through `apps/worker/src/guarded-http.ts`
   (`guardedRequest` / `guardedPost`, on `guardedLookup`), never plain `fetch`. The guard re-checks
   the resolved address at connect time, which covers redirects and DNS rebinding.
+  **DNS** for both checks is `resolveHostAddresses()` (core `ssrf.ts`): A and AAAA asked in
+  parallel on a `dns.promises.Resolver` (`DNS_QUERY_TIMEOUT_MS` 2 s, `DNS_QUERY_TRIES` 2), with
+  `DNS_LOOKUP_DEADLINE_MS` (4 s) for the whole lookup. One family failing, timing out or answering
+  nothing is fine when the other answers (only answered addresses are checked or connected to);
+  no answer at all within the bound fails closed (`DnsTimeoutError`: no connection, and a save is
+  refused with "Couldn't look up <host> in time"), while a name that doesn't exist still saves as
+  before. The resolver doesn't read `/etc/hosts`, so `localhost` and `*.localhost` are refused up
+  front. GitHub API calls (`githubFetch`) don't use it: they keep the same guard on the system
+  resolver (`systemGuardedLookup`, getaddrinfo), pinned by `apps/worker/test/guarded-lookup.test.ts`.
+  Saving endpoints (create and edit) is limited per user to `ENDPOINT_SAVES_PER_WINDOW` (30) per
+  `ENDPOINT_SAVE_WINDOW_MS` (10 minutes), in memory (`lib/endpoint-save-limit.ts`, on
+  `lib/rate-limit.ts`), checked before the lookup.
   The guard also refuses documentation ranges and every IPv6 address that carries or tunnels to
   an IPv4 one (`::/96`, `::ffff:0:0/96`, 6to4, Teredo, local-use NAT64; matched by hand, since
   `BlockList` checks IPv4 addresses against IPv6 rules too); a saved endpoint in a newly blocked

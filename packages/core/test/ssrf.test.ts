@@ -1,12 +1,19 @@
-import type { LookupAddress } from 'node:dns';
-import { describe, expect, it } from 'vitest';
+import dns, { type LookupAddress } from 'node:dns';
+import { describe, expect, it, vi } from 'vitest';
+import { DNS_LOOKUP_DEADLINE_MS, DNS_QUERY_TIMEOUT_MS, DNS_QUERY_TRIES } from '../src/limits';
 import {
   assertPublicUrl,
   BlockedUrlError,
   createGuardedLookup,
+  createResolverLookupAll,
+  DnsTimeoutError,
   guardedLookup,
   isBlockedAddress,
   parsePublicHttpUrl,
+  resolveHostAddresses,
+  systemDnsQueries,
+  systemGuardedLookup,
+  type DnsQueries,
 } from '../src/ssrf';
 
 describe('isBlockedAddress', () => {
@@ -172,5 +179,158 @@ describe('guarded lookup (connect time)', () => {
   it('blocks localhost through the real resolver', async () => {
     const { err } = await lookupOnce(guardedLookup, 'localhost', {});
     expect(err).toBeInstanceOf(BlockedUrlError);
+  });
+});
+
+describe('resolveHostAddresses: A and AAAA in parallel, bounded, failing closed', () => {
+  const noData = () => Promise.reject(Object.assign(new Error('queryA ENODATA'), { code: 'ENODATA' }));
+  const notFound = () => Promise.reject(Object.assign(new Error('queryA ENOTFOUND'), { code: 'ENOTFOUND' }));
+  const never = () => new Promise<string[]>(() => {});
+  function fakeQueries(resolve4: (h: string) => Promise<string[]>, resolve6: (h: string) => Promise<string[]>) {
+    const state = { cancelled: 0 };
+    const make = (): DnsQueries => ({ resolve4, resolve6, cancel: () => void state.cancelled++ });
+    return Object.assign(make, { state });
+  }
+
+  it('asks the system resolver with a 2 s timeout and 2 tries, and gives a whole lookup 4 s', () => {
+    expect(DNS_QUERY_TIMEOUT_MS).toBe(2_000);
+    expect(DNS_QUERY_TRIES).toBe(2);
+    expect(DNS_LOOKUP_DEADLINE_MS).toBe(4_000);
+    const seen: unknown[] = [];
+    const spy = vi.spyOn(dns.promises, 'Resolver').mockImplementation(
+      class {
+        constructor(options: unknown) {
+          seen.push(options);
+        }
+      } as unknown as typeof dns.promises.Resolver,
+    );
+    try {
+      systemDnsQueries();
+      expect(seen).toEqual([{ timeout: 2_000, tries: 2 }]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(systemDnsQueries()).toBeInstanceOf(dns.promises.Resolver);
+  });
+
+  it('returns both families, IPv4 first', async () => {
+    const queries = fakeQueries(async () => ['93.184.215.14'], async () => ['2606:2800::1']);
+    expect(await resolveHostAddresses('example.com', { queries })).toEqual([
+      { address: '93.184.215.14', family: 4 },
+      { address: '2606:2800::1', family: 6 },
+    ]);
+  });
+
+  it('passes with only an A answer, or only an AAAA answer', async () => {
+    expect(await resolveHostAddresses('v4only.example', { queries: fakeQueries(async () => ['93.184.215.14'], noData) })).toEqual([
+      { address: '93.184.215.14', family: 4 },
+    ]);
+    expect(await resolveHostAddresses('v6only.example', { queries: fakeQueries(noData, async () => ['2606:2800::1']) })).toEqual([
+      { address: '2606:2800::1', family: 6 },
+    ]);
+    // An empty answer is "nothing" too.
+    expect(await resolveHostAddresses('v6only.example', { queries: fakeQueries(async () => [], async () => ['2606:2800::1']) })).toHaveLength(1);
+  });
+
+  it('passes when one family times out and the other answers', async () => {
+    const queries = fakeQueries(async () => ['93.184.215.14'], never);
+    expect(await resolveHostAddresses('slow-aaaa.example', { queries, deadlineMs: 50 })).toEqual([{ address: '93.184.215.14', family: 4 }]);
+    expect(queries.state.cancelled).toBe(1);
+    const etimeout = () => Promise.reject(Object.assign(new Error('queryA ETIMEOUT'), { code: 'ETIMEOUT' }));
+    expect(await resolveHostAddresses('slow-a.example', { queries: fakeQueries(etimeout, async () => ['2606:2800::1']) })).toHaveLength(1);
+  });
+
+  it('asks only the family net asks for', async () => {
+    const asked: string[] = [];
+    const queries = fakeQueries(
+      async () => (asked.push('A'), ['93.184.215.14']),
+      async () => (asked.push('AAAA'), ['2606:2800::1']),
+    );
+    expect(await resolveHostAddresses('example.com', { queries, family: 6 })).toEqual([{ address: '2606:2800::1', family: 6 }]);
+    expect(asked).toEqual(['AAAA']);
+  });
+
+  it('fails closed within the bound when the resolver never answers', async () => {
+    const queries = fakeQueries(never, never);
+    const started = Date.now();
+    const err = await resolveHostAddresses('silent.example', { queries, deadlineMs: 100 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DnsTimeoutError);
+    expect((err as DnsTimeoutError).code).toBe('ETIMEOUT');
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(queries.state.cancelled).toBe(1);
+  });
+
+  it('fails closed at the default 4 s deadline, not later', async () => {
+    const started = Date.now();
+    await expect(resolveHostAddresses('silent.example', { queries: fakeQueries(never, never) })).rejects.toBeInstanceOf(DnsTimeoutError);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(DNS_LOOKUP_DEADLINE_MS - 50);
+    expect(elapsed).toBeLessThan(DNS_LOOKUP_DEADLINE_MS + 1_000);
+  }, 10_000);
+
+  it('a timeout with no answer is a timeout; a name that does not exist is ENOTFOUND', async () => {
+    const etimeout = () => Promise.reject(Object.assign(new Error('queryA ETIMEOUT'), { code: 'ETIMEOUT' }));
+    await expect(resolveHostAddresses('x.example', { queries: fakeQueries(etimeout, noData) })).rejects.toBeInstanceOf(DnsTimeoutError);
+    await expect(resolveHostAddresses('x.example', { queries: fakeQueries(notFound, notFound) })).rejects.toMatchObject({ code: 'ENOTFOUND' });
+    await expect(resolveHostAddresses('x.example', { queries: fakeQueries(async () => [], async () => []) })).rejects.toMatchObject({
+      code: 'ENOTFOUND',
+    });
+  });
+
+  it('assertPublicUrl refuses to save a URL whose lookup never answers, and says to try again', async () => {
+    const queries = fakeQueries(never, never);
+    const resolve = async (host: string) => (await resolveHostAddresses(host, { queries, deadlineMs: 100 })).map((a) => a.address);
+    const started = Date.now();
+    await expect(assertPublicUrl('https://silent.example/health', resolve)).rejects.toThrow(
+      new BlockedUrlError("Couldn't look up silent.example in time. Try again in a moment."),
+    );
+    expect(Date.now() - started).toBeLessThan(1_000);
+    // Only-A and only-AAAA names save; a private AAAA next to a public A is still refused.
+    const onlyA = async (host: string) => (await resolveHostAddresses(host, { queries: fakeQueries(async () => ['93.184.215.14'], noData) })).map((a) => a.address);
+    await expect(assertPublicUrl('https://v4only.example', onlyA)).resolves.toBeInstanceOf(URL);
+    const onlyAAAA = async (host: string) => (await resolveHostAddresses(host, { queries: fakeQueries(noData, async () => ['2606:2800::1']) })).map((a) => a.address);
+    await expect(assertPublicUrl('https://v6only.example', onlyAAAA)).resolves.toBeInstanceOf(URL);
+    const mixed = async (host: string) => (await resolveHostAddresses(host, { queries: fakeQueries(async () => ['93.184.215.14'], async () => ['fd00::1']) })).map((a) => a.address);
+    await expect(assertPublicUrl('https://mixed.example', mixed)).rejects.toThrow('resolves to a private or reserved address (fd00::1)');
+  });
+
+  it('the connect-time guard on the bounded resolver: fails closed, passes one family, blocks private answers', async () => {
+    const lookupWith = (queries: () => DnsQueries) =>
+      createGuardedLookup(createResolverLookupAll({ queries, deadlineMs: 100 })) as unknown as (
+        h: string,
+        o: object,
+        cb: (err: NodeJS.ErrnoException | null, address: unknown, family?: number) => void,
+      ) => void;
+    const once = (lookup: ReturnType<typeof lookupWith>, host: string, options: object = {}) =>
+      new Promise<{ err: NodeJS.ErrnoException | null; address: unknown; family?: number }>((resolve) =>
+        lookup(host, options, (err, address, family) => resolve({ err, address, family })),
+      );
+
+    const silent = await once(lookupWith(fakeQueries(never, never)), 'silent.example');
+    expect(silent.err).toBeInstanceOf(DnsTimeoutError);
+    expect(await once(lookupWith(fakeQueries(noData, async () => ['2606:2800::1'])), 'v6only.example')).toEqual({
+      err: null,
+      address: '2606:2800::1',
+      family: 6,
+    });
+    expect(await once(lookupWith(fakeQueries(async () => ['93.184.215.14'], never)), 'v4only.example')).toEqual({
+      err: null,
+      address: '93.184.215.14',
+      family: 4,
+    });
+    const rebind = await once(lookupWith(fakeQueries(never, async () => ['::1'])), 'rebind.example');
+    expect(rebind.err).toBeInstanceOf(BlockedUrlError);
+    const local = await once(lookupWith(fakeQueries(never, never)), 'printer.localhost');
+    expect(local.err).toBeInstanceOf(BlockedUrlError);
+  });
+
+  it('GitHub keeps the system resolver: getaddrinfo answers localhost, so the guard reports its address', async () => {
+    const result = await new Promise<{ err: Error | null }>((resolve) =>
+      (systemGuardedLookup as unknown as (h: string, o: object, cb: (err: Error | null) => void) => void)('localhost', {}, (err) =>
+        resolve({ err }),
+      ),
+    );
+    expect(result.err).toBeInstanceOf(BlockedUrlError);
+    expect(result.err?.message).toMatch(/^localhost resolves to a private or reserved address \((127\.0\.0\.1|::1)\)$/);
   });
 });
