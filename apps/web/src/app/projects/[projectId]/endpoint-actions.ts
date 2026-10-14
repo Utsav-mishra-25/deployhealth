@@ -5,6 +5,7 @@ import { createEndpoint, deleteEndpoint, updateEndpoint } from '@deployhealth/db
 import { revalidatePath } from 'next/cache';
 import { requireWritableUser } from '@/lib/guard';
 import { getDb } from '@/lib/db';
+import { endpointSaveRefusal } from '@/lib/endpoint-save-limit';
 import { isUuid } from '@/lib/format';
 import { endpointFormSchema, endpointFormValues, fieldErrors } from '@/lib/validation';
 
@@ -15,7 +16,7 @@ export type EndpointFormState =
   | { status: 'saved'; at: number }
   | { status: 'error'; message: string; fields: Record<string, string>; values: EndpointFormValues };
 
-/** Create (endpointId = null) or update an endpoint. The URL must pass the SSRF guard. */
+/** Create (endpointId = null) or update an endpoint. Limited per user; the URL must pass the SSRF guard. */
 export async function saveEndpointAction(
   projectId: string,
   endpointId: string | null,
@@ -34,6 +35,9 @@ export async function saveEndpointAction(
 
   const parsed = endpointFormSchema.safeParse(values);
   if (!parsed.success) return invalid('Please fix the highlighted fields.', fieldErrors(parsed.error));
+
+  const refusal = endpointSaveRefusal(user.id);
+  if (refusal) return invalid(refusal);
 
   let url: URL;
   try {
