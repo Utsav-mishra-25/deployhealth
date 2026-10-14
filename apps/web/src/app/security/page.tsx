@@ -83,8 +83,9 @@ export default function SecurityPage() {
             <strong>Response bodies are never read or stored:</strong> only the status code and timing.
           </li>
           <li className={li}>
-            A hostname is checked at most once every {HOST_CHECK_SPACING_MS / 1000} seconds, however many accounts
-            monitor it, and an account can monitor at most {MAX_ENDPOINTS_PER_USER} endpoints ({MAX_ENDPOINTS_PER_PROJECT}{' '}
+            Checks are spaced per hostname: one hostname is checked at most once every {HOST_CHECK_SPACING_MS / 1000}{' '}
+            seconds, however many accounts monitor it. Different names for one server (another subdomain or alias, or its
+            IP address) are spaced separately. An account can monitor at most {MAX_ENDPOINTS_PER_USER} endpoints ({MAX_ENDPOINTS_PER_PROJECT}{' '}
             per project), with at most {MAX_CLAIM_PER_OWNER} checks started per minute. The spacing applies to the hostname
             in the saved URL: requests that follow a redirect (up to {MAX_REDIRECTS} per check) aren&apos;t counted toward
             the spacing of the host they land on.
