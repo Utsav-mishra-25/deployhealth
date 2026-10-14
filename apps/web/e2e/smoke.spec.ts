@@ -285,7 +285,7 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
 
   // The GitHub App: install link, status, and the mode.
   await expect(page.getByTestId('install-github-app')).toHaveAttribute('href', 'https://github.com/apps/deployhealth/installations/new');
-  await expect(page.getByTestId('github-app-status')).toHaveText(`Not installed on acme/smoke yet.`);
+  await expect(page.getByTestId('github-app-status')).toHaveText(`Not installed by you on acme/smoke.`);
   await page.getByLabel(/Strict/).check();
   await page.getByRole('button', { name: 'Save mode' }).click();
   await expect(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save mode' }) }).getByText('Saved')).toBeVisible();

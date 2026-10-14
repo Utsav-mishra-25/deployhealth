@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import {
   installationRepos,
@@ -235,25 +235,36 @@ export async function setPrCheckGithubIds(db: Db, id: string, ids: { commentId?:
 export type GithubAppStatus =
   | { state: 'not-installed' }
   | { state: 'active'; accountLogin: string }
-  | { state: 'suspended'; accountLogin: string }
-  /** Installed on the repo, but by a GitHub account that isn't this user's. */
-  | { state: 'other-account'; accountLogin: string };
+  | { state: 'suspended'; accountLogin: string };
 
-/** Whether the App can check this owner's project, and why not. Null if the project isn't theirs. */
+/**
+ * Whether the App can check this owner's project, and why not. Null if the project isn't theirs.
+ * Only the user's own installations count: linked to them, or installed from their GitHub id (not
+ * linked yet). Anyone else's installation on the repo reads exactly like no installation, so a
+ * project can't be used to learn whether some other account's private repository exists or has
+ * the App.
+ */
 export async function getGithubAppStatus(db: Db, ownerId: string, projectId: string): Promise<GithubAppStatus | null> {
   const [project] = await db
-    .select({ repoFullName: projects.repoFullName })
+    .select({ repoFullName: projects.repoFullName, githubId: users.githubId })
     .from(projects)
+    .innerJoin(users, eq(users.id, projects.ownerId))
     .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)));
   if (!project) return null;
   const rows = await db
-    .select({ accountLogin: installations.accountLogin, userId: installations.userId, suspendedAt: installations.suspendedAt })
+    .select({ accountLogin: installations.accountLogin, suspendedAt: installations.suspendedAt })
     .from(installations)
     .innerJoin(installationRepos, eq(installationRepos.installationId, installations.id))
-    .where(sql`lower(${installationRepos.repoFullName}) = lower(${project.repoFullName})`);
-  const mine = rows.find((r) => r.userId === ownerId);
-  if (mine) return mine.suspendedAt ? { state: 'suspended', accountLogin: mine.accountLogin } : { state: 'active', accountLogin: mine.accountLogin };
-  return rows[0] ? { state: 'other-account', accountLogin: rows[0].accountLogin } : { state: 'not-installed' };
+    .where(
+      and(
+        sql`lower(${installationRepos.repoFullName}) = lower(${project.repoFullName})`,
+        or(eq(installations.userId, ownerId), eq(installations.installerGithubId, project.githubId)),
+      ),
+    )
+    .orderBy(installations.createdAt);
+  const mine = rows.find((r) => !r.suspendedAt) ?? rows[0];
+  if (!mine) return { state: 'not-installed' };
+  return mine.suspendedAt ? { state: 'suspended', accountLogin: mine.accountLogin } : { state: 'active', accountLogin: mine.accountLogin };
 }
 
 export async function updatePrCheckMode(db: Db, ownerId: string, projectId: string, mode: PrCheckMode): Promise<boolean> {

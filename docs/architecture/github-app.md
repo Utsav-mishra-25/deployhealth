@@ -92,6 +92,12 @@ pull_requests: write; events: pull_request; installation events arrive regardles
   (`linkInstallationsForUser` in the Auth.js `jwt` callback). Never link from the setup URL's query
   string. `findPrCheckTarget` returns only the linked user's project for the repo (case-insensitive,
   oldest if several, installation not suspended); no match → nothing stored, one log line.
+- **The settings page's status** (`getGithubAppStatus`) looks only at the user's own
+  installations: linked to them, or installed from their GitHub id (not linked yet). Active or
+  suspended names that installation's account; anything else, someone else's installation on the
+  repo included, reads "Not installed by you on owner/repo", so a project can't be used to learn
+  whether another account's private repository exists or has the App
+  (`packages/db/test/isolation.test.ts`).
 - **Next steps.** `listInstallationsForUser` gives each repo the user's own project (or null) and
   `reposWithoutProject` the repos of non-suspended installations with none. `/github/installed`
   (public: signed out it says to sign in and come back via `/login?next=`) and `/clients` show

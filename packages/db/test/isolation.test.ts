@@ -184,6 +184,27 @@ describe("user A cannot modify user B's data", () => {
     expect(rows.map((e) => e.url)).toEqual(['https://bob.example/health']);
   });
 
+  it("the settings page's App status can't tell B whether A's private repo exists or has the App", async () => {
+    const { a, b } = await twoUsers();
+    // A installed the App on a private repo. B makes projects for it and for a repo that doesn't exist.
+    await upsertInstallation(db, { githubInstallationId: 77, accountLogin: 'alice-private', accountType: 'User', installerGithubId: a.githubId }, [
+      'alice-private/secret-plans',
+    ]);
+    const aProject = await makeProject(db, a.id, 'secret-plans', 'alice-private/secret-plans');
+    const probeExisting = await makeProject(db, b.id, 'probe-1', 'Alice-Private/Secret-Plans');
+    const probeMissing = await makeProject(db, b.id, 'probe-2', 'alice-private/does-not-exist');
+    const existing = await getGithubAppStatus(db, b.id, probeExisting.id);
+    const missing = await getGithubAppStatus(db, b.id, probeMissing.id);
+    expect(existing).toEqual({ state: 'not-installed' });
+    expect(existing).toEqual(missing);
+    // A still sees their own installation; and the other way round, A learns nothing about B's.
+    expect(await getGithubAppStatus(db, a.id, aProject.id)).toEqual({ state: 'active', accountLogin: 'alice-private' });
+    await upsertInstallation(db, { githubInstallationId: 78, accountLogin: 'bob-private', accountType: 'User', installerGithubId: b.githubId }, ['bob-private/x']);
+    const aProbe = await makeProject(db, a.id, 'probe-3', 'bob-private/x');
+    const aMissing = await makeProject(db, a.id, 'probe-4', 'bob-private/y');
+    expect(await getGithubAppStatus(db, a.id, aProbe.id)).toEqual(await getGithubAppStatus(db, a.id, aMissing.id));
+  });
+
   it("deleting user A's account (the operator's delete-user) leaves B's data whole", async () => {
     const { a, b, bClient, bProject, bDeploy } = await twoUsers();
     const inst = await upsertInstallation(db, { githubInstallationId: 1, accountLogin: 'bob', accountType: 'User', installerGithubId: b.githubId }, [bProject.repoFullName]);
