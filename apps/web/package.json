@@ -11,7 +11,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "pnpm --filter @deployhealth/core build && pnpm run build && playwright test"
   },
   "dependencies": {
     "@deployhealth/core": "workspace:*",

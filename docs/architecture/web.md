@@ -39,8 +39,9 @@ apps/
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, print/share buttons, report toolbar, alert card,
                       landing, prose-page (layout of /security, /privacy, /terms)
-    e2e/              Playwright: public demo (+ handoff, report) and the signed-in flow (+ share link);
-                      mobile.spec.ts (375 px), a11y.spec.ts (axe)
+    e2e/              Playwright on `next build` + `next start`: public demo (+ handoff, report) and the
+                      signed-in flow (+ share link); mobile.spec.ts (375 px), a11y.spec.ts (axe);
+                      session.ts (the dev user's minted session; development.md)
     railway.json      documentation only: the Railway build/deploy fields set by hand in the dashboard
 ```
 

@@ -225,7 +225,7 @@ minutes later, and an open alert links the two. Acme API points at `<DEMO_BASE_U
 (always 503); the healthy endpoints point at `example.com` and `example.org`.
 
 Tests: `pnpm test` (unit; needs the Postgres from docker compose) and `pnpm e2e` (Playwright
-smoke tests). See [docs/architecture/development.md](docs/architecture/development.md) for details.
+smoke tests on a production build). See [docs/architecture/development.md](docs/architecture/development.md) for details.
 
 ## Deploy to Railway
 

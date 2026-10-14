@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
-// Next loads .env.local for the dev server; load it here too so global setup seeds the same database.
+// `next start` loads .env.local too; load it here so global setup seeds the same database and signs
+// the session with the same AUTH_SECRET.
 if (existsSync('.env.local')) process.loadEnvFile('.env.local');
 
 const PORT = 3100;
@@ -11,10 +12,9 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   workers: 1,
   timeout: 120_000,
-  // `next dev` compiles each route on first visit (Recharts makes the project page slow), so
-  // give assertions more room than the 5s default: a navigation by click waits on that compile,
-  // which took over 15 s on a loaded machine.
-  expect: { timeout: 30_000 },
+  // A production build serves every route ready-made (no compile on first visit, as under
+  // `next dev`), so assertions get 15 s: wide margin, but a hang still fails fast.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
@@ -23,12 +23,23 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    // The dev login only exists outside production, so the smoke test runs against `next dev`,
-    // with the public demo switched on.
-    command: `pnpm exec next dev --port ${PORT}`,
+    // The production build from `pnpm e2e` (which runs `next build` first), as Railway serves it.
+    // NODE_ENV is production, so the dev login is never registered (AUTH_DEMO_LOGIN=1 is set to
+    // prove it); global-setup.ts signs the dev user in with a session cookie instead. Never reuse
+    // a server already on the port: it could be `next dev`, or an older build.
+    command: `pnpm exec next start --port ${PORT}`,
     url: `http://localhost:${PORT}/api/health`,
-    reuseExistingServer: true,
-    env: { AUTH_DEMO_LOGIN: '1', DEMO_PUBLIC: '1', SECURITY_CONTACT_EMAIL: 'security@deployhealth.example', GITHUB_APP_SLUG: 'deployhealth' },
+    reuseExistingServer: false,
+    env: {
+      AUTH_DEMO_LOGIN: '1',
+      DEMO_PUBLIC: '1',
+      SECURITY_CONTACT_EMAIL: 'security@deployhealth.example',
+      GITHUB_APP_SLUG: 'deployhealth',
+      // Required in production; nothing in the tests contacts GitHub.
+      AUTH_GITHUB_ID: 'e2e-placeholder',
+      AUTH_GITHUB_SECRET: 'e2e-placeholder',
+      PUBLIC_ORIGIN: `http://localhost:${PORT}`,
+    },
     timeout: 120_000,
   },
 });

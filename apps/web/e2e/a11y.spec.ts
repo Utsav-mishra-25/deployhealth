@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
+import { signInAsDev } from './session';
 
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 
@@ -37,9 +38,7 @@ test('public pages have no serious or critical accessibility violations', async 
 });
 
 test('the signed-in lists, a project with a deploy, its settings and a shared report have none either', async ({ page, browser }) => {
-  await page.goto('/login');
-  await page.getByRole('button', { name: 'Continue as dev user' }).click();
-  await expect(page).toHaveURL(/\/clients$/);
+  await signInAsDev(page);
 
   const suffix = Date.now();
   await page.goto('/clients/new');

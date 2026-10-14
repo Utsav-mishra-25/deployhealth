@@ -42,3 +42,48 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+
+  # Playwright on a production build (`next build` + `next start`), against a freshly migrated and
+  # seeded database. Chromium is downloaded each run; traces are uploaded only when a test fails.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: deployhealth
+          POSTGRES_PASSWORD: deployhealth
+          POSTGRES_DB: deployhealth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deployhealth"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://deployhealth:deployhealth@localhost:5432/deployhealth
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @deployhealth/web exec playwright install --with-deps chromium
+      - name: Migrate
+        run: pnpm db:migrate
+      - name: A throwaway AUTH_SECRET for this run
+        run: echo "AUTH_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - name: e2e (builds, then runs Playwright against next start)
+        run: pnpm e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces
+          path: apps/web/test-results/
+          retention-days: 7
