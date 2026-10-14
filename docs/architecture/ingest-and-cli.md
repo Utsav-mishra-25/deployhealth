@@ -64,14 +64,49 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
   `CLI_VERSION`, `PUBLISHED_CLI_VERSION` and every pin.
 - To release: (1) bump `npm/package.json`, `src/version.ts` and the npm README (its workflow block
   must equal `githubActionSnippet({ version: CLI_VERSION })`), push, then publish: `npm publish` in
-  `packages/core/npm` from a machine (no provenance), or the manual **Publish CLI** workflow
-  (`.github/workflows/publish-cli.yml`), which adds provenance once npm trusted publishing is set up.
+  `packages/core/npm` from a machine (no provenance). That's how releases go out today; the manual
+  **Publish CLI** workflow (`.github/workflows/publish-cli.yml`) would add provenance but isn't used
+  yet (see "Switching to the workflow" below).
   (2) Only once it's on npm, bump `PUBLISHED_CLI_VERSION` and the dogfood workflow.
   (3) Then the Action, in its own repository
   ([Utsav-mishra-25/deployhealth-action](https://github.com/Utsav-mishra-25/deployhealth-action)):
   bump the pinned `deployhealth-scan@x.y.z` in its `action.yml` and README, merge, release a new
   tag (`v1.x.y`) and move `v1` to it. This repository's pin tests can't see that one, so this step
   is the guard; the docs pages (`lib/docs-pages.ts`) reference the Action by `@v1` only.
+
+## Switching to the workflow (not done yet)
+
+`publish-cli.yml` is ready but unused; publishing stays manual until the steps below are done.
+Its shape (pinned by `packages/core/test/publish-workflow.test.ts`): manual dispatch from `main`
+only; a `build` job (no `id-token` permission) installs, runs core's tests and `build:npm`, and
+uploads `packages/core/npm/` as the `npm-package` artifact (kept one day); a `publish` job with no
+checkout and no install downloads that artifact and runs `npm publish --provenance` behind the
+`npm-publish` environment, and is the only job with `id-token: write`. Every action is pinned by
+full commit SHA with its version in a comment, and the npm CLI by exact version (`npm@11.21.0`;
+trusted publishing needs 11.5.1 or later). To bump an action, resolve the new tag's commit with
+`git ls-remote --tags https://github.com/<owner>/<action>.git` (for an annotated tag, the `^{}`
+line) and change the SHA and the comment together.
+
+To switch (each step: check on GitHub/npm, since both UIs move):
+
+1. **GitHub, the environment:** repository → Settings → Environments → New environment, named
+   exactly `npm-publish`. Check on GitHub.
+2. **GitHub, its protection rules:** in that environment, **Required reviewers** → add yourself
+   (`Utsav-mishra-25`), with "Prevent self-review" off (you also start the run); **Deployment
+   branches and tags** → "Selected branches and tags" → add `main`. No environment secrets:
+   trusted publishing needs no token. Check on GitHub.
+3. **npm, the trusted publisher:** npmjs.com → package `deployhealth-scan` → Settings → Trusted
+   Publisher → GitHub Actions: user `Utsav-mishra-25`, repository `deployhealth`, workflow
+   filename `publish-cli.yml`, environment `npm-publish`. Check on npm.
+4. **npm, optional, after the first successful run:** in the same settings, Publishing access →
+   require two-factor authentication and disallow tokens, so only the workflow (or you, with 2FA)
+   can publish. Check on npm.
+5. **Releasing with it:** once step (1) of "To release" is merged to `main`, Actions → Publish CLI
+   → Run workflow on `main`, approve the `publish` job when GitHub asks, and check that the version
+   on npm shows a provenance badge. Steps (2) and (3) of "To release" don't change.
+
+## Published versions and the generated workflow
+
 - Published versions are immutable. Snippets and docs pin an exact version (`npx --yes deployhealth-scan@x.y.z`).
   The settings page keeps that exact-pinned line: an Action tag can move, an npm version can't. The
   README and the docs pages offer the **deployhealth env check** Action (`…/deployhealth-action@v1`,
