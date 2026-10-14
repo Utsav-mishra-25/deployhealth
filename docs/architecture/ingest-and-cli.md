@@ -115,6 +115,8 @@ To switch (each step: check on GitHub/npm, since both UIs move):
 - The generated workflow: push events only (never `pull_request` from forks: it reads a secret),
   job-level `permissions: contents: read`, `persist-credentials: false`, and
   `package-manager-cache: false` on setup-node (v5 otherwise looks for pnpm/yarn and fails). Sha and
-  branch come from `$GITHUB_SHA` / `$GITHUB_REF_NAME`, never `${{ }}` inside the script.
+  branch come from `$GITHUB_SHA` / `$GITHUB_REF_NAME`, never `${{ }}` inside the script. The token
+  stays in the step's `env` as `DEPLOYHEALTH_TOKEN` (the CLI's default since 0.3.1) and is never
+  passed as `--token`, so it isn't in the process's arguments; `--url` is quoted.
 - `/deployhealth-scan.mjs` is still served (deprecated, `Deprecation` + `Link` headers from
   `next.config.ts`) for older workflows. Removal is a later phase.
