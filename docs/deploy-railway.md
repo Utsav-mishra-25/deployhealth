@@ -73,6 +73,7 @@ the build command builds the workspace packages it depends on first).
    | `NODE_ENV` | `production` | Literal |
    | `AUTH_GITHUB_ID` | Client ID | The GitHub OAuth app from step 5 (add it then) |
    | `AUTH_GITHUB_SECRET` | Client secret | The GitHub OAuth app from step 5 (add it then) |
+   | `PUBLIC_ORIGIN` | `https://<your-domain>` (the hosted instance: `https://deployhealth.dev`) | web's public origin from step 2.6, no path or trailing slash. Every absolute URL comes from it (security.txt, the sitemap, canonical URLs, the Action snippet, share links), so forged host headers can't change them. Unset, they follow the request's host and the log shows one `PUBLIC_ORIGIN is not set` error at startup. Not read by Auth.js |
    | `REPORT_SHARE_SECRET` | output of `openssl rand -base64 32` | Optional. Signs report share links; see below |
    | `DEMO_PUBLIC` | `1` | Optional. Serves the read-only public demo at `/demo` (and `/api/demo/broken`). `0` or unset turns both off (404) |
    | `PORT` | `3000` | Optional. See step 2.6 |
@@ -97,8 +98,8 @@ the build command builds the workspace packages it depends on first).
 
    **Custom domain** (the hosted instance uses `https://deployhealth.dev`): **Settings →
    Networking → Custom Domain**, add the DNS record Railway shows, and wait for the certificate.
-   Then use the custom domain everywhere a URL is configured: the GitHub OAuth callback (step 5),
-   `DEMO_BASE_URL` (step 3.5) and the GitHub App's webhook URL. The Railway domain keeps working
+   Then use the custom domain everywhere a URL is configured: `PUBLIC_ORIGIN` (step 2.5), the
+   GitHub OAuth callback (step 5), `DEMO_BASE_URL` (step 3.5) and the GitHub App's webhook URL. The Railway domain keeps working
    as an alias, but GitHub sign-in only works on the domain registered as the OAuth callback.
 
 ## 3. Add the `worker` service
@@ -379,6 +380,8 @@ Left out: the demo and dev users, and 2 users matching 2 --exclude-login values.
 | The domain returns "Application failed to respond" | The domain's port isn't the one web listens on. See step 2.6: set `PORT=3000` or use the injected port. |
 | Every page 500s; the log mentions `AUTH_GITHUB_*` | Step 5 isn't done, or a value is empty. |
 | Every page 500s; the log mentions `AUTH_SECRET` | It is shorter than 32 characters. Regenerate it with `openssl rand -base64 32`. |
+| Every page 500s; the log mentions `PUBLIC_ORIGIN must be an origin` | It has a path, query or no scheme. Use just `https://<your-domain>`. |
+| The log shows `PUBLIC_ORIGIN is not set` | Pages work, but absolute URLs follow the request's host headers. Set `PUBLIC_ORIGIN` on web (step 2.5). |
 | GitHub says the redirect URI is not associated | The callback URL doesn't exactly match `https://<your-domain>/api/auth/callback/github`. |
 | Worker logs `waiting for migrations` and restarts every 10 minutes | web hasn't deployed successfully yet, so migrations haven't run. Fix web first. |
 | `/api/health/worker` answers 503 | The worker isn't running, is waiting for migrations, or its `check-endpoints` runs fail (its log says why). |

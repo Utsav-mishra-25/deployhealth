@@ -88,7 +88,10 @@ a URL, a query's scoping, share links, headers, or those pages.
   drift. Keep it true when behaviour changes (anything new that reads repositories goes there). The
   contact is `SECURITY_CONTACT_EMAIL`, else a private GitHub security advisory; the same contact
   goes into `/.well-known/security.txt` (RFC 9116, `Expires` 180 days out, rounded to the day;
-  `no-store`, since its URLs come from the request's host headers).
+  `no-store`: its URLs come from `PUBLIC_ORIGIN`, but without it they'd follow the request's host
+  headers). Every absolute URL comes from `publicOrigin()` (web.md, "The public origin"), so a
+  forged Host or X-Forwarded-Host can't change security.txt, the sitemap, canonical URLs, the
+  Action snippet or share links.
 - **/privacy and /terms** are static pages whose facts live in `lib/legal.ts` (operator and
   country, `LEGAL_LAST_UPDATED`, hosting region, subprocessors, deletion window,
   `CHECK_RETENTION_TEXT`) and `lib/auth-providers.ts` (`GITHUB_OAUTH_SCOPES`, `githubSignInReads()`,

@@ -1,6 +1,6 @@
 import { githubActionSnippet, renderHandoffMarkdown, type HandoffData } from '@deployhealth/core';
 import { getHandoffData } from '@deployhealth/db';
-import { appUrl } from '@/lib/app-url';
+import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 
@@ -9,7 +9,7 @@ export async function loadHandoff(ownerId: string, projectId: string): Promise<H
   if (!isUuid(projectId)) return null;
   const source = await getHandoffData(getDb(), ownerId, projectId);
   if (!source) return null;
-  return { ...source, actionSnippet: githubActionSnippet({ appUrl: await appUrl() }) };
+  return { ...source, actionSnippet: githubActionSnippet({ appUrl: await publicOrigin() }) };
 }
 
 /** The Markdown download: a file, never cached (it's private project data). */
