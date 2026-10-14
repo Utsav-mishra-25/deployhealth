@@ -3,7 +3,7 @@
 import { parseMonth } from '@deployhealth/core';
 import { getClientForOwner } from '@deployhealth/db';
 import { serverEnv } from '@/env';
-import { appUrl } from '@/lib/app-url';
+import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { requireWritableUser } from '@/lib/guard';
@@ -23,5 +23,5 @@ export async function createReportShareLinkAction(clientId: string, month: strin
 
   const expiresAt = shareLinkExpiry(new Date());
   const token = signReportShare({ clientId: client.id, month, expiresAt }, reportShareKey(serverEnv()));
-  return { status: 'created', url: `${await appUrl()}/share/reports/${token}`, expiresAt: expiresAt.toISOString() };
+  return { status: 'created', url: `${await publicOrigin()}/share/reports/${token}`, expiresAt: expiresAt.toISOString() };
 }

@@ -7,7 +7,7 @@ import { CodeBlock } from '@/components/code-block';
 import { AppStatusLine } from '@/components/github-app-status';
 import { SecretSteps } from '@/components/secret-steps';
 import { serverEnv } from '@/env';
-import { appUrl } from '@/lib/app-url';
+import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { DEPLOY_HISTORY_OPTION, PR_CHECKS_OPTION } from '@/lib/setup-copy';
@@ -31,7 +31,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   ]);
   const appSlug = serverEnv().GITHUB_APP_SLUG;
 
-  const url = await appUrl();
+  const url = await publicOrigin();
   const snippet = githubActionSnippet({ appUrl: url });
   const localRun = `${CLI_NPX} --dry-run`;
 

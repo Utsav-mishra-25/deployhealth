@@ -1,19 +1,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { auth, signOut } from '@/auth';
-import { appUrl } from '@/lib/app-url';
+import { publicOrigin } from '@/lib/app-url';
 import { SITE_DESCRIPTION } from '@/lib/brand';
 import { REPO_URL } from '@/lib/legal';
 import './globals.css';
 
 /**
- * Site-wide: absolute URLs for link previews (metadataBase, from the request like every other
+ * Site-wide: absolute URLs for link previews (metadataBase, from publicOrigin() like every other
  * absolute URL here), and Open Graph / Twitter cards that stay generic on every page, so a shared
  * link never unfurls a client's name. The image is app/opengraph-image.tsx.
  */
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    metadataBase: new URL(await appUrl()),
+    metadataBase: new URL(await publicOrigin()),
     title: 'deployhealth',
     description: SITE_DESCRIPTION,
     openGraph: { title: 'deployhealth', description: SITE_DESCRIPTION, siteName: 'deployhealth', type: 'website' },

@@ -16,7 +16,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireWritableUser } from '@/lib/guard';
 import { MAX_DEPLOY_NOTES } from '@/lib/validation';
-import { appUrl } from '@/lib/app-url';
+import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { REPO_FULL_NAME_PATTERN } from '@/lib/github-app';
@@ -79,7 +79,7 @@ export async function createProjectAction(_prev: CreateProjectState, form: FormD
       projectId: project.id,
       projectName: project.name,
       token,
-      snippet: githubActionSnippet({ appUrl: await appUrl() }),
+      snippet: githubActionSnippet({ appUrl: await publicOrigin() }),
     };
   } catch (error) {
     if (error instanceof DuplicateProjectNameError) {
@@ -106,7 +106,7 @@ export async function regenerateTokenAction(projectId: string, _prev: Regenerate
   if (!ok) return { status: 'error', message: 'Project not found.' };
 
   revalidatePath(`/projects/${projectId}/settings`);
-  return { status: 'created', projectId, projectName: '', token, snippet: githubActionSnippet({ appUrl: await appUrl() }) };
+  return { status: 'created', projectId, projectName: '', token, snippet: githubActionSnippet({ appUrl: await publicOrigin() }) };
 }
 
 export type SettingsState =

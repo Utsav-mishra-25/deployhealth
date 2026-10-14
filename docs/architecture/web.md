@@ -13,6 +13,7 @@ apps/
     src/env.ts        the ONLY place web reads process.env (by name, validated lazily)
     src/auth.ts       Auth.js v5: GitHub OAuth + dev-only dev login, JWT sessions, no adapter
     src/middleware.ts rate limits for /share/* and /api/health/worker (Node runtime, in memory)
+    src/instrumentation.ts  at startup: one error if PUBLIC_ORIGIN is missing in production
     src/lib/          ingest handler, validation (zod), guard (read-only demo), demo owner, paths,
                       handoff loader, share-link signing, rate limiter, auth providers (+ the OAuth
                       scopes and what sign-in reads), formatting, github-webhook.ts (signature,
@@ -21,8 +22,8 @@ apps/
                       subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts,
                       worker-health.ts (the deep health check's response), github-app.ts (project
                       prefill and safe return paths for the App's next steps), security.ts
-                      (security.txt and the security contact), app-url.ts (the public base URL from
-                      the request's headers), db.ts (the shared database handle), project-status.ts
+                      (security.txt and the security contact), app-url.ts (`publicOrigin()`: every
+                      absolute URL, from PUBLIC_ORIGIN), db.ts (the shared database handle), project-status.ts
                       (one status per project, its reasons, ordering, the summary line),
                       deploy-changes.ts (a deploy's "what changed" and outage lines, commit links)
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
@@ -72,8 +73,8 @@ And in core, for client components:
   logos or marks, nothing implying an affiliation), then `LANGUAGES_SENTENCE`; it links /docs.
 - **Docs pages** (`/docs`, `/docs/nextjs`, `/docs/laravel`, `/docs/spring-boot`; the slugs are
   `DOCS_STACK_SLUGS` in core, shared with the worker's PR comment footer): static server components
-  rendered from `lib/docs-pages.ts`, no session or user data, indexed, canonical URLs (from the
-  request's host, like `metadataBase` and the sitemap, until the public origin is settled), titles under
+  rendered from `lib/docs-pages.ts`, no session or user data, indexed, canonical URLs (resolved
+  against `metadataBase`, from `publicOrigin()` like the sitemap), titles under
   60 characters and descriptions under 155, in the sitemap, linked from the landing page and the
   footer. Each stack page is problem-first ("How to catch a missing env var in <stack> before it
   reaches production"): read forms, defaults and OPTIONAL, skips, known limits, setup, the no-signup
@@ -118,7 +119,17 @@ And in core, for client components:
   scopes (CLI 0.2.0+) and referenced no variable at all (`ScanDetail.noEnvVarReferences`); older
   scans show nothing. A pull request check that's neutral with nothing flagged reads "Not checked"
   (a can't-check run; `prResult`).
-- **Metadata:** the root layout sets `metadataBase` from `appUrl()` and generic Open Graph / Twitter
+- **The public origin:** every absolute URL (security.txt, the sitemap, `metadataBase` and so
+  canonical and Open Graph URLs, the Action snippet on the settings page, after creating a project
+  and in the handoff, share links) comes from `publicOrigin()` / `publicOriginFor(headers)` in
+  `lib/app-url.ts`: `PUBLIC_ORIGIN` (an origin only, validated in `env.ts`; not an Auth.js
+  variable, so sign-in still follows the request's host with `trustHost`). Unset, it falls back to
+  the request's Host / X-Forwarded-Host (development; in production `instrumentation.ts` logs one
+  error at startup and pages keep working). It always reads the request headers, so the pages
+  using it render on request as before, never prerendered with build-time env.
+  `test/public-origin.test.ts` and the e2e spoof test check a forged Host or X-Forwarded-Host
+  never wins when it's set.
+- **Metadata:** the root layout sets `metadataBase` from `publicOrigin()` and generic Open Graph / Twitter
   (`summary_large_image`) cards titled "deployhealth" on every page, so link previews never carry a
   client's name. `app/opengraph-image.tsx` (next/og, its bundled font, rendered at build) is the
   preview. Page titles come from `lib/titles.ts`: "<project> · deployhealth", "Handoff · <project>

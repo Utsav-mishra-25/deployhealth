@@ -22,6 +22,24 @@ const schema = z
     SECURITY_CONTACT_EMAIL: z.email('SECURITY_CONTACT_EMAIL must be an email address').optional(),
     /** Verifies GitHub App webhook deliveries (X-Hub-Signature-256). Unset: the webhook answers 404. */
     GITHUB_APP_WEBHOOK_SECRET: z.string().min(16, 'GITHUB_APP_WEBHOOK_SECRET must be at least 16 characters (openssl rand -hex 32)').optional(),
+    /**
+     * This deployment's public origin (https://deployhealth.dev): scheme, host and optional port, no
+     * path. Every absolute URL comes from it (lib/app-url.ts). Not an Auth.js variable: sign-in
+     * still follows the request's host (trustHost). Should be set in production; unset, URLs fall
+     * back to the request's headers and one error is logged.
+     */
+    PUBLIC_ORIGIN: z
+      .string()
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return (url.protocol === 'https:' || url.protocol === 'http:') && url.origin === value.replace(/\/$/, '');
+        } catch {
+          return false;
+        }
+      }, 'PUBLIC_ORIGIN must be an origin like https://deployhealth.dev (scheme and host, optional port, no path)')
+      .transform((value) => new URL(value).origin)
+      .optional(),
     /** The App's URL name, for the install link github.com/apps/<slug>/installations/new. */
     GITHUB_APP_SLUG: z
       .string()
@@ -55,6 +73,7 @@ export function serverEnv(): ServerEnv {
     SECURITY_CONTACT_EMAIL: process.env.SECURITY_CONTACT_EMAIL || undefined,
     GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET || undefined,
     GITHUB_APP_SLUG: process.env.GITHUB_APP_SLUG || undefined,
+    PUBLIC_ORIGIN: process.env.PUBLIC_ORIGIN || undefined,
   });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.') || 'env'}: ${i.message}`).join('\n');
