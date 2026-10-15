@@ -87,12 +87,13 @@ describe('/security states what the code does', () => {
     expect(text).not.toMatch(/flood/);
   });
 
-  it('states strict mode plainly: too large fails, a check that couldn\'t run stays neutral and passes', () => {
+  it("states strict mode's limit plainly: couldn't be checked and too large are neutral, which GitHub counts as passing", () => {
     const text = plain(render(SecurityPage)).replace(/\s+/g, ' ');
-    expect(text).toContain('In strict mode, a pull request that is too large to check');
-    expect(text).toContain("fails, so it can't pass the gate unchecked.");
-    expect(text).toContain("A check that couldn't run at all (it crashed, ran out of time, or hit an error on our side) is neutral even in strict mode");
-    expect(text).toContain("GitHub counts a neutral check as passing: strict mode doesn't block a merge when the check itself fails.");
+    expect(text).toContain(
+      "Strict mode's limit: a pull request that couldn't be checked (the check crashed, ran out of time, or hit an error on our side) or was too large to check",
+    );
+    expect(text).toContain('gets a neutral check run, even in strict mode, and GitHub counts a neutral check as passing.');
+    expect(text).toContain('Strict mode blocks a merge only for what a check actually found.');
   });
 
   it('says spacing is per hostname, so different names for one server are spaced separately', () => {
