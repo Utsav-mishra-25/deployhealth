@@ -72,6 +72,6 @@ a real scan (the worker's `reseed-demo` job never prints it):
 
 ```sh
 pnpm --filter @deployhealth/core build
-node packages/core/bin/deployhealth-scan.mjs --url http://localhost:3000 --token dh_... \
+DEPLOYHEALTH_TOKEN=dh_... node packages/core/bin/deployhealth-scan.mjs --url http://localhost:3000 \
   --dir packages/core/test/fixtures/project --sha 0123456789abcdef0123456789abcdef01234567 --branch main
 ```
