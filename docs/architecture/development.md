@@ -21,6 +21,7 @@ Phase 6 (readable data and stats, the docs pages, the **deployhealth env check**
 Marketplace, the footer docs link, and the security review's items: a hardened publish workflow,
 per-hostname spacing worded as it works, a bounded DNS resolver and a limit on endpoint saves, an
 App status that can't reveal other accounts' repositories, absolute URLs from `PUBLIC_ORIGIN`,
+strict mode failing a pull request too large to check,
 the token kept out of the Action snippet's command line, and e2e on a production build) are built.
 
 ## Repository files
