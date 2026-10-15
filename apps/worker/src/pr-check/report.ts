@@ -98,10 +98,13 @@ const hasFindings = (r: PrReport) => r.undeclared.length > 0 || r.envFiles.lengt
 
 /**
  * success: nothing undeclared, no env files, no secrets. Otherwise neutral in comment mode and
- * failure in strict mode. A check stopped by a hard cap is neutral: our limit isn't the PR's fault.
+ * failure in strict mode. A check stopped by a hard cap (too large to check) is neutral in comment
+ * mode and failure in strict mode: GitHub counts neutral as passing a required check, so an
+ * oversized pull request must not slip past a strict gate. A check that couldn't run at all (the
+ * isolate crashed or timed out, or our own error: `uncheckableOutput()`) stays neutral in every mode.
  */
 export function conclusionFor(report: PrReport, mode: Exclude<PrCheckMode, 'off'>): PrCheck['conclusion'] {
-  if (report.tooLarge) return 'neutral';
+  if (report.tooLarge) return mode === 'strict' ? 'failure' : 'neutral';
   // A repo it can't read is never a pass, nor a reason to block a merge, unless something it can
   // check without reading code (a committed env file, a secret) was found.
   if (!hasFindings(report)) return report.outcome === 'cant-check' ? 'neutral' : 'success';
@@ -240,7 +243,9 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
   const n = totals(r);
   const cantCheck = r.outcome === 'cant-check';
   const headline = cantCheck ? titleFor(r) : summaryLine(r);
-  const lines = [COMMENT_MARKER, `### ${COMMENT_TITLE}`, '', `${r.tooLarge || (cantCheck && !hasFindings(r)) ? 'ℹ️' : status} **${headline}.**`];
+  const icon = r.tooLarge ? (mode === 'strict' ? '❌' : 'ℹ️') : cantCheck && !hasFindings(r) ? 'ℹ️' : status;
+  const lines = [COMMENT_MARKER, `### ${COMMENT_TITLE}`, '', `${icon} **${headline}.**`];
+  if (r.tooLarge && mode === 'strict') lines.push('', `Strict mode fails it. Split the pull request into smaller ones. ${STRICT_TOO_LARGE_SUMMARY}`);
   if (cantCheck) {
     lines.push('', `deployhealth reads ${SUPPORTED_LANGUAGES_AND}; ${UNREAD_LANGUAGES_TEXT} aren't read yet ([which languages](${LANGUAGES_DOC_URL})).`);
   }
@@ -286,8 +291,11 @@ export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): 
   const inline = r.undeclared.slice(0, MAX_INLINE).map((v) => `\`${name(v)}\``);
   const more = n.undeclared > inline.length ? ` and ${n.undeclared - inline.length} more` : '';
   const changes = changesLine(r);
+  const strictTooLarge = r.tooLarge !== null && conclusion === 'failure';
   const first = r.tooLarge
-    ? [r.tooLarge]
+    ? strictTooLarge
+      ? [r.tooLarge, STRICT_TOO_LARGE_SUMMARY]
+      : [r.tooLarge]
     : r.outcome === 'cant-check' || r.outcome === 'nothing-changed'
       ? changes
         ? [`${capitalize(changes)}.`]
@@ -295,11 +303,20 @@ export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): 
       : [`${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${inline.join(', ')}${more}.` : ''}`];
   return {
     conclusion,
-    title: shorten(titleFor(r), MAX_TITLE),
+    title: shorten(strictTooLarge ? strictTooLargeTitle(r.tooLarge!) : titleFor(r), MAX_TITLE),
     summary: fitLines([...first, ...coverageLines(r)].join('\n\n').split('\n'), MAX_GITHUB_TEXT),
     text: text.length ? fitLines(text, MAX_GITHUB_TEXT) : undefined,
   };
 }
+
+/** The strict-mode title of a check stopped by a hard cap: why, and what to do. */
+export const strictTooLargeTitle = (reason: string) =>
+  `Too large to check, so strict mode fails it: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/; too large to check\.$/, '.')} Split the pull request into smaller ones.`;
+
+export const STRICT_TOO_LARGE_SUMMARY =
+  'Strict mode fails a pull request it can\'t check because of these limits, so an oversized one can\'t pass the gate unchecked. ' +
+  'The limits count every file the check reads at base and head, not only the changed ones: if the repository itself is this large, ' +
+  'every pull request will hit them, and comment mode keeps the checks informational instead.';
 
 export const UNCHECKABLE_TITLE = "Couldn't be checked";
 export const UNCHECKABLE_SUMMARY =

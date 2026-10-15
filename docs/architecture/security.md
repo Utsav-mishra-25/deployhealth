@@ -21,6 +21,8 @@ a URL, a query's scoping, share links, headers, or those pages.
   (`createFetchBudget()`: `take(size)` per distinct path + blob before any download, `verify()`
   after), and `PR_CHECK_TIME_LIMIT_MS` (60 s) of scanning per pull request check (isolate.ts).
   Exceeding one throws `LimitExceededError`, whose message is safe to show.
+  In strict mode a pull request check stopped by a cap fails; one that couldn't run at all (crash,
+  timeout, our own error) stays neutral even in strict mode, which /security states (github-app.md).
 
 ## SSRF
 

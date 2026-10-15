@@ -231,14 +231,35 @@ describe('prCheck against a mocked Octokit', () => {
 });
 
 describe('hard caps on what a check fetches', () => {
-  it('refuses a pull request needing more than 2,000 files before downloading them', async () => {
-    const big = Object.fromEntries(Array.from({ length: MAX_PR_CHECK_FILES + 1 }, (_, i) => [`src/f${i}.ts`, `export const v${i} = ${i};`]));
+  const big = Object.fromEntries(Array.from({ length: MAX_PR_CHECK_FILES + 1 }, (_, i) => [`src/f${i}.ts`, `export const v${i} = ${i};`]));
+
+  it('refuses a pull request needing more than 2,000 files before downloading them: failure in strict mode, saying why', async () => {
     const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, ...big } } }));
     const { deps, rows } = harness(mock, { mode: 'strict' });
-    expect(await prCheck(JOB, deps)).toBe('neutral');
-    expect(rows[0]).toMatchObject({ conclusion: 'neutral', addedVars: [], undeclaredVars: [] });
+    expect(await prCheck(JOB, deps)).toBe('failure');
+    expect(rows[0]).toMatchObject({ conclusion: 'failure', addedVars: [], undeclaredVars: [] });
     expect(mock.calls.filter((c) => c.startsWith('git.getBlob'))).toEqual([]);
-    expect([...mock.state.comments.values()][0]!.body).toContain('needs more than 2000 files; too large to check');
+    const run = [...mock.state.checkRuns.values()][0]!;
+    expect(run).toMatchObject({
+      conclusion: 'failure',
+      title: 'Too large to check, so strict mode fails it: this pull request needs more than 2000 files. Split the pull request into smaller ones.',
+    });
+    expect(run.summary).toContain('if the repository itself is this large, every pull request will hit them');
+    const body = [...mock.state.comments.values()][0]!.body;
+    expect(body).toContain('❌ **This pull request needs more than 2000 files; too large to check.');
+    expect(body).toContain('Strict mode fails it. Split the pull request into smaller ones.');
+  });
+
+  it('the same pull request in comment mode is neutral, as before', async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...BASE, ...big } } }));
+    const { deps, rows } = harness(mock, { mode: 'comment' });
+    expect(await prCheck(JOB, deps)).toBe('neutral');
+    expect(rows[0]).toMatchObject({ conclusion: 'neutral' });
+    const run = [...mock.state.checkRuns.values()][0]!;
+    expect(run).toMatchObject({ conclusion: 'neutral', title: 'This pull request needs more than 2000 files; too large to check.' });
+    const body = [...mock.state.comments.values()][0]!.body;
+    expect(body).toContain('ℹ️ **This pull request needs more than 2000 files; too large to check.');
+    expect(body).not.toContain('Strict mode');
   });
 
   it('counts every path toward the 2,000-file cap, even when they all share one blob', async () => {
@@ -302,6 +323,14 @@ describe("a check the isolate can't finish", () => {
     // Running the same head again updates that check run in place.
     expect(await prCheck(JOB, { ...deps, openIsolate: () => openPrCheckIsolate({ limitMs: 50 }) })).toBe('neutral');
     expect(mock.state.checkRuns.size).toBe(1);
+  });
+
+  it('stays neutral in strict mode too: an infrastructure failure never blocks a merge', async () => {
+    const mock = mockOctokit(repo({ commits: { base1: BASE, head1: { ...HEAD, ...heavy } } }));
+    const { deps, rows } = harness(mock, { mode: 'strict' });
+    expect(await prCheck(JOB, { ...deps, openIsolate: () => openPrCheckIsolate({ limitMs: 50 }) })).toBe('neutral');
+    expect(rows).toEqual([expect.objectContaining({ conclusion: 'neutral' })]);
+    expect([...mock.state.checkRuns.values()]).toEqual([{ headSha: 'head1', conclusion: 'neutral', title: UNCHECKABLE_TITLE, summary: UNCHECKABLE_SUMMARY, text: undefined }]);
   });
 
   it('still throws (so the queue retries) when GitHub fails', async () => {
