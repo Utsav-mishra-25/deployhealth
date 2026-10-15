@@ -13,7 +13,7 @@ apps/
     src/env.ts        the ONLY place web reads process.env (by name, validated lazily)
     src/auth.ts       Auth.js v5: GitHub OAuth + dev-only dev login, JWT sessions, no adapter
     src/middleware.ts rate limits for /share/* and /api/health/worker (Node runtime, in memory)
-    src/instrumentation.ts  at startup: one error if PUBLIC_ORIGIN is missing in production
+    src/instrumentation.ts  at startup: one error if PUBLIC_ORIGIN is invalid, or missing in production
     src/lib/          ingest handler, validation (zod), guard (read-only demo), demo owner, paths,
                       handoff loader, share-link signing, rate limiter, auth providers (+ the OAuth
                       scopes and what sign-in reads), formatting, github-webhook.ts (signature,
@@ -123,10 +123,12 @@ And in core, for client components:
 - **The public origin:** every absolute URL (security.txt, the sitemap, `metadataBase` and so
   canonical and Open Graph URLs, the Action snippet on the settings page, after creating a project
   and in the handoff, share links) comes from `publicOrigin()` / `publicOriginFor(headers)` in
-  `lib/app-url.ts`: `PUBLIC_ORIGIN` (an origin only, validated in `env.ts`; not an Auth.js
-  variable, so sign-in still follows the request's host with `trustHost`). Unset, it falls back to
-  the request's Host / X-Forwarded-Host (development; in production `instrumentation.ts` logs one
-  error at startup and pages keep working). It always reads the request headers, so the pages
+  `lib/app-url.ts`: `PUBLIC_ORIGIN` (an origin only; one trailing slash is dropped; parsed by
+  `parsePublicOrigin()`, never by `env.ts`'s validation, so it can't fail the environment; not an
+  Auth.js variable, so sign-in still follows the request's host with `trustHost`). Unset or
+  invalid, it falls back to the request's Host / X-Forwarded-Host, and `instrumentation.ts` logs
+  one error at startup naming the variable and what's wrong (an invalid value in any mode, a
+  missing one in production only); pages never fail over it. It always reads the request headers, so the pages
   using it render on request as before, never prerendered with build-time env.
   `test/public-origin.test.ts` and the e2e spoof test check a forged Host or X-Forwarded-Host
   never wins when it's set.
