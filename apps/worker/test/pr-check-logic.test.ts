@@ -6,6 +6,7 @@ import { committedEnvFiles, diffEnvVars, isCommittableSecretEnvFile } from '../s
 import {
   CANT_CHECK_TITLE,
   checkRunOutput,
+  uncheckableOutput,
   COMMENT_MARKER,
   conclusionFor,
   emptyReport,
@@ -191,14 +192,26 @@ describe('conclusions and the comment', () => {
     undeclared: ['CACHE_TTL'],
   });
 
-  it('is success with nothing to flag, neutral in comment mode, failure in strict mode, neutral when too large', () => {
+  it('is success with nothing to flag, neutral in comment mode, failure in strict mode; too large is failure only in strict mode', () => {
     const declaredOnly = report({ added: [{ name: 'X', refs: [{ file: 'a.ts', line: 1 }], total: 1, declared: true }] });
     for (const mode of ['comment', 'strict'] as const) expect(conclusionFor(declaredOnly, mode)).toBe('success');
     expect(conclusionFor(undeclared, 'comment')).toBe('neutral');
     expect(conclusionFor(undeclared, 'strict')).toBe('failure');
     expect(conclusionFor(report({ envFiles: [{ path: '.env', added: true }] }), 'strict')).toBe('failure');
     expect(conclusionFor(report({ secrets: [{ rule: 'github-token', file: 'a', line: 1 }] }), 'comment')).toBe('neutral');
-    expect(conclusionFor(emptyReport('This pull request needs more than 2000 files; too large to check.'), 'strict')).toBe('neutral');
+    const tooLarge = emptyReport('This pull request needs more than 2000 files; too large to check.');
+    expect(conclusionFor(tooLarge, 'strict')).toBe('failure');
+    expect(conclusionFor(tooLarge, 'comment')).toBe('neutral');
+    const truncated = emptyReport('This repository has too many files for GitHub to list in one tree, so it was not checked.');
+    expect(conclusionFor(truncated, 'strict')).toBe('failure');
+    expect(conclusionFor(truncated, 'comment')).toBe('neutral');
+    // The title says why and what to do, within GitHub's limit; comment mode keeps the plain line.
+    expect(checkRunOutput(truncated, 'failure').title).toBe(
+      'Too large to check, so strict mode fails it: this repository has too many files for GitHub to list in one tree, so it was not checked. Split the pull request into smaller ones.',
+    );
+    expect(checkRunOutput(truncated, 'neutral').title).toBe('This repository has too many files for GitHub to list in one tree, so it was not checked.');
+    // A check that couldn't run is neutral whatever the mode.
+    expect(uncheckableOutput().conclusion).toBe('neutral');
   });
 
   it('renders one marked comment with tables and file:line, never values', () => {

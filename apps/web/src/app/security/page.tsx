@@ -112,6 +112,12 @@ export default function SecurityPage() {
           &ldquo;Couldn&apos;t be checked&rdquo; check run and no comment, and isn&apos;t retried. A slow pull request
           can&apos;t hold up anyone&apos;s uptime checks or alerts.
         </p>
+        <p data-testid="strict-mode-limits">
+          In strict mode, a pull request that is too large to check (past the limits above, or a repository GitHub can&apos;t
+          list in one tree) fails, so it can&apos;t pass the gate unchecked. A check that couldn&apos;t run at all (it crashed,
+          ran out of time, or hit an error on our side) is neutral even in strict mode, and GitHub counts a neutral check as
+          passing: strict mode doesn&apos;t block a merge when the check itself fails.
+        </p>
         <p>
           It stores what it reports: variable names with file:line, the names of committed env files, how many secret-shaped
           strings it saw (never the strings), the pull request number, its author and whether a coding agent wrote it. File

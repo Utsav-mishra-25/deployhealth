@@ -454,14 +454,16 @@ PR opened / pushed ─▶ GitHub ─▶ POST /api/github/webhook ─▶ pr-check
    and reads the pull request's head and merge base: both git trees, then only the files the
    scanner reads (the CLI's rules, except `.gitignore`: git never ignores a file it tracks), each
    distinct blob once, plus the pull request's diff for secret patterns. At most 2,000 files and
-   20 MB (each path counts); past that the check says so and stays neutral. All of it goes through
+   20 MB (each path counts); past that the check says so and is neutral, or fails in strict mode
+   (its title suggests splitting the pull request). All of it goes through
    the SSRF-guarded client, to api.github.com only. Which of the [three outcomes](#pull-request-checks)
    applies is worked out from the two tree listings before any file is downloaded: a repo it can't
    check, or a pull request that changes nothing it reads, downloads no file at all.
 4. **The scanning** (choosing files, scanning both sides, the diff, the secret search) runs in a
    worker thread, apart from uptime checks, and is stopped after 60 seconds of work. A pull
    request it can't finish gets a neutral "Couldn't be checked" check run and no comment, and
-   isn't retried; GitHub and database errors are.
+   isn't retried; GitHub and database errors are. That stays neutral in strict mode too, and
+   GitHub counts neutral as passing, so a check that fails to run doesn't block a merge.
 5. **The report** is stored per head (`pr_checks`), the one comment is updated in place (found by a
    hidden `<!-- deployhealth-env-check -->` marker on a comment this App posted, if needed), and the
    head gets its check run. Both stay within GitHub's 65,535-character limit ("…and N more").

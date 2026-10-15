@@ -45,7 +45,7 @@ sandbox; a quadratic version ran past 98 s). `build.ts` decides the outcome from
 blob is downloaded**. The outcomes, in order:
 
 1. Mode `off` → nothing at all.
-2. A tree GitHub truncated → neutral "too large to check".
+2. A tree GitHub truncated → "too large to check": neutral, failure in strict mode (see below).
 3. The isolate fails during selection → neutral "Couldn't be checked", no comment, no retry.
 4. **Can't check:** head holds no supported source file (env and declaration files don't count;
    tests and vendored code don't either) → no blob downloads; only the checks that don't depend on
@@ -57,7 +57,17 @@ blob is downloaded**. The outcomes, in order:
    findings no longer describe the head). Something flagged → today's conclusion and comment
    (strict fails), titled e.g. `Committed env file found; deployhealth can't check env vars in this
    repo yet (no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files)`.
-5. The fetch caps (2,000 files / 20 MB) → neutral "too large to check".
+5. The fetch caps (2,000 files / 20 MB) → "too large to check": neutral, failure in strict mode.
+
+**Strict mode and the two "not checked" kinds.** GitHub counts a neutral check as passing a
+required check, so in strict mode a pull request that is **too large to check** (2 and 5) is a
+**failure**, titled `Too large to check, so strict mode fails it: <why>. Split the pull request into
+smaller ones.`, with a summary saying the caps count every file read at base and head, so a
+repository that is itself that large hits them on every pull request and should use comment mode
+(`strictTooLargeTitle`, `STRICT_TOO_LARGE_SUMMARY`). A check that **couldn't be checked** (3 and 6:
+the isolate crashed, timed out or ran out of memory, or our own error) stays **neutral in every
+mode, strict included**: an infrastructure failure never blocks a merge, which is the remaining
+limit of strict mode, stated on /security. Comment mode is unchanged.
 6. The isolate fails during the analysis → "Couldn't be checked", as 3.
 7. **Nothing changed that it reads:** the pull request changes no read file → no blob downloads,
    the secret search still runs; nothing flagged → success, titled
@@ -118,8 +128,8 @@ pull_requests: write; events: pull_request; installation events arrive regardles
   distinct blob downloaded once; then in the isolate `scanFiles()` on both sides; `diffEnvVars()` (variable level; rename =
   removed + added in the same file; declared = in the `.env.example` of every scope that reads it);
   committed env files the PR adds or changes; `findSecrets()` on added lines (rule + file:line only).
-  A cap → neutral "too large to check"; the isolate failing → neutral "Couldn't be checked", no
-  comment, no retry. Conclusion: success when nothing is undeclared and no env files or secrets;
+  A cap → "too large to check" (neutral; failure in strict mode); the isolate failing → neutral
+  "Couldn't be checked" in every mode, no comment, no retry. Conclusion: success when nothing is undeclared and no env files or secrets;
   else neutral (comment) or failure (strict).
 - **"What this checks".** The comment's footer links a docs page (`framework.ts`, in the isolate):
   `/docs/nextjs` for a `next.config.js|mjs|cjs|ts` file and `/docs/laravel` for an `artisan` file
