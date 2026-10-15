@@ -182,8 +182,8 @@ names they define; values are neither sent nor printed.
 -h, --help           show this help
 ```
 
-The token can come from the `DEPLOYHEALTH_TOKEN` environment variable instead of `--token`, which
-keeps it out of process listings. A `--url` that is plain `http:` to anything but this machine
+Prefer the `DEPLOYHEALTH_TOKEN` environment variable to `--token`, as the workflow above does: it
+keeps the token out of process listings. A `--url` that is plain `http:` to anything but this machine
 prints a warning: the token and the report would travel unencrypted.
 
 Exit codes: `0` success, `1` the report failed (network or HTTP error), `2` usage error.
