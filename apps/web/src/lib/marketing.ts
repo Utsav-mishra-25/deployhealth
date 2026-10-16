@@ -30,7 +30,7 @@ export const WHO_FOR = [
     title: 'Freelancers and agencies',
     lead: TAGLINE,
     points: [
-      'A monthly report per client (uptime, incidents, deploys, config fixed), with a share link you can send them.',
+      'A monthly report per client (uptime, incidents, deploys, config issues fixed), with a share link you can send them.',
       'A handoff doc when the project ends: env vars, endpoints and how to deploy, printable or as Markdown.',
     ],
   },
