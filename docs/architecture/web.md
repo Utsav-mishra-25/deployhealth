@@ -80,13 +80,17 @@ And in core, for client components:
   subline, See the live demo (only with `DEMO_PUBLIC=1`) and Sign in with GitHub, the docs link,
   "Free during the beta."); one committed screenshot of /demo's clients list
   (`public/landing/demo-clients.png`, 2x, light, from a production build with demo data, under
-  200 KB, a plain `<img>` with width, height and alt; retake it when the list's look changes);
+  200 KB, a plain `<img>` with width, height and alt; retake it when the list's look changes;
+  with `DEMO_PUBLIC=1` it links to /demo, the link named "Open the live demo: " plus the alt);
   "What an alert looks like (live from the demo)", the example alert built by
   `alertOpenedMessage()` with the demo incident's values (`lib/landing.ts`, tested against the
-  seed); who it's for (freelancers and agencies; small dev teams, with the Dependabot comparison:
+  seed), labelled "Alerts like this go to Slack or Discord." (the demo has no webhook, so never
+  "posted"); who it's for (freelancers and agencies; small dev teams, with the Dependabot comparison:
   a comparison only, no logos or marks, nothing implying an affiliation); how it works in the real
   setup order (the App, no token; your sites; optionally the Action); pricing; the FAQ as plain
-  `<details>` (the `LANGUAGES_SENTENCE` lives there, not in the hero); the trust strip. The bundle
+  `<details>` (the stack answer is `FAQ_STACK_SENTENCE`: one line, its "Supported today" list
+  pinned to core's `SUPPORTED_LANGUAGES`; `LANGUAGES_SENTENCE` isn't on the landing page); the
+  trust strip. The bundle
   size it states is `CLI_BUNDLE_KB` (core), pinned to the built CLI by `test/npm-package.test.ts`.
   All the copy is in `lib/marketing.ts`.
 - **Pricing** (`/pricing`, and the landing page's section, both `PricingPlans`): only what's true
