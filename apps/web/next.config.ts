@@ -28,7 +28,7 @@ export const ALL_ROUTES = '/:path*';
 const config: NextConfig = {
   // The workspace packages ship TypeScript source.
   transpilePackages: ['@deployhealth/core', '@deployhealth/db'],
-  serverExternalPackages: ['pg', 'pg-boss'],
+  serverExternalPackages: ['pg', 'pg-boss', '@sentry/node'],
   // Lint runs once for the whole repo (`pnpm lint`), not inside `next build`.
   eslint: { ignoreDuringBuilds: true },
   poweredByHeader: false,

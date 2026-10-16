@@ -29,6 +29,10 @@ const schema = z
      * sign-in still follows the request's host (trustHost).
      */
     PUBLIC_ORIGIN: z.string().optional(),
+    /** Sentry's DSN, raw: error reports are on only when it parses (@deployhealth/db/sentry). Optional. */
+    SENTRY_DSN: z.string().optional(),
+    /** The commit being deployed, set by Railway: Sentry's release. Raw; only a hex SHA is used. */
+    RAILWAY_GIT_COMMIT_SHA: z.string().optional(),
     /** The App's URL name, for the install link github.com/apps/<slug>/installations/new. */
     GITHUB_APP_SLUG: z
       .string()
@@ -68,6 +72,8 @@ export function serverEnv(): ServerEnv {
     GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET || undefined,
     GITHUB_APP_SLUG: process.env.GITHUB_APP_SLUG || undefined,
     PUBLIC_ORIGIN: process.env.PUBLIC_ORIGIN || undefined,
+    SENTRY_DSN: process.env.SENTRY_DSN || undefined,
+    RAILWAY_GIT_COMMIT_SHA: process.env.RAILWAY_GIT_COMMIT_SHA || undefined,
   });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.') || 'env'}: ${i.message}`).join('\n');
