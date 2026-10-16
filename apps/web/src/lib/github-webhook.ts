@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { MAX_WEBHOOK_BODY_BYTES, type PrCheckJobData } from '@deployhealth/core';
-import type { InstallationInput } from '@deployhealth/db';
+import type { InstallationInput, RepositorySelection } from '@deployhealth/db';
 import { z } from 'zod';
 import { readBodyUpTo } from './read-body';
 
@@ -17,7 +17,10 @@ export interface GithubWebhookDeps {
   recordDelivery: (deliveryId: string) => Promise<boolean>;
   forgetDelivery: (deliveryId: string) => Promise<void>;
   upsertInstallation: (input: InstallationInput, repos?: readonly string[]) => Promise<unknown>;
-  changeInstallationRepos: (githubInstallationId: number, change: { added: string[]; removed: string[] }) => Promise<unknown>;
+  changeInstallationRepos: (
+    githubInstallationId: number,
+    change: { added: string[]; removed: string[]; repositorySelection?: RepositorySelection },
+  ) => Promise<unknown>;
   setInstallationSuspended: (githubInstallationId: number, at: Date | null) => Promise<unknown>;
   deleteInstallation: (githubInstallationId: number) => Promise<unknown>;
   markPullRequestClosed: (githubInstallationId: number, repoFullName: string, prNumber: number, at: Date | null) => Promise<unknown>;
@@ -37,15 +40,18 @@ export function verifySignature(secret: string, body: Buffer, header: string | n
 
 const repo = z.object({ full_name: z.string().min(3).max(200) });
 const installationRef = z.object({ id: z.number().int() });
+/** "All repositories" or "Only select repositories"; anything else is dropped (and an existing value kept). */
+const repositorySelection = z.enum(['all', 'selected']).optional().catch(undefined);
 const installationEvent = z.object({
   action: z.string(),
-  installation: installationRef.extend({ account: z.object({ login: z.string(), type: z.string() }) }),
+  installation: installationRef.extend({ account: z.object({ login: z.string(), type: z.string() }), repository_selection: repositorySelection }),
   sender: z.object({ id: z.number().int() }),
   repositories: z.array(repo).optional(),
 });
 const installationReposEvent = z.object({
   action: z.string(),
   installation: installationRef,
+  repository_selection: repositorySelection,
   repositories_added: z.array(repo).default([]),
   repositories_removed: z.array(repo).default([]),
 });
@@ -107,7 +113,13 @@ async function dispatch(event: string, payload: unknown, deps: GithubWebhookDeps
     case 'installation': {
       const e = installationEvent.parse(payload);
       const id = e.installation.id;
-      const input = { githubInstallationId: id, accountLogin: e.installation.account.login, accountType: e.installation.account.type, installerGithubId: e.sender.id };
+      const input: InstallationInput = {
+        githubInstallationId: id,
+        accountLogin: e.installation.account.login,
+        accountType: e.installation.account.type,
+        installerGithubId: e.sender.id,
+        ...(e.installation.repository_selection ? { repositorySelection: e.installation.repository_selection } : {}),
+      };
       if (e.action === 'created') await deps.upsertInstallation(input, (e.repositories ?? []).map((r) => r.full_name));
       else if (e.action === 'new_permissions_accepted' || e.action === 'unsuspend') {
         await deps.upsertInstallation(input);
@@ -122,6 +134,7 @@ async function dispatch(event: string, payload: unknown, deps: GithubWebhookDeps
       await deps.changeInstallationRepos(e.installation.id, {
         added: e.repositories_added.map((r) => r.full_name),
         removed: e.repositories_removed.map((r) => r.full_name),
+        ...(e.repository_selection ? { repositorySelection: e.repository_selection } : {}),
       });
       return 'handled';
     }

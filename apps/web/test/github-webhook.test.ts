@@ -149,6 +149,22 @@ describe('events', () => {
     ]);
   });
 
+  it("passes GitHub's repository_selection on (all or selected) and drops any other value", async () => {
+    const { deps, calls } = setup();
+    const all = { action: 'created', installation: { id: 7, account: { login: 'acme', type: 'User' }, repository_selection: 'all' }, sender: { id: 101 } };
+    await handleGithubWebhook(delivery('installation', all), deps);
+    await handleGithubWebhook(delivery('installation', { ...all, installation: { ...all.installation, repository_selection: 'some-new-mode' } }), deps);
+    await handleGithubWebhook(
+      delivery('installation_repositories', { action: 'removed', installation: { id: 7 }, repository_selection: 'selected', repositories_added: [], repositories_removed: [{ full_name: 'acme/x' }] }),
+      deps,
+    );
+    expect(calls).toEqual([
+      'upsert {"githubInstallationId":7,"accountLogin":"acme","accountType":"User","installerGithubId":101,"repositorySelection":"all"} []',
+      'upsert {"githubInstallationId":7,"accountLogin":"acme","accountType":"User","installerGithubId":101} []',
+      'repos 7 {"added":[],"removed":["acme/x"],"repositorySelection":"selected"}',
+    ]);
+  });
+
   it('queues a check for a new head or base, marks closed and reopened, ignores the rest', async () => {
     const { deps, calls } = setup();
     for (const action of ['opened', 'synchronize', 'labeled', 'closed', 'reopened']) await handleGithubWebhook(delivery('pull_request', pr(action)), deps);
