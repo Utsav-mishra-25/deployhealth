@@ -188,7 +188,7 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
       <Section id="action" title="GitHub Action">
         <p className="text-sm text-gray-600">
           Scans run in CI on every push. Save the project&rsquo;s ingest token as the repository secret <code className="font-mono">DEPLOYHEALTH_TOKEN</code>{' '}
-          (tokens are shown once; regenerate one on the project&rsquo;s settings page), then commit this workflow:
+          (create one in the project&rsquo;s settings, where it appears once), then commit this workflow:
         </p>
         <pre className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-xs whitespace-pre-wrap">{data.actionSnippet.trimEnd()}</pre>
       </Section>

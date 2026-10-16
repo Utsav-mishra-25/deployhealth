@@ -125,7 +125,7 @@ function SectionView({ section }: { section: DocsSection }) {
   );
 }
 
-/** How to turn it on: the App for pull requests (no token), the Action or the pinned CLI for deploys. */
+/** How to turn it on, in the app's setup order: the App for pull requests (no token), then optionally the Action or the pinned CLI for deploys. */
 export function SetupSection() {
   return (
     <section aria-labelledby="setup" className="space-y-4">
@@ -133,22 +133,23 @@ export function SetupSection() {
         Set it up
       </h2>
       <div className="space-y-2 text-sm leading-relaxed text-gray-700">
-        <h3 className="font-semibold text-gray-900">Pull request checks</h3>
+        <h3 className="font-semibold text-gray-900">Pull request checks (GitHub App)</h3>
         <p>
           <Link href="/login" className="text-emerald-700 underline">
             Sign in with GitHub
           </Link>
-          , add a project for the repository (<Prose text="`owner/repo`" />) and install the deployhealth GitHub App from the
-          project&apos;s settings. Every pull request that reads an env var no <Prose text="`.env.example`" /> declares gets a
-          comment and a check. No token, no secret, no workflow.
+          , install the deployhealth GitHub App on the repository (the first step of the checklist you see after signing in) and add
+          a project for it (<Prose text="`owner/repo`" />). Every pull request that reads an env var no <Prose text="`.env.example`" />{' '}
+          declares gets a comment and a check. No token, no secret, no workflow.
         </p>
       </div>
       <div className="space-y-2 text-sm leading-relaxed text-gray-700">
-        <h3 className="font-semibold text-gray-900">Deploy history and alerts</h3>
+        <h3 className="font-semibold text-gray-900">Optional: deploy history (GitHub Action)</h3>
         <p>
-          Add the project&apos;s ingest token as the repository secret <Prose text="`DEPLOYHEALTH_TOKEN`" /> (a secret, not a
-          variable) and scan every push. The project&apos;s settings page gives you a workflow that runs the CLI pinned to an
-          exact version, <Prose text={`\`${PINNED_NPX}\``} />, which you can also run from any other CI.
+          For deploy history and alerts that name the deploy, scan every push: in the project&apos;s settings, create its token and
+          save it as the repository secret <Prose text="`DEPLOYHEALTH_TOKEN`" /> (a secret, not a variable). The settings page gives
+          you a workflow that runs the CLI pinned to an exact version, <Prose text={`\`${PINNED_NPX}\``} />, which you can also run
+          from any other CI.
         </p>
         <p>
           Or use the{' '}

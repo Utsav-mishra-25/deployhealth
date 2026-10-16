@@ -18,7 +18,8 @@ package, `apps/web/src/lib/ingest-handler.ts` or the Action snippet.
 ## Tokens
 
 - **Tokens:** `dh_` + 32 random bytes. Only the SHA-256 is stored, plus a `dh_…abcd` hint. The
-  plaintext is shown once, on creation or regeneration.
+  plaintext is shown once, when the user creates or replaces it in the project's settings (a new
+  project's token is never shown: pull request checks need none, so creating a project shows no token).
 
 ## Ingest
 

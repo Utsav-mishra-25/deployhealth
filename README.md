@@ -39,10 +39,8 @@ with `file:line` for every finding and a history per deploy.
 
 ![Findings grouped by kind with file:line, and the deploy history: what each deploy added or fixed, and the outage that followed one](docs/screenshots/findings-and-deploys.png)
 
-Setup is one repository secret and one workflow file ([setup](#setup-two-options)). The scanner is the MIT-licensed npm package
-[`deployhealth-scan`](https://www.npmjs.com/package/deployhealth-scan), pinned to an exact version:
-
-![Creating a project: the one-time ingest token and the GitHub Action to commit](docs/screenshots/create-project.png)
+Deploy history is optional: one repository secret and one workflow file ([setup](#setup-two-options)). The scanner is the
+MIT-licensed npm package [`deployhealth-scan`](https://www.npmjs.com/package/deployhealth-scan), pinned to an exact version.
 
 ### Pull request checks
 
@@ -108,12 +106,15 @@ creates a signed link your client can open without an account, valid for 90 days
 
 ## Setup: two options
 
-Pick either or both, per project:
+In the order the app's first-run checklist follows: install the App, add your projects and sites,
+then, optionally, the Action.
 
-- **Pull request checks:** install the deployhealth GitHub App on the repository and add a project
-  for its exact `owner/repo`. No token, no secret, no variable.
-- **Deploy history and alerts:** add the GitHub Action to the repository, with the project's ingest
-  token saved as a repository secret named `DEPLOYHEALTH_TOKEN`: the repository's **Settings →
+- **Pull request checks (GitHub App):** install the deployhealth GitHub App on the repository and
+  add a project for its exact `owner/repo`. No token, no secret, no variable. With "Only select
+  repositories", the repository must be one of them; the app says when a project's isn't.
+- **Optional: deploy history (GitHub Action):** for deploy history and alerts that name the deploy,
+  add the GitHub Action to the repository, with a token you create in the project's settings saved
+  as a repository secret named `DEPLOYHEALTH_TOKEN`: the repository's **Settings →
   Secrets and variables → Actions → Secrets tab → New repository secret**. Not a Variable (the
   Variables tab shows values in plain text to anyone with access to the repository), and not an
   environment secret (the workflow declares no environment, so it wouldn't see one). The project's
@@ -245,10 +246,10 @@ itself. The dashboard steps, every field and variable, and troubleshooting are i
 git push ─▶ GitHub Action ─▶ deployhealth-scan (in CI) ─▶ POST /api/ingest/scan ─▶ Postgres ─▶ dashboard
 ```
 
-1. **Create a project** (optionally under a client). You get an ingest token (`dh_…`, shown once;
-   only its SHA-256 is stored) and a workflow snippet. Save the token as the repository secret
-   `DEPLOYHEALTH_TOKEN` (Secrets tab, not Variables; see [Setup](#setup-two-options)) and commit
-   the snippet as `.github/workflows/deployhealth.yml`.
+1. **Create the token** in the project's settings, under "Optional: deploy history (GitHub
+   Action)". It appears there once (`dh_…`; only its SHA-256 is stored), with a workflow snippet.
+   Save the token as the repository secret `DEPLOYHEALTH_TOKEN` (Secrets tab, not Variables; see
+   [Setup](#setup-two-options)) and commit the snippet as `.github/workflows/deployhealth.yml`.
 2. **On every push**, the Action runs the CLI from npm, pinned to an exact version
    (`npx --yes deployhealth-scan@0.5.0`: one 40 KB file, no dependencies), on the checkout with the
    commit sha and branch. The job's token is read-only (`permissions: contents: read`), and the
