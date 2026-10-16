@@ -93,7 +93,7 @@ describe('who it is for', () => {
     expect(WHO_FOR.map((g) => g.title)).toEqual(['Freelancers and agencies', 'Small dev teams']);
     expect(WHO_FOR[0].lead).toBe(TAGLINE);
     expect(TAGLINE).toBe('One page for every client project you maintain.');
-    expect(WHO_FOR[0].points.join(' ')).toMatch(/monthly report per client.*share link/);
+    expect(WHO_FOR[0].points[0]).toBe('A monthly report per client (uptime, incidents, deploys, config issues fixed), with a share link you can send them.');
     expect(WHO_FOR[0].points.join(' ')).toMatch(/handoff doc when the project ends/);
     expect(WHO_FOR[1].lead).toBe('Like Dependabot, but for your .env.example.');
     expect(WHO_FOR[1].points.join(' ')).toMatch(/comment and a check on every pull request/);
