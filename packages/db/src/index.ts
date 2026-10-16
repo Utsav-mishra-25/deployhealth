@@ -11,3 +11,4 @@ export * from './github';
 export * from './onboarding';
 export * from './heartbeat';
 export * from './migrations-status';
+export * from './account';

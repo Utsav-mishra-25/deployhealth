@@ -1,7 +1,8 @@
-import { count, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { count, eq, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Db } from './client';
 import {
+  accountDeletions,
   alerts,
   checks,
   clients,
@@ -18,11 +19,13 @@ import {
   users,
 } from './schema';
 
-// Deleting an account on request (/privacy promises it within DELETION_REQUEST_DAYS). Operator
-// only: `delete-user-cli.ts`, never a route. Scoped to the one user it is given, like every query.
+// Deleting an account: on request by email (/privacy promises it within DELETION_REQUEST_DAYS; the
+// operator's `delete-user-cli.ts`) or self-serve on /account (./account.ts, by the signed-in user's
+// id). Both run deleteUser(), so the same rows go either way. Not exported from the package index:
+// the login and GitHub id selectors are the operator's. Scoped to the one user it is given.
 
-/** Who to delete: a GitHub login (case-insensitive) or a GitHub user id. */
-export type UserSelector = { login: string } | { githubId: number };
+/** Who to delete: a GitHub login (case-insensitive), a GitHub user id, or (self-serve) the user's own id. */
+export type UserSelector = { login: string } | { githubId: number } | { userId: string };
 
 /** Every table that holds rows a user owns, in the order the counts are printed. */
 export const DELETION_TABLES = [
@@ -42,6 +45,30 @@ export const DELETION_TABLES = [
   'pr_checks',
 ] as const;
 export type DeletionTable = (typeof DELETION_TABLES)[number];
+
+/** What each table holds, in words, for the account page's "what goes" list. */
+export const DELETION_TABLE_LABELS: Record<DeletionTable, string> = {
+  users: 'your account (GitHub login, name, email and avatar)',
+  clients: 'clients',
+  projects: 'projects and their ingest tokens',
+  deploys: 'deploys',
+  scans: 'scans',
+  findings: 'scan findings (variable names, files and line numbers)',
+  scan_variables: 'scanned variable names',
+  endpoints: 'endpoints',
+  checks: 'uptime checks',
+  endpoint_daily_stats: 'daily uptime totals',
+  alerts: 'alerts',
+  installations: 'GitHub App installations linked to you or installed from your account',
+  installation_repos: "those installations' repository lists",
+  pr_checks: 'pull request checks',
+};
+
+/**
+ * How long an account_deletions row (GitHub id and date) is kept: past the oldest backup a restore
+ * could use (4 weekly backups), plus a week. The nightly prune deletes older rows.
+ */
+export const ACCOUNT_DELETION_RECORD_DAYS = 35;
 export type DeletionCounts = Record<DeletionTable, number>;
 
 export interface UserDeletion {
@@ -69,7 +96,8 @@ export async function planUserDeletion(db: Db, selector: UserSelector): Promise<
 /**
  * Delete the user and everything they own, in one transaction: their row (clients, projects and
  * everything under them cascade) and the GitHub App installations linked to them or installed by
- * them (their repo lists and pull request checks cascade). Returns what was deleted.
+ * them (their repo lists and pull request checks cascade), and record the deletion (GitHub id and
+ * time only, in account_deletions) so a restore from backup re-applies it. Returns what was deleted.
  */
 export async function deleteUser(db: Db, selector: UserSelector): Promise<UserDeletion> {
   return db.transaction(async (tx) => {
@@ -78,14 +106,26 @@ export async function deleteUser(db: Db, selector: UserSelector): Promise<UserDe
     const installationAccounts = await countAccounts(tx, user);
     await tx.delete(installations).where(ownedInstallation(user));
     await tx.delete(users).where(eq(users.id, user.id));
+    await tx.insert(accountDeletions).values({ githubId: user.githubId });
     return { user, counts, installationAccounts };
   });
 }
 
+/** The nightly prune: account_deletions rows older than `olderThan`. Returns how many went. */
+export async function pruneAccountDeletions(db: Db, olderThan: Date): Promise<number> {
+  const deleted = await db.delete(accountDeletions).where(lt(accountDeletions.deletedAt, olderThan)).returning({ githubId: accountDeletions.githubId });
+  return deleted.length;
+}
+
 async function findUser(db: Db, selector: UserSelector): Promise<UserDeletion['user']> {
-  const where = 'githubId' in selector ? eq(users.githubId, selector.githubId) : sql`lower(${users.login}) = lower(${selector.login})`;
+  const where =
+    'userId' in selector
+      ? eq(users.id, selector.userId)
+      : 'githubId' in selector
+        ? eq(users.githubId, selector.githubId)
+        : sql`lower(${users.login}) = lower(${selector.login})`;
   const found = await db.select({ id: users.id, login: users.login, githubId: users.githubId }).from(users).where(where);
-  const label = 'githubId' in selector ? `GitHub id ${selector.githubId}` : `login "${selector.login}"`;
+  const label = 'userId' in selector ? 'that id' : 'githubId' in selector ? `GitHub id ${selector.githubId}` : `login "${selector.login}"`;
   if (found.length === 0) throw new UserDeletionError(`No user with ${label}.`);
   if (found.length > 1) {
     throw new UserDeletionError(`${found.length} users have ${label}; run again with --github-id (${found.map((u) => u.githubId).join(', ')}).`);

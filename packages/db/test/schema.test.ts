@@ -28,6 +28,7 @@ describe('schema', () => {
       sql`select table_name from information_schema.tables where table_schema = 'public' order by table_name`,
     );
     expect(result.rows.map((r) => r.table_name)).toEqual([
+      'account_deletions',
       'alerts',
       'check_hosts',
       'checks',
