@@ -5,20 +5,57 @@ import { addDevSession, signInAsDev } from './session';
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 const SCRIPTED_ALERT = 'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY';
 
-test('landing page for a signed-out visitor, one click to the demo', async ({ page }) => {
+const HEADLINE = "Know which deploy broke your client's site, before they call you.";
+
+test('landing page for a signed-out visitor: the hero first, the alert below it, one click to the demo', async ({ page }) => {
   const response = await page.goto('/');
   expect(response?.status()).toBe(200);
   await expect(page).toHaveURL(/\/$/);
   const landing = page.getByTestId('landing');
-  await expect(landing.getByRole('alert')).toContainText(SCRIPTED_ALERT);
-  await expect(landing.getByRole('heading', { level: 1 })).toHaveText(/tells you which deploy broke what\.$/);
-  await expect(landing).toContainText('Free while in beta.');
-  await expect(landing.getByTestId('landing-languages')).toContainText('Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin.');
-  await expect(landing).not.toContainText(/\$\d|per month|pricing/i);
+  const hero = landing.getByTestId('landing-hero');
+  await expect(hero.getByRole('heading', { level: 1 })).toHaveText(HEADLINE);
+  await expect(hero).toContainText('Monthly reports your clients can read.');
+  await expect(hero).toContainText('Free during the beta.');
+  await expect(hero).not.toContainText('Reads JS/TS');
+  await expect(hero.getByRole('alert')).toHaveCount(0);
+  await expect(landing).not.toContainText('Plus:');
+
+  // The live alert sits below the hero and the screenshot, under its own heading.
+  const alert = landing.getByTestId('landing-alert');
+  await expect(alert.getByRole('heading', { level: 2 })).toHaveText('What an alert looks like (live from the demo)');
+  await expect(alert.getByRole('alert')).toContainText(SCRIPTED_ALERT);
+  const heroBox = (await hero.boundingBox())!;
+  const shotBox = (await landing.getByTestId('landing-screenshot').boundingBox())!;
+  const alertBox = (await alert.boundingBox())!;
+  expect(shotBox.y).toBeGreaterThan(heroBox.y + heroBox.height - 1);
+  expect(alertBox.y).toBeGreaterThan(shotBox.y + shotBox.height - 1);
+
+  // The screenshot is the committed asset, loaded from this site, with its size and alt set.
+  const shot = landing.getByTestId('landing-screenshot');
+  await expect(shot).toHaveAttribute('src', '/landing/demo-clients.png');
+  await expect(shot).toHaveAttribute('width', '2080');
+  await expect(shot).toHaveAttribute('height', '912');
+  await expect(shot).toHaveAttribute('alt', /clients list/);
+  expect(await shot.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(2080);
+
+  // The languages sentence moved to the FAQ, which is plain <details>.
+  const faq = landing.getByTestId('faq');
+  await expect(faq.locator('details')).toHaveCount(4);
+  await faq.getByText("What if my stack isn't supported?").click();
+  await expect(faq.getByTestId('faq-languages')).toContainText('Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin.');
+  await expect(landing.getByTestId('pricing-plans')).toContainText('Free during the beta: everything you see in the demo.');
+
+  // Metadata: the landing page's own title and preview; the image stays the site's one.
+  await expect(page).toHaveTitle("deployhealth: know which deploy broke your client's site");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /^Checks every pull request for config nobody declared/);
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', HEADLINE);
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute('content', /^Checks every pull request/);
+  await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute('content', `deployhealth: ${HEADLINE}`);
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /\/opengraph-image/);
   await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
-  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
   await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute('type', 'image/svg+xml');
+  expect((await page.request.get('/opengraph-image')).status()).toBe(200);
 
   await landing.getByRole('link', { name: 'See the live demo' }).click();
   await expect(page).toHaveURL(/\/demo$/);
@@ -28,6 +65,96 @@ test('landing page for a signed-out visitor, one click to the demo', async ({ pa
   await page.getByTestId('landing').getByRole('link', { name: 'Sign in with GitHub' }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('link', { name: 'See a live demo' })).toBeVisible();
+
+  // Other pages keep the generic preview, so a shared link never carries a client's name.
+  await page.goto('/docs');
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', 'deployhealth');
+});
+
+test('the header on every public page: Demo, Docs, Pricing and Sign in with GitHub, with no JavaScript', async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  for (const path of ['/', '/login', '/demo', `/demo/projects/${STOREFRONT}`, '/demo/clients/acme-corp/report', '/pricing', '/docs', '/docs/nextjs', '/security', '/privacy', '/terms', '/github/installed', '/no-such-page']) {
+    await page.goto(path);
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await expect(nav.getByRole('link'), path).toHaveText(['Demo', 'Docs', 'Pricing', 'Sign in with GitHub']);
+    await expect(nav.getByRole('link', { name: 'Demo' })).toHaveAttribute('href', '/demo');
+    await expect(nav.getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/docs');
+    await expect(nav.getByRole('link', { name: 'Pricing' })).toHaveAttribute('href', '/pricing');
+    await expect(nav.getByRole('link', { name: 'Sign in with GitHub' })).toHaveAttribute('href', '/login');
+    await expect(page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name: 'Pricing' })).toHaveAttribute('href', '/pricing');
+  }
+  await context.close();
+});
+
+test('/pricing: free during the beta, the planned prices, no limits table, in the sitemap', async ({ page }) => {
+  const response = await page.goto('/pricing');
+  expect(response?.status()).toBe(200);
+  await expect(page).toHaveTitle('Pricing · deployhealth');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /^Free during the beta/);
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/pricing$/);
+  await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
+  const pricing = page.getByTestId('pricing');
+  await expect(pricing.getByRole('heading', { level: 1 })).toHaveText('Pricing');
+  await expect(pricing).toContainText('Free during the beta: everything you see in the demo.');
+  await expect(pricing.getByTestId('pricing-plan')).toHaveText(['Freelancer$15/month', 'Studio$29/month']);
+  await expect(pricing).toContainText('Beta users get advance notice and an early-user price.');
+  await expect(pricing.locator('table')).toHaveCount(0);
+  await expect(pricing).not.toContainText(/email alerts|branded|seats|limit/i);
+  await expect(page.getByTestId('current-user')).toHaveCount(0);
+
+  const sitemap = await (await page.request.get('/sitemap.xml')).text();
+  expect(sitemap).toContain('<loc>http://localhost:3100/pricing</loc>');
+});
+
+test('/demo guide: three items under the banner, each link resolves', async ({ page }) => {
+  await page.goto('/demo');
+  const guide = page.getByTestId('demo-guide');
+  const banner = page.getByRole('note', { name: 'Demo' });
+  expect((await guide.boundingBox())!.y).toBeGreaterThan((await banner.boundingBox())!.y);
+  await expect(guide.getByRole('listitem')).toHaveCount(3);
+  const links = guide.getByRole('link');
+  await expect(links).toHaveText(['The project list', "The deploy that broke Acme's API", "The monthly report you'd send Acme", 'its handoff']);
+  const hrefs = await links.evaluateAll((as) => as.map((a) => a.getAttribute('href')!));
+  expect(hrefs).toEqual(['/demo#projects', `/demo/projects/${STOREFRONT}#deploys`, '/demo/clients/acme-corp/report', `/demo/projects/${STOREFRONT}/handoff`]);
+
+  // Each target exists: the anchors are on the page they name.
+  await links.first().click();
+  await expect(page).toHaveURL(/\/demo#projects$/);
+  await expect(page.locator('#projects')).toContainText('acme-storefront');
+  for (const href of hrefs.slice(1)) {
+    const [path, anchor] = href.split('#');
+    const response = await page.goto(href);
+    expect(response?.status(), href).toBe(200);
+    expect(new URL(page.url()).pathname).toBe(path);
+    if (anchor) await expect(page.locator(`#${anchor}`)).toBeVisible();
+  }
+  await page.goto('/demo/clients/acme-corp/report');
+  await expect(page.getByTestId('report')).toContainText('Acme Corp');
+  await page.goto(`/demo/projects/${STOREFRONT}/handoff`);
+  await expect(page.getByTestId('handoff')).toContainText('acme-storefront');
+});
+
+test('a friendly 404: in the site style, with links to Home, Demo and Docs', async ({ page }) => {
+  const response = await page.goto('/no-such-page');
+  expect(response?.status()).toBe(404);
+  await expect(page).toHaveTitle('Page not found · deployhealth');
+  const notFound = page.getByTestId('not-found');
+  await expect(notFound.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+  const ways = notFound.getByRole('navigation', { name: 'Ways back' }).getByRole('link');
+  await expect(ways).toHaveText(['Home', 'Demo', 'Docs']);
+  await ways.filter({ hasText: 'Docs' }).click();
+  await expect(page).toHaveURL(/\/docs$/);
+  await page.goto('/no-such-page');
+  await page.getByTestId('not-found').getByRole('link', { name: 'Demo' }).click();
+  await expect(page).toHaveURL(/\/demo$/);
+  await page.goto('/no-such-page');
+  await page.getByTestId('not-found').getByRole('link', { name: 'Home' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId('landing')).toBeVisible();
+  // notFound() from a page renders the same.
+  expect((await page.goto('/docs/django'))?.status()).toBe(404);
+  await expect(page.getByTestId('not-found')).toBeVisible();
 });
 
 test('a production build never offers the dev login, even with AUTH_DEMO_LOGIN=1', async ({ page }) => {
@@ -367,6 +494,8 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   await expect(shared.getByTestId('report-project')).toHaveCount(1);
   await expect(shared.getByTestId('report-project')).toContainText(projectName);
   await expect(shared.getByTestId('current-user')).toHaveCount(0);
+  // A shared report is for the client: the logo, not the site's navigation.
+  await expect(shared.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
   const tampered = await shared.goto(`${shareUrl.slice(0, -1)}${shareUrl.endsWith('A') ? 'B' : 'A'}`);
   expect(tampered?.status()).toBe(404);
   await stranger.close();
@@ -424,7 +553,7 @@ test('security: public page linked from the footer, and security.txt', async ({ 
 test('privacy and terms: public pages linked from the footer', async ({ page }) => {
   await page.goto('/');
   const footer = page.getByRole('navigation', { name: 'Footer' });
-  await expect(footer.getByRole('link')).toHaveText(['Docs', 'Security', 'Privacy', 'Terms', 'Source on GitHub']);
+  await expect(footer.getByRole('link')).toHaveText(['Docs', 'Pricing', 'Security', 'Privacy', 'Terms', 'Source on GitHub']);
   await expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
   await expect(footer.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
   await page.goto('/privacy');
