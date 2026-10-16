@@ -4,6 +4,7 @@ import { serverEnv } from '@/env';
 import Link from 'next/link';
 import { githubSignInReads, isDemoLoginEnabled } from '@/lib/auth-providers';
 import { safeReturnPath } from '@/lib/github-app';
+import { TAGLINE } from '@/lib/marketing';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div className="mx-auto mt-8 max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:mt-16 sm:p-8">
       <h1 className="text-xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-gray-600">One page for every client project you maintain.</p>
+      <p className="mt-1 text-sm text-gray-600">{TAGLINE}</p>
 
       {error && (
         <p role="alert" className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
