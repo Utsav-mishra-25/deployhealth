@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { InstallConfirmation } from '@/components/install-confirmation';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
+import { ProjectGettingStarted } from '@/components/project-getting-started';
 import { RepoCoverageNotice } from '@/components/repo-coverage-notice';
 import { HOW_IT_WORKS } from '@/lib/marketing';
 import {
@@ -234,5 +235,40 @@ describe("whether the user's installations cover a repository", () => {
     const { byId } = stepsOf(state);
     expect(byId.app!.done).toBe(false);
     expect(repoCoverage(appCoverage(state.installations, 'https://x'), 'acme/shop').state).toBe('not-installed');
+  });
+});
+
+describe('a project before any data', () => {
+  const render = (props: Partial<Parameters<typeof ProjectGettingStarted>[0]> = {}) =>
+    text(
+      renderToStaticMarkup(
+        createElement(ProjectGettingStarted, {
+          projectId: PROJECT_ID,
+          repo: 'acme/shop',
+          coverage: repoCoverage(appCoverage([installation()], 'https://x'), 'acme/shop'),
+          prCheckMode: 'comment',
+          prChecks: 0,
+          endpoints: 0,
+          ...props,
+        }),
+      ),
+    );
+
+  it('says what shows up and what makes it appear: a pull request, a site, optionally the Action', () => {
+    const copy = render();
+    expect(copy).toContain('What shows up here');
+    expect(copy).toContain('Open a pull request on acme/shop to see the first check: a comment and a deployhealth / env check on GitHub, listed here too.');
+    expect(copy).toContain('Add a site (a URL to watch): deployhealth requests it on a schedule and alerts you when it fails.');
+    expect(copy).toContain("Add the Action for deploy history: each push's env check, and alerts that name the deploy.");
+    expect(copy).not.toMatch(/No scans yet|token/i);
+  });
+
+  it("says when the App doesn't cover the repo, checks are off, or pull requests are already in", () => {
+    const notCovered = render({ repo: 'acme/blog', coverage: repoCoverage(appCoverage([installation()], 'https://x'), 'acme/blog') });
+    expect(notCovered).toContain('The GitHub App is installed on acme, but not on acme/blog');
+    expect(render({ prCheckMode: 'off' })).toContain('Pull request checks are off for this project. Turn them on in Settings.');
+    expect(render({ prChecks: 2 })).toContain('Pull requests on acme/shop are being checked: see them below.');
+    expect(render({ endpoints: 1 })).toContain("Your sites are listed below; each one's first check runs within its interval.");
+    expect(render({ coverage: { state: 'no-app' } })).toContain("The GitHub App isn't set up on this deployment");
   });
 });
