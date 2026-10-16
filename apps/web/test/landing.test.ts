@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { LANGUAGES_SENTENCE } from '@deployhealth/core';
+import { LANGUAGES_SENTENCE, SUPPORTED_LANGUAGES, UNREAD_LANGUAGES_TEXT } from '@deployhealth/core';
 import { demoDeploys, SCENARIO } from '@deployhealth/db/seed';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { alt as ogImageAlt } from '@/app/opengraph-image';
 import { Landing, LANDING_SCREENSHOT } from '@/components/landing';
 import { LANDING_DEPLOY_SHA, LANDING_PAGE_METADATA as landingMetadata, landingAlertMessage } from '@/lib/landing';
-import { HERO, HOW_IT_WORKS, LANDING_METADATA, TAGLINE, WHO_FOR } from '@/lib/marketing';
+import { FAQ, FAQ_STACK_SENTENCE, HERO, HOW_IT_WORKS, LANDING_METADATA, TAGLINE, WHO_FOR } from '@/lib/marketing';
 
 const render = (demo: boolean) => renderToStaticMarkup(createElement(Landing, { demo }));
 /** React escapes apostrophes and quotes in text. */
@@ -78,14 +78,13 @@ describe('the landing hero', () => {
     expect(html).not.toContain('Free while in beta');
   });
 
-  it('keeps the languages sentence out of the hero and puts it in the FAQ', () => {
+  it('keeps the languages sentence out of the page: the FAQ says it in one line instead', () => {
     const html = render(true);
+    expect(html).not.toContain(escaped(LANGUAGES_SENTENCE));
     const hero = html.slice(html.indexOf('data-testid="landing-hero"'), html.indexOf('data-testid="landing-screenshot"'));
-    expect(hero).not.toContain(escaped(LANGUAGES_SENTENCE));
-    expect(hero).not.toMatch(/Reads JS\/TS/);
+    expect(hero).not.toMatch(/Reads JS\/TS|Supported today/);
     const faq = html.slice(html.indexOf('data-testid="faq"'));
-    expect(faq).toContain(escaped(LANGUAGES_SENTENCE));
-    expect(html.split(escaped(LANGUAGES_SENTENCE))).toHaveLength(2);
+    expect(faq).toContain(escaped(FAQ_STACK_SENTENCE));
   });
 });
 
@@ -130,6 +129,16 @@ describe('the FAQ', () => {
     expect(html).toContain('href="/security"');
     expect(html).toContain('href="/pricing"');
     expect(html).toContain('including WordPress');
+  });
+
+  it("answers an unsupported stack with what works anywhere, then one line naming what's read, from core's list", () => {
+    expect(FAQ_STACK_SENTENCE).toBe(
+      'On Rust, C# and other languages we don\'t read yet, the PR check and CLI report "can\'t check" instead of passing. Supported today: JS/TS, Python, Go, Ruby, PHP, Java/Kotlin.',
+    );
+    expect(FAQ_STACK_SENTENCE.endsWith(`Supported today: ${SUPPORTED_LANGUAGES.map((l) => l.label).join(', ')}.`)).toBe(true);
+    expect(FAQ_STACK_SENTENCE).toContain(UNREAD_LANGUAGES_TEXT.replace(' and others', ''));
+    const stack = FAQ.find((item) => item.question === "What if my stack isn't supported?")!;
+    expect(stack.answer).toBe(`Uptime checks, monthly reports and handoffs work for any site, including WordPress. ${FAQ_STACK_SENTENCE}`);
   });
 });
 
