@@ -75,3 +75,11 @@ export function repoCoverage(coverage: AppCoverage, repo: string): RepoCoverage 
   if (onOwner) return { state: 'not-selected', account: onOwner };
   return { state: 'not-installed', installUrl: coverage.installUrl, owner: repo.trim().slice(0, owner.length), installedOn: coverage.accounts.map((a) => a.login) };
 }
+
+/** For "Not set up"'s reason on project lists: true/false, or undefined when the App isn't configured. */
+export function coversRepo(coverage: AppCoverage): (repo: string) => boolean | undefined {
+  return (repo) => {
+    const state = repoCoverage(coverage, repo).state;
+    return state === 'no-app' ? undefined : state === 'covered';
+  };
+}

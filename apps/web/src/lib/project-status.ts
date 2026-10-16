@@ -10,7 +10,8 @@ import type { ProjectListItem } from '@deployhealth/db';
  *   request's latest check flagged undeclared env vars, a committed env file or a secret
  *   (`openPrsFlagged`, and `openPrsWith…` for which kinds), or an endpoint is failing with no
  *   alert yet (`uptime === 'degraded'`);
- * - not_set_up: no scan and no pull request check yet (`latestScanAt`, `latestPrCheckAt`);
+ * - not_set_up: no scan and no pull request check yet (`latestScanAt`, `latestPrCheckAt`); its reason
+ *   says why when the caller knows whether the user's GitHub App covers the repository (`appCovers`);
  * - healthy: everything else. UNUSED alone never changes the status; it's still listed.
  */
 export type ProjectStatus = 'down' | 'attention' | 'not_set_up' | 'healthy';
@@ -27,7 +28,7 @@ export const STATUS_LABELS: Record<ProjectStatus, string> = {
 /** One reason on a project's row; `anchor` is a section of the project page it links to. */
 export interface StatusReason {
   text: string;
-  anchor?: 'pull-requests' | 'findings' | 'endpoints';
+  anchor?: 'pull-requests' | 'findings' | 'endpoints' | 'getting-started';
 }
 
 export interface ProjectStatusView {
@@ -53,7 +54,20 @@ export type StatusInput = Pick<
   | 'undeclaredInBareScopes'
 >;
 
-export function projectStatus(p: StatusInput, now = new Date()): ProjectStatusView {
+/**
+ * Whether the user's own GitHub App installations cover a project's repository, for the "Not set
+ * up" reason: true, false, or undefined when unknown (the demo, or no App on this deployment).
+ */
+export type AppCovers = (repoFullName: string) => boolean | undefined;
+
+/** "Not set up"'s reason: why nothing has been checked yet, when that's known. */
+export function notSetUpReason(covered: boolean | undefined): StatusReason {
+  if (covered === true) return { text: 'Waiting for the first pull request check', anchor: 'getting-started' };
+  if (covered === false) return { text: 'GitHub App not installed on this repo', anchor: 'getting-started' };
+  return { text: 'No scan or pull request check yet' };
+}
+
+export function projectStatus(p: StatusInput & { repoFullName?: string }, now = new Date(), appCovers?: AppCovers): ProjectStatusView {
   const reasons: StatusReason[] = [];
   if (p.uptime === 'down' || p.uptime === 'degraded') {
     const state = p.uptime === 'down' ? 'down' : 'failing';
@@ -86,7 +100,7 @@ export function projectStatus(p: StatusInput, now = new Date()): ProjectStatusVi
   else if (needsAttention) status = 'attention';
   else if (!checkedAt) status = 'not_set_up';
   else status = 'healthy';
-  if (status === 'not_set_up') reasons.push({ text: 'No scan or pull request check yet' });
+  if (status === 'not_set_up') reasons.push(notSetUpReason(p.repoFullName ? appCovers?.(p.repoFullName) : undefined));
   return { status, reasons, checkedAt };
 }
 
@@ -138,6 +152,10 @@ export function statusSummary(statuses: readonly ProjectStatus[]): string | null
 }
 
 /** Each project with its status, sorted worst first then by name. */
-export function rankProjects<T extends StatusInput & { name: string }>(projects: readonly T[], now = new Date()): Array<T & ProjectStatusView> {
-  return projects.map((p) => ({ ...p, ...projectStatus(p, now) })).sort(compareProjects);
+export function rankProjects<T extends StatusInput & { name: string; repoFullName?: string }>(
+  projects: readonly T[],
+  now = new Date(),
+  appCovers?: AppCovers,
+): Array<T & ProjectStatusView> {
+  return projects.map((p) => ({ ...p, ...projectStatus(p, now, appCovers) })).sort(compareProjects);
 }

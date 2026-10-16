@@ -96,16 +96,17 @@ export default async function ProjectSettingsPage({
           ) : (
             <AppStatusLine status={appStatus!} repo={project.repoFullName} />
           )}
-          {installHref ? (
+          {/* The notice above links to the fix when the App is installed elsewhere; otherwise install or manage it here. */}
+          {installHref && !(appStatus?.state === 'not-installed' && installations.length > 0) ? (
             <a
               href={installHref}
               className="inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
               data-testid="install-github-app"
             >
-              {active ? 'Manage the GitHub App' : 'Install the GitHub App'}
+              {appStatus?.state === 'not-installed' ? 'Install the GitHub App' : 'Manage the GitHub App'}
             </a>
           ) : (
-            <p className="text-sm text-gray-500">The GitHub App isn&apos;t configured on this deployment (GITHUB_APP_SLUG).</p>
+            !installHref && <p className="text-sm text-gray-500">The GitHub App isn&apos;t configured on this deployment (GITHUB_APP_SLUG).</p>
           )}
           {!active && (
             <p className="text-sm text-gray-600" data-testid="mode-pending">

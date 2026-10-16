@@ -84,6 +84,16 @@ describe('projectStatus', () => {
     expect(status({ counts: null, latestScanAt: null, uptime: 'no_endpoints' }).status).toBe('not_set_up');
   });
 
+  it("Not set up says why when the user's App coverage is known: waiting for a check, or the App doesn't cover the repo", () => {
+    const fresh = { ...base, counts: null, latestScanAt: null, latestPrCheckAt: null, repoFullName: 'acme/shop' };
+    const covers = (repo: string) => (repo === 'acme/shop' ? true : repo === 'acme/blog' ? false : undefined);
+    expect(projectStatus(fresh, NOW, covers).reasons).toEqual([{ text: 'Waiting for the first pull request check', anchor: 'getting-started' }]);
+    expect(projectStatus({ ...fresh, repoFullName: 'acme/blog' }, NOW, covers).reasons).toEqual([{ text: 'GitHub App not installed on this repo', anchor: 'getting-started' }]);
+    // Unknown (no App on the deployment, or the demo): the generic reason.
+    expect(projectStatus({ ...fresh, repoFullName: 'x/y' }, NOW, covers).reasons).toEqual([{ text: 'No scan or pull request check yet' }]);
+    expect(projectStatus(fresh, NOW).reasons).toEqual([{ text: 'No scan or pull request check yet' }]);
+  });
+
   it('Healthy: nothing to list, checked at the later of the latest scan and pull request check', () => {
     expect(status({})).toEqual({ status: 'healthy', reasons: [], checkedAt: ago(120) });
     expect(status({ latestPrCheckAt: ago(10) }).checkedAt).toEqual(ago(10));
