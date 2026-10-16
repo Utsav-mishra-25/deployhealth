@@ -170,6 +170,24 @@ describe("repository_selection 'all'", () => {
     expect(summaries[0]).toMatchObject({ githubInstallationId: 1, repositorySelection: 'all', repos: [] });
   });
 
+  it("another user's 'all' installation on the same account never targets my project, nor counts as mine", async () => {
+    const alice = await userWithGithubId(101);
+    const mallory = await userWithGithubId(666);
+    const mine = await makeProject(db, alice.id, 'shop'); // acme/shop
+    await installAll(9, 666); // mallory installs on acme with All repositories, linked to mallory
+    // No pull request check (so no check run and no comment: pr-check-job.test.ts, "no-project").
+    expect(await findPrCheckTarget(db, 9, 'acme/shop')).toBeNull();
+    // Nor does it read as installed for alice, or appear among her installations.
+    expect(await getGithubAppStatus(db, alice.id, mine.id)).toEqual({ state: 'not-installed' });
+    expect(await listInstallationsForUser(db, alice.id)).toEqual([]);
+    // Mallory's own project for the same repo is the one it targets.
+    const hers = await makeProject(db, mallory.id, 'shop');
+    expect((await findPrCheckTarget(db, 9, 'acme/shop'))?.project.id).toBe(hers.id);
+    // And an 'all' installation nobody has linked yet targets no one's project.
+    await installAll(10, 999);
+    expect(await findPrCheckTarget(db, 10, 'acme/shop')).toBeNull();
+  });
+
   it('follows a switch between all and selected repositories, and a later upsert without one keeps it', async () => {
     const alice = await userWithGithubId(101);
     const project = await makeProject(db, alice.id, 'shop');
