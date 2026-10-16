@@ -10,7 +10,11 @@ const globalForBoss = globalThis as typeof globalThis & { __deployhealthBoss?: P
 function boss(): Promise<PgBoss> {
   globalForBoss.__deployhealthBoss ??= (async () => {
     const client = new PgBoss({ connectionString: serverEnv().DATABASE_URL, supervise: false, schedule: false, migrate: false, createSchema: false });
-    client.on('error', (error) => console.error('[pg-boss]', error.message));
+    client.on('error', (error) => {
+      // The name and code only: a message can quote a connection detail or a row.
+      const code = (error as { code?: unknown }).code;
+      console.error(`[pg-boss] ${error.name}${typeof code === 'string' ? ` ${code}` : ''}`);
+    });
     await client.start();
     return client;
   })().catch((error: unknown) => {

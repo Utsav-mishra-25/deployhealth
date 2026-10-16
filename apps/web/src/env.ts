@@ -41,6 +41,11 @@ const schema = z
 
 export type ServerEnv = z.infer<typeof schema>;
 
+/** True in the Node.js server runtime (Next sets NEXT_RUNTIME; instrumentation.ts also loads in the edge runtime). */
+export function isNodeRuntime(): boolean {
+  return process.env.NEXT_RUNTIME === 'nodejs';
+}
+
 let cached: ServerEnv | undefined;
 
 /** Tests only: forget the validated env so the next serverEnv() re-reads process.env. */

@@ -14,6 +14,7 @@ import {
   setPrCheckGithubIds,
   upsertPrCheck,
 } from '@deployhealth/db';
+import { installConsoleRedaction } from '@deployhealth/db/redact';
 import { seed } from '@deployhealth/db/seed';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,10 @@ import { CHECK_QUEUE, checkEndpoints, errorLabel, PR_CHECK_QUEUE, prCheck, PRUNE
 import { waitForMigrations } from './readiness';
 import { registerQueues, RESEED_INTERVAL_MINUTES } from './schedules';
 import { sendWebhook } from './webhook';
+
+// Every line this process prints (ours, pg-boss's, Octokit's) is redacted: no tokens, webhook
+// URLs, cookies or env values (@deployhealth/db/redact).
+installConsoleRedaction();
 
 const log = (message: string) => console.log(message);
 
@@ -48,7 +53,7 @@ async function main(): Promise<void> {
   // (and don't start pg-boss) until every migration this build ships is applied.
   await waitForMigrations({ pending: () => pendingMigrations(db), total: BUNDLED_MIGRATIONS.length, log });
   const boss = new PgBoss(DATABASE_URL);
-  boss.on('error', (error) => console.error('[worker] pg-boss error', error));
+  boss.on('error', (error) => console.error(`[worker] pg-boss error: ${errorLabel(error)}`));
 
   await boss.start();
   const demoBaseUrl = DEMO_PUBLIC === '1' ? DEMO_BASE_URL : null;
@@ -125,6 +130,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error('[worker] failed to start', error);
+  // The stack, not the error object: its own fields (a pg error's detail) can quote row values.
+  console.error(`[worker] failed to start: ${error instanceof Error ? (error.stack ?? errorLabel(error)) : errorLabel(error)}`);
   process.exit(1);
 });
