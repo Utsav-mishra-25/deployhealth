@@ -21,7 +21,7 @@ export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerI
   const empty = clients.length === 0 && unassigned.length === 0;
 
   return (
-    <div>
+    <div id="projects" className="scroll-mt-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Clients</h1>
         {!readOnly && (
