@@ -1,10 +1,11 @@
-import type { PrCheckJobData } from '@deployhealth/core';
+import { escapeChatText, type PrCheckJobData } from '@deployhealth/core';
 import {
   BUNDLED_MIGRATIONS,
   claimDueEndpoints,
   createDb,
   findPrCheckTarget,
   findPrCommentId,
+  heartbeatAgeSeconds,
   pendingMigrations,
   pruneChecks,
   pruneDeliveries,
@@ -16,6 +17,7 @@ import {
 } from '@deployhealth/db';
 import { installConsoleRedaction } from '@deployhealth/db/redact';
 import { seed } from '@deployhealth/db/seed';
+import { flushReports, initSentry, reportError } from '@deployhealth/db/sentry';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PgBoss } from 'pg-boss';
@@ -25,6 +27,7 @@ import { githubApi } from './github/api';
 import { createGithubApp } from './github/app';
 import { isolateEntry } from './pr-check/isolate';
 import { CHECK_QUEUE, checkEndpoints, errorLabel, PR_CHECK_QUEUE, prCheck, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
+import { createOperatorAlerts, HEARTBEAT_WATCH_INTERVAL_MS, NO_OPERATOR_ALERTS, observeJob, operatorWebhookUrl } from './operator';
 import { waitForMigrations } from './readiness';
 import { registerQueues, RESEED_INTERVAL_MINUTES } from './schedules';
 import { sendWebhook } from './webhook';
@@ -46,7 +49,15 @@ const log = (message: string) => console.log(message);
  * app's GitHub webhook, worked only when the GitHub App is configured.
  */
 async function main(): Promise<void> {
-  const { DATABASE_URL, DEMO_PUBLIC, DEMO_BASE_URL, GITHUB_APP } = workerEnv();
+  const { DATABASE_URL, NODE_ENV, DEMO_PUBLIC, DEMO_BASE_URL, GITHUB_APP, SENTRY_DSN, RAILWAY_GIT_COMMIT_SHA, OPERATOR_WEBHOOK_URL } = workerEnv();
+  // Optional: error reports (SENTRY_DSN) and operator alerts (OPERATOR_WEBHOOK_URL). A value that
+  // doesn't parse turns its feature off with one log line; the worker runs either way.
+  initSentry({ dsn: SENTRY_DSN, release: RAILWAY_GIT_COMMIT_SHA, environment: NODE_ENV }, 'worker', log);
+  const operatorUrl = operatorWebhookUrl(OPERATOR_WEBHOOK_URL, log);
+  const operator = operatorUrl ? createOperatorAlerts({ send: (text) => sendWebhook(operatorUrl, { text: escapeChatText(text) }, { log }), log }) : NO_OPERATOR_ALERTS;
+  // Every job: a failure is reported (Sentry) and counted (operator alerts), then thrown again.
+  const observed = <T>(queue: string, run: () => Promise<T>) => observeJob(queue, run, { report: reportError, operator });
+
   const handle = createDb(DATABASE_URL);
   const { db } = handle;
   // Web's pre-deploy step migrates the database, and this process can start first: work no queue
@@ -61,31 +72,34 @@ async function main(): Promise<void> {
   // Every queue is created either way, so the web app's webhook can always enqueue pr-check.
   await registerQueues(boss, { demo });
 
-  await boss.work(CHECK_QUEUE, async () => {
-    const summary = await checkEndpoints({
-      claimDue: () => claimDueEndpoints(db),
-      check: (target) => runCheck(target),
-      record: (endpointId, outcome) => recordCheck(db, endpointId, outcome),
-      notify: (url, payload) => sendWebhook(url, payload, { log }),
-      heartbeat: () => recordHeartbeat(db),
-      log,
-    });
-    if (summary.checked || summary.errors) log(`[check] ${JSON.stringify(summary)}`);
-  });
+  await boss.work(CHECK_QUEUE, () =>
+    observed(CHECK_QUEUE, async () => {
+      const summary = await checkEndpoints({
+        claimDue: () => claimDueEndpoints(db),
+        check: (target) => runCheck(target),
+        record: (endpointId, outcome) => recordCheck(db, endpointId, outcome),
+        notify: (url, payload) => sendWebhook(url, payload, { log }),
+        heartbeat: () => recordHeartbeat(db),
+        log,
+        report: (error) => reportError(error, { queue: CHECK_QUEUE }),
+      });
+      if (summary.checked || summary.errors) log(`[check] ${JSON.stringify(summary)}`);
+    }),
+  );
 
-  await boss.work(PRUNE_QUEUE, async () => {
-    await pruneOldChecks({
-      rollup: (before) => rollupChecks(db, before),
-      prune: (olderThan) => pruneChecks(db, olderThan),
-      pruneDeliveries: (olderThan) => pruneDeliveries(db, olderThan),
-      log,
-    });
-  });
+  await boss.work(PRUNE_QUEUE, () =>
+    observed(PRUNE_QUEUE, () =>
+      pruneOldChecks({
+        rollup: (before) => rollupChecks(db, before),
+        prune: (olderThan) => pruneChecks(db, olderThan),
+        pruneDeliveries: (olderThan) => pruneDeliveries(db, olderThan),
+        log,
+      }),
+    ),
+  );
 
   if (demoBaseUrl !== null) {
-    await boss.work(RESEED_QUEUE, async () => {
-      await reseedDemo({ seed: (now) => seed(db, now, { baseUrl: demoBaseUrl }), log });
-    });
+    await boss.work(RESEED_QUEUE, () => observed(RESEED_QUEUE, () => reseedDemo({ seed: (now) => seed(db, now, { baseUrl: demoBaseUrl }), log })));
     await boss.send(RESEED_QUEUE, {});
   }
 
@@ -104,14 +118,16 @@ async function main(): Promise<void> {
         api: (installationId, repo) => githubApi(app.forInstallation(installationId), repo, { appId: GITHUB_APP.appId }),
         log,
       });
-    await boss.work<PrCheckJobData>(PR_CHECK_QUEUE, { localConcurrency: 2 }, async ([job]) => {
-      try {
-        await runPrCheck(job!.data);
-      } catch (error) {
-        log(`[pr-check] ${job!.data.repoFullName}#${job!.data.prNumber} failed (the queue retries it up to 6 times): ${errorLabel(error)}`);
-        throw error;
-      }
-    });
+    await boss.work<PrCheckJobData>(PR_CHECK_QUEUE, { localConcurrency: 2 }, ([job]) =>
+      observed(PR_CHECK_QUEUE, async () => {
+        try {
+          await runPrCheck(job!.data);
+        } catch (error) {
+          log(`[pr-check] ${job!.data.repoFullName}#${job!.data.prNumber} failed (the queue retries it up to 6 times): ${errorLabel(error)}`);
+          throw error;
+        }
+      }),
+    );
   }
 
   log(
@@ -119,9 +135,22 @@ async function main(): Promise<void> {
       `, ${PR_CHECK_QUEUE} ${GITHUB_APP ? `on (GitHub App ${GITHUB_APP.appId})` : 'off (no GitHub App)'}`,
   );
 
+  // The heartbeat watch runs on its own timer, not as a pg-boss job, so it still fires when the
+  // queues are stuck. Only with operator alerts on.
+  const watch = operatorUrl
+    ? setInterval(() => {
+        heartbeatAgeSeconds(db)
+          .then((age) => operator.heartbeat(age))
+          .catch((error: unknown) => log(`[operator] heartbeat not read: ${errorLabel(error)}`));
+      }, HEARTBEAT_WATCH_INTERVAL_MS)
+    : null;
+  watch?.unref();
+
   const shutdown = async (signal: string) => {
     log(`[worker] ${signal} received, stopping`);
+    if (watch) clearInterval(watch);
     await boss.stop({ graceful: true });
+    await flushReports();
     await handle.close();
     process.exit(0);
   };
@@ -129,8 +158,10 @@ async function main(): Promise<void> {
   process.once('SIGINT', () => void shutdown('SIGINT'));
 }
 
-main().catch((error: unknown) => {
+main().catch(async (error: unknown) => {
   // The stack, not the error object: its own fields (a pg error's detail) can quote row values.
   console.error(`[worker] failed to start: ${error instanceof Error ? (error.stack ?? errorLabel(error)) : errorLabel(error)}`);
+  reportError(error, { phase: 'start' });
+  await flushReports();
   process.exit(1);
 });

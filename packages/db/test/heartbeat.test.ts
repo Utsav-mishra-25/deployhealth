@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { CHECK_HEARTBEAT, recordHeartbeat, workerIsHealthy, WORKER_HEARTBEAT_MAX_AGE_SECONDS } from '../src/heartbeat';
+import { CHECK_HEARTBEAT, heartbeatAgeSeconds, recordHeartbeat, workerIsHealthy, WORKER_HEARTBEAT_MAX_AGE_SECONDS } from '../src/heartbeat';
 import { workerHeartbeats } from '../src/schema';
 import { openTestDb, truncateAll } from './test-db';
 
@@ -46,5 +46,15 @@ describe('worker heartbeat', () => {
   it('reads only the check-endpoints heartbeat', async () => {
     await recordHeartbeat(db, 'something-else');
     expect(await workerIsHealthy(db)).toBe(false);
+  });
+
+  it('reports its age in seconds on the database clock, null before the first run', async () => {
+    expect(await heartbeatAgeSeconds(db)).toBeNull();
+    await recordHeartbeat(db);
+    await age(200);
+    const seconds = await heartbeatAgeSeconds(db);
+    expect(seconds).toBeGreaterThanOrEqual(200);
+    expect(seconds).toBeLessThan(205);
+    expect(await heartbeatAgeSeconds(db, 'another')).toBeNull();
   });
 });
