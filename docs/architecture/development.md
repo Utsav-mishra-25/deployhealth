@@ -24,9 +24,12 @@ App status that can't reveal other accounts' repositories, absolute URLs from `P
 /security stating strict mode's limit (too large or couldn't be checked is neutral),
 the token kept out of the Action snippet's command line, and e2e on a production build) and
 Phase 7 part 1 (a freelancer-first landing page with a product screenshot, a header nav on every
-public page, /pricing, a friendly 404 and a guide on /demo) and Phase 8.1 (first-run onboarding:
+public page, /pricing, a friendly 404 and a guide on /demo), Phase 8.1 (first-run onboarding:
 the setup checklist, the install round trip back to the step it started from, App coverage per
-repository, a project page that says what will appear, no token at creation) are built.
+repository, a project page that says what will appear, no token at creation) and Phase 9 part 1
+(production readiness: redacted logs, Sentry error reports, operator alerts, self-serve export and
+deletion on /account with a deletion record, a status page link, incident and maintenance
+runbooks) are built.
 
 ## Repository files
 
@@ -37,6 +40,8 @@ LICENSE               FSL-1.1-MIT (everything except packages/core, which has it
 .github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main
 .github/workflows/publish-cli.yml    manual, not used yet: build job, then a publish job behind the npm-publish environment
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
+docs/incident.md           what to check, in order, when the site or the worker is down; the status page
+docs/maintenance.md        planned downtime, migrations, rotating the GitHub App key, webhook secret and others
 scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
 scripts/laravel-framework-names.mjs  `pnpm laravel:names`: regenerates core's LARAVEL_FRAMEWORK_NAMES from
                            pinned laravel/framework tags (manual, not in CI, not shipped)
@@ -146,4 +151,8 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   Runtime-provided ones (`NODE_ENV`) are skipped by the scanner's `DEFAULT_IGNORE`, and tests
   and fixtures are skipped by default, so the self-scan needs no `--ignore` or `--exclude`.
   The CLI (core) reads one variable, `DEPLOYHEALTH_TOKEN`, in `cli.ts`'s `nodeIo()`, declared in
-  `packages/core/.env.example`.
+  `packages/core/.env.example`. `RAILWAY_GIT_COMMIT_SHA` (Sentry's release) is set by Railway and
+  skipped by `DEFAULT_IGNORE`, but still listed in web's and worker's `.env.example`. Optional
+  variables whose value can be wrong without breaking the app (`PUBLIC_ORIGIN`, `SENTRY_DSN`,
+  `OPERATOR_WEBHOOK_URL`, `STATUS_PAGE_URL`) are read raw and checked where they're used: a bad
+  value turns the feature off with one log line, never fails the environment.

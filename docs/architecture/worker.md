@@ -1,21 +1,24 @@
 # Worker (`apps/worker`)
 
 The pg-boss process: migration wait, uptime checks and alerts, the nightly prune, the demo reseed,
-and the pull request check queue. Read before changing anything under `apps/worker` (the PR check
+the pull request check queue, and operator alerts and error reports. Read before changing anything under `apps/worker` (the PR check
 itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](security.md)).
 
 ## Layout
 
 ```
   worker/             plain Node process running pg-boss
-    src/index.ts      waits for migrations, then wires queues and real deps: check-endpoints, prune-checks,
-                      reseed-demo, pr-check
+    src/index.ts      redacted console first; Sentry and operator alerts (both optional); waits for
+                      migrations, then wires queues and real deps: check-endpoints, prune-checks,
+                      reseed-demo, pr-check (each through observeJob), and the heartbeat watch
     src/readiness.ts  waitForMigrations(): poll every 5 s, up to 10 minutes, then throw (exit 1)
     src/schedules.ts  every queue's options and cron (registerQueues: create, re-apply options, schedule)
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed;
                       prCheck)
     src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
+    src/operator.ts   operator alerts (OPERATOR_WEBHOOK_URL): heartbeat watch, repeated job failures,
+                      rate limits; observeJob() (report + count every job's failures)
     src/guarded-http.ts  the ONLY outbound HTTP: guardedRequest / guardedPost on node:http(s) + guardedLookup,
                       and githubFetch (Octokit's fetch: api.github.com only, keep-alive, response cap)
     src/env.ts        the ONLY place the worker reads process.env
@@ -53,7 +56,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   reads that row.
 - **prune-checks** (nightly, 03:17 UTC): first `rollupChecks()` writes one `endpoint_daily_stats`
   row per endpoint per complete UTC day (idempotent upsert), then `pruneChecks()` deletes raw checks
-  from whole days more than 30 days back. A failed rollup deletes nothing.
+  from whole days more than 30 days back. A failed rollup deletes nothing. It also deletes webhook
+  delivery ids older than 24 h and `account_deletions` records older than 35 days.
 - **reseed-demo** (only with `DEMO_PUBLIC=1`, which also needs `DEMO_BASE_URL`): every 30 minutes
   (`RESEED_CRON`) and once on start, runs the seed so production needs no manual seed step and the
   incident stays recent. About a second; logs its duration, never the token. Retries up to 5 times,
@@ -66,3 +70,21 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   a deploy outlasts the migration wait; `schedules.test.ts` pins the span. See
   [github-app.md](github-app.md). The nightly prune also deletes webhook delivery ids
   older than 24 h.
+
+## Error reports and operator alerts
+
+- **Logs** are redacted for the whole process: `installConsoleRedaction()` runs at module load in
+  `index.ts`, before anything can print (security.md, "Logs and error reports").
+- **Error reports** (`SENTRY_DSN`, `@deployhealth/db/sentry`): every job runs through
+  `observeJob(queue, run, …)`, which reports a failure (tagged with the queue) and throws it again
+  so pg-boss retries as before; check-endpoints also reports each endpoint's processing error
+  (`deps.report`). A start failure is reported and flushed before the process exits.
+- **Operator alerts** (`OPERATOR_WEBHOOK_URL`, `operator.ts`, through `sendWebhook` and its SSRF
+  guard, `{ text }` escaped like project alerts): `observeJob` counts each queue's consecutive
+  failures and alerts on the 3rd (`FAILURES_BEFORE_ALERT`), then once when it succeeds again; a
+  timer outside pg-boss (`HEARTBEAT_WATCH_INTERVAL_MS`, 1 minute) reads `heartbeatAgeSeconds()` and
+  alerts when it's over `WORKER_HEARTBEAT_MAX_AGE_SECONDS`, after giving a new process that long to
+  write its first, then once when it's fresh again. One alert per kind per hour, 10 per hour in
+  all, in memory. Messages hold queue names, counts and `errorLabel()` only. A URL that isn't
+  public http(s) logs one line and leaves alerts off; the worker runs either way. A dead process
+  can't alert: the external monitor covers it (deploy-railway.md step 9).
