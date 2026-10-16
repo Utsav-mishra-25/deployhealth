@@ -1,8 +1,9 @@
 # Security
 
-Hard caps, SSRF, authorization, share links, security headers, and the public pages that describe
-them (/security, /privacy, /terms, security.txt). Read before changing a cap, anything that fetches
-a URL, a query's scoping, share links, headers, or those pages.
+Hard caps, SSRF, authorization, share links, security headers, logs and error reports, account
+export and deletion, and the public pages that describe them (/security, /privacy, /terms,
+security.txt). Read before changing a cap, anything that fetches a URL, a query's scoping, share
+links, headers, anything that logs or reports errors, or those pages.
 
 ## Layout (core)
 
@@ -51,6 +52,9 @@ a URL, a query's scoping, share links, headers, or those pages.
   contains `fetch(`, `http(s).request(`/`.get(`, axios, undici, `got(`, node-fetch, or imports
   `node:http(s)`/`http2`. Its allowlist names every exception with a reason (the guarded module,
   the CLI, the scanner's Ruby `ENV.fetch` pattern) and fails if an entry goes stale.
+  **The one outbound request that isn't guarded:** Sentry's SDK sends error reports to the host in
+  `SENTRY_DSN` with its own transport (`packages/db/src/sentry.ts`). That host is the operator's
+  setting, never user input, and no file in the repo makes the request, so the walk doesn't see it.
 
 ## Authorization
 
@@ -67,6 +71,9 @@ a URL, a query's scoping, share links, headers, or those pages.
     contains client B's data.
   - Operator commands (`delete-user`, `stats` in packages/db) aren't owner-scoped either: they run
     only from a shell in the web container, aren't exported from the package and have no route.
+    The account page's export and deletion are owner-scoped: `exportUserData(db, userId)`,
+    `planOwnAccountDeletion` / `deleteOwnAccount(db, userId)` (deleteUser's `{ userId }`
+    selector; the login and GitHub id selectors stay operator-only) and `userExists`.
 
 ## Share links
 
@@ -75,6 +82,50 @@ a URL, a query's scoping, share links, headers, or those pages.
   info `deployhealth-report-share`. Verify the signature (constant time) before parsing fields.
   Stateless, 90 days; rotating the key revokes every link. `/share/*` is rate-limited per IP in
   `middleware.ts` (Node runtime, 30/min, keyed on the last `X-Forwarded-For` hop).
+
+## Logs and error reports
+
+- **Never values, tokens, webhook URLs or cookies in a log line or an error report.**
+  `packages/db/src/redact.ts` (`@deployhealth/db/redact`; not in core, the published scanner):
+  `redactText()` keeps a URL's scheme and host only (no userinfo, path or query) and replaces
+  ingest tokens, GitHub and Slack tokens, JWTs, bearer credentials, cookie and authorization
+  headers, secret-named pairs (`apiKey: …`), env assignments (`NAME=value`: the value), email
+  addresses, 32+ hex characters (a full commit SHA included) and random-looking base64 runs with
+  `[redacted]`. Every pattern is bounded, so it runs in linear time (`test/redact.test.ts` times
+  hostile inputs).
+- **Logs:** both servers call `installConsoleRedaction()` at startup (worker `index.ts`, before
+  anything logs; web `instrumentation.ts` → `lib/observability.ts`, Node runtime), so every
+  console line, Next's and libraries' included, is formatted, redacted and printed as one string.
+  Call sites still log names, hosts and an error's name and code (`errorLabel()`), never a message
+  that could quote a URL. No source file passes a raw error object to `console`
+  (`apps/worker/test/log-redaction.test.ts` walks the repo; a pg error's own fields can quote rows).
+- **Error reports** (`packages/db/src/sentry.ts`, on only with `SENTRY_DSN`): errors only (no
+  tracing, profiling or OpenTelemetry setup), no default PII, no default integrations, no
+  breadcrumbs, no local variables. `scrubErrorEvent()` runs as `beforeSend`: it removes the
+  request's body, headers, cookies and query string (keeping the method and the redacted path), the
+  user, breadcrumbs, source lines and frame variables, keeps only the runtime, OS and trace
+  contexts, and redacts the message, exception values, tags and extras. Web reports
+  `onRequestError` with the route pattern and method only (never the path a request used, which
+  can hold a share token); the worker tags reports with the queue. Release: Railway's
+  `RAILWAY_GIT_COMMIT_SHA`. No browser SDK: nothing reaches the client bundle or any public page.
+  `test/sentry.test.ts` throws through the real SDK with a `dh_` token and a Slack webhook URL in
+  the error's context and checks what the transport would have sent.
+
+## Account export and deletion
+
+- **/account** (signed in): "Export my data" (`GET /account/export`: `exportUserData`, JSON,
+  `no-store`, at most `EXPORTS_PER_WINDOW` (5) per user per 10 minutes in memory; the demo user
+  gets a 403 from `requireWritableUser()`), and "Delete my account" (`deleteMyAccount`: the guard
+  first, then the typed GitHub login, then `deleteOwnAccount`, then sign-out onto
+  `/account/deleted`). The export holds no token hashes or hints, no alert webhook URLs ("set"),
+  no raw checks and no GitHub comment ids (`test/export.test.ts`).
+- **Deletion record:** `deleteUser()` (both paths) inserts `account_deletions (github_id,
+  deleted_at)` in its transaction, linked to nothing, pruned nightly after
+  `ACCOUNT_DELETION_RECORD_DAYS` (35: four weekly backups plus a week), so a restore can re-apply
+  deletions newer than the dump.
+- **A session whose account is gone** (JWTs can't be revoked): `requireUser()` checks
+  `userExists()` and redirects to `/account/signed-out`, which signs out only a session whose user
+  no longer exists (so a link to it can't sign anyone out) and shows `/account/deleted`.
 
 ## Security headers
 
@@ -99,6 +150,8 @@ a URL, a query's scoping, share links, headers, or those pages.
   country, `LEGAL_LAST_UPDATED`, hosting region, subprocessors, deletion window,
   `CHECK_RETENTION_TEXT`) and `lib/auth-providers.ts` (`GITHUB_OAUTH_SCOPES`, `githubSignInReads()`,
   also shown on /login and /security). The contact is `securityContact()`. `test/legal.test.ts`
-  checks /privacy and /security render the same retention and scope text. Bump
+  checks /privacy and /security render the same retention and scope text, and the same
+  `ERROR_REPORTS_TEXT`, `SELF_SERVE_DATA_TEXT` and `DELETION_RECORD_TEXT`. Sentry is a
+  subprocessor. Bump
   `LEGAL_LAST_UPDATED` with any change to either page, and keep /privacy true to the code like
   /security.

@@ -13,7 +13,8 @@ apps/
     src/env.ts        the ONLY place web reads process.env (by name, validated lazily)
     src/auth.ts       Auth.js v5: GitHub OAuth + dev-only dev login, JWT sessions, no adapter
     src/middleware.ts rate limits for /share/* and /api/health/worker (Node runtime, in memory)
-    src/instrumentation.ts  at startup: one error if PUBLIC_ORIGIN is invalid, or missing in production
+    src/instrumentation.ts  at startup: one error if PUBLIC_ORIGIN is invalid, or missing in production; then
+                      (Node runtime) lib/observability.ts: redacted console and Sentry; onRequestError
     src/lib/          ingest handler, validation (zod), guard (read-only demo), demo owner, paths,
                       handoff loader, share-link signing, rate limiter, auth providers (+ the OAuth
                       scopes and what sign-in reads), formatting, github-webhook.ts (signature,
@@ -30,7 +31,9 @@ apps/
                       site-nav.ts (the header's public links and the share-page flag), app-url.ts (`publicOrigin()`: every
                       absolute URL, from PUBLIC_ORIGIN), db.ts (the shared database handle), project-status.ts
                       (one status per project, its reasons, ordering, the summary line),
-                      deploy-changes.ts (a deploy's "what changed" and outage lines, commit links)
+                      deploy-changes.ts (a deploy's "what changed" and outage lines, commit links),
+                      observability.ts (redacted logs, Sentry, request errors by route pattern),
+                      account.ts (the account page's wording, export limit and paths)
     src/views/        page bodies shared by signed-in and /demo routes: clients overview, client,
                       project, handoff, report (props: ownerId/data, paths, readOnly)
     src/app/          / (landing when signed out, else → /clients), /login, /clients, /clients/new,
@@ -39,13 +42,15 @@ apps/
                       /share/reports/[token], /api/demo/broken, /pricing, /security, /privacy, /terms and
                       /.well-known/security.txt (public), /api/health (Railway's, no database),
                       /api/health/worker (deep check), /api/github/webhook (GitHub App),
-                      /github/installed (the App's setup URL); icon.svg, opengraph-image.tsx (+
+                      /github/installed (the App's setup URL), /account (+ /export, actions, /deleted,
+                      /signed-out); icon.svg, opengraph-image.tsx (+
                       twitter-image), sitemap.ts, not-found.tsx (every 404)
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, demo guide, print/share buttons, report toolbar,
                       alert card, landing, public-nav, pricing, faq, prose-page (layout of
                       /security, /privacy, /terms), onboarding-checklist, install-confirmation,
-                      repo-coverage-notice, project-getting-started, setup-order
+                      repo-coverage-notice, project-getting-started, setup-order, account-data (the
+                      account page's export and delete sections)
     public/landing/   demo-clients.png: the landing page's screenshot (committed, not generated)
     e2e/              Playwright on `next build` + `next start`: public demo (+ handoff, report) and the
                       signed-in flow (+ share link); onboarding.spec.ts (the first run on a fresh
@@ -230,3 +235,11 @@ And in core, for client components:
   `no-store`, `X-Robots-Tag: noindex`, not in the sitemap, and rate-limited per IP in
   `middleware.ts` (30/min, its own window, same `clientIp()` as /share). /security doesn't list
   routes, so it isn't there. Monitor setup: `docs/deploy-railway.md` step 9.
+- **The account page** (`/account`, signed in): "Export your data" (a plain link to
+  `/account/export`, `download`) and "Delete your account" (what goes, with counts from
+  `planOwnAccountDeletion`; what it means for clients, `DELETION_CONSEQUENCES`; a plain form whose
+  typed GitHub login confirms it; no JavaScript). Both live in `components/account-data.tsx`, so
+  they can move to whichever account or settings page the app has. The dev user sees the export
+  and "can't be deleted here". `/account/deleted` is public and noindex; `/account/signed-out` is
+  where `requireUser()` sends a session whose account is gone (security.md). In the a11y and
+  375 px checks.

@@ -6,8 +6,9 @@ var drift between code and env files), is it up (uptime checks), and did the las
 
 Built: Phases 1–6, from config health to "can't check" on unsupported stacks, PHP/Laravel and
 Java/Kotlin with Spring (CLI 0.5.0), docs pages, the Action and a security pass, plus Phase 7 part 1
-(landing page, header nav, /pricing, 404, demo guide) and Phase 8.1 (first-run onboarding: setup
-checklist, App coverage, no token at creation) (list: development.md).
+(landing page, header nav, /pricing, 404, demo guide), Phase 8.1 (first-run onboarding: setup
+checklist, App coverage, no token at creation) and Phase 9 part 1 (redacted logs, Sentry, operator
+alerts, /account export and deletion, status link, runbooks) (list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for
 an area before changing it (index at the end). Each app and package has a short CLAUDE.md naming
@@ -19,7 +20,8 @@ its docs, and `AGENTS.md` points other coding agents here.
 - `apps/worker`: Node process on pg-boss: uptime checks, alerts, prune, demo reseed, PR checks.
 - `packages/core`: scanner, CLI, SSRF guard, alert, handoff and report rules (MIT).
 - `packages/db`: Drizzle schema, migrations, queries, seed.
-- `docs`: the Railway deploy guide, the GitHub App manifest, `architecture/`.
+- `docs`: the Railway deploy guide, the incident and maintenance runbooks, the GitHub App manifest,
+  `architecture/`.
 - `scripts`: `eval-repos.mjs` (scanner accuracy), `load-demo.mjs` (load check) and
   `laravel-framework-names.mjs` (core's Laravel list), all manual.
 
@@ -69,6 +71,12 @@ One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
   `assertPublicUrl()`; `no-unguarded-http.test.ts` enforces it. → security.md
 - **Never values:** env values are never sent, stored, printed or logged; names, paths and line
   numbers only. → scanner.md, github-app.md
+- **Logs and error reports** pass through `@deployhealth/db/redact` (both servers install the
+  redacting console at startup; Sentry's `beforeSend` is `scrubErrorEvent`); never hand a raw
+  error object to `console`. → security.md
+- **Account deletion** goes through `deleteUser()` (self-serve and the operator's CLI alike), which
+  records it in `account_deletions`; a new user-owned table joins its lists and the export.
+  → database.md
 - **Tokens:** only the SHA-256 is stored; the plaintext is shown once. → ingest-and-cli.md
 - **Untrusted Markdown** renders only through `SafeMarkdown`; never add rehype-raw. → web.md
 - **Public pages:** no external assets, server components, no sideways scroll at 375 px, no new

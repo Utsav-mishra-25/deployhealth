@@ -80,6 +80,7 @@ the build command builds the workspace packages it depends on first).
    | `SECURITY_CONTACT_EMAIL` | e.g. `security@yourdomain.com` | Optional but recommended. Shown on `/security` and in `/.well-known/security.txt` as where to report vulnerabilities. Unset, both point at a private security advisory on the GitHub repo |
    | `GITHUB_APP_WEBHOOK_SECRET` | the webhook secret you set on the App | Optional: the GitHub App from step 8. Verifies every webhook delivery; unset, `/api/github/webhook` answers 404 |
    | `GITHUB_APP_SLUG` | e.g. `deployhealth` | Optional: the App's URL name (`github.com/apps/<slug>`), for the install link on project settings |
+   | `SENTRY_DSN` | the Sentry project's DSN | Optional: error reports from web's server (step 12). Unset, nothing is sent |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
 
@@ -141,8 +142,11 @@ the build command builds the workspace packages it depends on first).
    | `DEMO_BASE_URL` | `https://<your-domain>` | web's public URL from step 2.6. Required when `DEMO_PUBLIC=1`: the demo's failing "Acme API" endpoint is `<DEMO_BASE_URL>/api/demo/broken` |
    | `GITHUB_APP_ID` | e.g. `1234567` | Optional: the GitHub App from step 8 (its numeric App ID). Set it with the key, or neither |
    | `GITHUB_APP_PRIVATE_KEY` | the App's `.pem`, base64 on one line | Optional: see step 8 for the one-line encoding. The worker refuses to start if it can't parse it |
+   | `SENTRY_DSN` | the same DSN as on web | Optional: error reports from the worker (step 12) |
+   | `OPERATOR_WEBHOOK_URL` | a Slack (or Discord + `/slack`) incoming webhook | Optional: operator alerts (step 13) |
 
-   `DEMO_BASE_URL` is only read by the worker, so web doesn't need it.
+   `DEMO_BASE_URL` is only read by the worker, so web doesn't need it. Railway sets
+   `RAILWAY_GIT_COMMIT_SHA` on both services itself (Sentry's release); don't set it.
 
 6. No domain and no health check: the worker has no HTTP server.
 
@@ -271,10 +275,13 @@ when the site or the worker goes down. Use [Better Stack](https://betterstack.co
 
 ## 10. Delete a user on request
 
-`/privacy` promises that a request emailed from the address on someone's GitHub account deletes
-their account and everything it owns within 30 days. There is no route for it: you run one
-command in the web container, where `DATABASE_URL` already points at Postgres over the private
-network, so no secret leaves Railway and none is pasted anywhere.
+Users can export their data and delete their account themselves, on their **Account** page
+(`/account`). `/privacy` also promises that a request emailed from the address on someone's GitHub
+account deletes their account and everything it owns within 30 days. For that there is no route:
+you run one command in the web container, where `DATABASE_URL` already points at Postgres over the
+private network, so no secret leaves Railway and none is pasted anywhere. Both delete exactly the
+same rows (the same function), and both record the deletion: the GitHub numeric id and the time,
+in `account_deletions`, kept 35 days so a restore from backup re-applies it.
 
 1. **Check the request.** It must come from the email address on the GitHub account it names
    (their public profile, or the address their sign-in recorded). If it doesn't, reply asking
@@ -314,12 +321,13 @@ network, so no secret leaves Railway and none is pasted anywhere.
    sentences about the App. If you're still signed in somewhere, sign out: that session
    > now shows an empty account. Signing in again would create a new, empty account.
 
-What the command leaves, on purpose: `check_hosts` (one row per monitored hostname, with no link
+What the command leaves, on purpose: the `account_deletions` record (GitHub id and time, pruned
+nightly after 35 days), `check_hosts` (one row per monitored hostname, with no link
 to any user, pruned by age), `webhook_deliveries` (delivery ids only, pruned after 24 hours) and
 pg-boss's own job rows (a pull request job holds an installation id, a repository name and a pull
 request number; pg-boss deletes finished jobs on its retention schedule). A session cookie can't be
-revoked (sessions are JWTs): until it expires it shows an empty account, and nothing written
-through it can succeed, because every row needs the deleted user.
+revoked (sessions are JWTs), but the next page that needs a signed-in user signs it out and shows
+"Your account has been deleted".
 
 **Last resort, only if `railway ssh` is unavailable:** run the command from a checkout of this
 repository through Postgres's public TCP proxy. Enable the proxy (Postgres → **Settings →
@@ -370,6 +378,45 @@ Left out: the demo and dev users, and 2 users matching 2 --exclude-login values.
 - Locally: `pnpm --filter @deployhealth/db stats --exclude-login <login>` (reads `DATABASE_URL`
   from `packages/db/.env`).
 
+## 12. Error reports (Sentry, optional)
+
+With `SENTRY_DSN` set, web and worker send errors to Sentry, server side only (no browser script,
+nothing added to any page). Reports are scrubbed before they leave the server: no request bodies,
+headers, cookies, query strings or signed-in user; tokens, webhook URLs, email addresses, long
+random strings and `NAME=value` pairs become `[redacted]` (packages/db/src/redact.ts). Each report
+carries the release (the commit SHA Railway deploys), the service (`web` or `worker`), and the
+route pattern or the queue.
+
+1. [sentry.io](https://sentry.io) → **Create project** → platform **Node.js** → name it
+   `deployhealth`. Skip the SDK setup screens.
+2. **Project settings** → **Client Keys (DSN)**: copy the DSN.
+3. Set `SENTRY_DSN` on **web** and on **worker** to that DSN. **Deploy** both.
+4. Check: each service's log shows `[sentry] error reporting on, release <7 characters>` once at
+   startup. `[sentry] SENTRY_DSN is not a Sentry DSN …` means the value is wrong; the service runs
+   without error reports.
+5. Optional, in Sentry → **Project settings** → **Security & Privacy**: keep **Data Scrubber** and
+   **Use Default Scrubbers** on, as a second layer.
+
+## 13. Operator alerts (optional)
+
+With `OPERATOR_WEBHOOK_URL` set, the worker posts to a Slack (or Discord) channel when:
+
+- the `check-endpoints` heartbeat is more than 3 minutes old (uptime checks aren't running), and
+  once more when it's fresh again;
+- a queue's job (`check-endpoints`, `prune-checks`, `reseed-demo`, `pr-check`) fails 3 times in a
+  row, and once more when it succeeds again.
+
+At most one alert of each kind an hour and 10 an hour in all. Messages name the queue, the count
+and the error's name and code, never a message, URL or value. A dead worker can't post about
+itself: the external monitor on `/api/health/worker` (step 9) covers that.
+
+1. Slack: **Apps** → **Incoming Webhooks** → **Add to Slack** → pick a channel only you read →
+   copy the webhook URL. Discord: channel → **Edit Channel** → **Integrations** → **Webhooks** →
+   **New Webhook** → **Copy Webhook URL**, then append `/slack`.
+2. Set `OPERATOR_WEBHOOK_URL` on the **worker**. **Deploy**.
+3. Check: no `[operator] OPERATOR_WEBHOOK_URL is not usable` line in the worker's log. There's no
+   test message; the first alert is a real one.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -389,3 +436,5 @@ Left out: the demo and dev users, and 2 users matching 2 --exclude-login values.
 | GitHub App deliveries answer 401 | `GITHUB_APP_WEBHOOK_SECRET` on web doesn't match the App's webhook secret. |
 | GitHub App deliveries answer 404 | `GITHUB_APP_WEBHOOK_SECRET` isn't set on web. |
 | `/demo` is a 404 | `DEMO_PUBLIC` isn't `1` on web, or the worker hasn't reseeded yet (check its log). |
+| A log shows `[sentry] SENTRY_DSN is not a Sentry DSN` | The value isn't a DSN (`https://<key>@<host>/<project id>`); copy it again from Sentry (step 12). The service runs without error reports. |
+| The worker log shows `[operator] OPERATOR_WEBHOOK_URL is not usable` | The URL isn't a public http(s) URL; copy the webhook URL again (step 13). The worker runs without operator alerts. |
