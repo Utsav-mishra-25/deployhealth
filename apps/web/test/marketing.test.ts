@@ -1,9 +1,12 @@
+import { DEMO_PROJECT_IDS, slugify } from '@deployhealth/db';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SITEMAP_PATHS } from '@/app/sitemap';
+import { DemoGuide } from '@/components/demo-guide';
 import { PricingPlans } from '@/components/pricing';
-import { FAQ_COST_ANSWER, PRICING, PRICING_METADATA } from '@/lib/marketing';
+import { DEMO_GUIDE, DEMO_GUIDE_CLIENT_SLUG, FAQ_COST_ANSWER, PRICING, PRICING_METADATA } from '@/lib/marketing';
+import { DEMO_PATHS } from '@/lib/paths';
 
 /** Things deployhealth doesn't have, so neither the pricing block nor /pricing may mention them. */
 const UNBUILT = /email alert|branded|white.?label|seats?\b|per seat|unlimited|up to \d|\blimits?\b|SSO|SLA/i;
@@ -40,5 +43,25 @@ describe('pricing', () => {
     expect(SITEMAP_PATHS).toContain('/pricing');
     expect(PRICING_METADATA.title).toBe('Pricing · deployhealth');
     expect(PRICING_METADATA.description.length).toBeLessThan(155);
+  });
+});
+
+describe('the demo guide', () => {
+  it("points at the demo's list, the incident deploy, Acme's report and the storefront's handoff", () => {
+    const storefront = DEMO_PROJECT_IDS.storefront;
+    expect(DEMO_GUIDE.projects.href).toBe('/demo#projects');
+    expect(DEMO_GUIDE.deploy.href).toBe(`${DEMO_PATHS.project(storefront)}#deploys`);
+    expect(DEMO_GUIDE.report.href).toBe(DEMO_PATHS.clientReport(DEMO_GUIDE_CLIENT_SLUG));
+    expect(DEMO_GUIDE.handoff.href).toBe(DEMO_PATHS.handoff(storefront));
+    // The seed's client is "Acme Corp"; its slug comes from the same function the app uses.
+    expect(slugify('Acme Corp')).toBe(DEMO_GUIDE_CLIENT_SLUG);
+  });
+
+  it('is three items, each a link', () => {
+    const html = renderToStaticMarkup(createElement(DemoGuide));
+    expect(html.match(/<li>/g)).toHaveLength(3);
+    for (const target of Object.values(DEMO_GUIDE)) expect(html).toContain(`href="${target.href}"`);
+    expect(html).toContain('The project list</a> (worst first)');
+    expect(html).toContain('(acme-storefront)');
   });
 });
