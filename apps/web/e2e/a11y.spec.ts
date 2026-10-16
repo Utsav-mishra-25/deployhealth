@@ -5,9 +5,9 @@ import { signInAsDev } from './session';
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 
 /** WCAG 2.x A and AA rules; a serious or critical violation fails the page. */
-async function expectAccessible(page: Page, path: string) {
+async function expectAccessible(page: Page, path: string, status = 200) {
   const response = await page.goto(path);
-  expect(response?.status(), path).toBe(200);
+  expect(response?.status(), path).toBe(status);
   await page.waitForLoadState('networkidle');
   const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   const blocking = violations
@@ -32,9 +32,11 @@ test('public pages have no serious or critical accessibility violations', async 
     '/docs/nextjs',
     '/docs/laravel',
     '/docs/spring-boot',
+    '/pricing',
   ]) {
     await expectAccessible(page, path);
   }
+  await expectAccessible(page, '/no-such-page', 404);
 });
 
 test('the signed-in lists, a project with a deploy, its settings and a shared report have none either', async ({ page, browser }) => {

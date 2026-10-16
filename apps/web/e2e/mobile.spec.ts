@@ -6,9 +6,9 @@ const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 test.use({ viewport: { width: 375, height: 812 } });
 
 /** The page never scrolls sideways: wide tables scroll inside their own box instead. */
-async function expectNoSidewaysScroll(page: Page, path: string) {
+async function expectNoSidewaysScroll(page: Page, path: string, status = 200) {
   const response = await page.goto(path);
-  expect(response?.status(), path).toBe(200);
+  expect(response?.status(), path).toBe(status);
   await page.waitForLoadState('networkidle');
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -34,8 +34,16 @@ test('public pages fit a 375 px phone, signed out', async ({ page }) => {
     '/docs/laravel',
     '/docs/spring-boot',
     '/github/installed',
+    '/pricing',
   ]) {
     await expectNoSidewaysScroll(page, path);
+  }
+  await expectNoSidewaysScroll(page, '/no-such-page', 404);
+
+  // The header wraps under the logo: every link is on screen, with no menu and no JavaScript.
+  for (const path of ['/', '/pricing', '/demo', '/no-such-page']) {
+    await page.goto(path);
+    for (const link of await page.getByRole('navigation', { name: 'Main' }).getByRole('link').all()) await expect(link, path).toBeInViewport({ ratio: 1 });
   }
 
   // The demo overview shows each project's status under its name, on screen, with its reasons.
