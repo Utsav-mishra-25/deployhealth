@@ -124,7 +124,7 @@ test('first run: checklist, project, App install round trip, coverage, a site an
   // 6. Home: step 1 done, step 2 names the uncovered project and links to the notice, and the row says why.
   await page.goto('/clients');
   expect(await stepsDone(page)).toEqual(['step-app=true', 'step-project=true', 'step-site=false', 'step-action=false']);
-  await expect(page.getByTestId('checklist-uncovered')).toHaveText("1 project isn't covered by the App: dh-laravel-test. How to add them");
+  await expect(page.getByTestId('checklist-uncovered')).toHaveText("1 project isn't covered by the App: dh-laravel-test. How to add it");
   await expect(page.getByTestId('checklist-uncovered').getByRole('link')).toHaveAttribute('href', '/github/installed#not-covered');
   await expect(page.getByTestId('checklist-suggestions')).toContainText('Add a project for utsav-test/blog');
   const row = page.getByTestId('project-row').filter({ hasText: 'dh-laravel-test' });

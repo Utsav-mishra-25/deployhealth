@@ -107,7 +107,9 @@ export function checklist(state: OnboardingState, coverage: AppCoverage, appSlug
       done: state.projects.length > 0,
       optional: false,
       action: { href: '/projects/new', label: state.projects.length > 0 ? 'Add another project' : 'Add a project' },
-      ...(uncovered.length > 0 ? { note: { text: uncoveredLine(uncovered), href: NOT_COVERED_HREF, label: 'How to add them' } } : {}),
+      ...(uncovered.length > 0
+        ? { note: { text: uncoveredLine(uncovered), href: NOT_COVERED_HREF, label: uncovered.length === 1 ? 'How to add it' : 'How to add them' } }
+        : {}),
     },
     {
       id: 'site',

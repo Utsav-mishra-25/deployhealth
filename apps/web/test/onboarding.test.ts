@@ -128,7 +128,7 @@ describe('the first-run checklist', () => {
     expect(uncoveredLine(['shop'])).toBe("1 project isn't covered by the App: shop");
     // An 'all repositories' installation covers every repo of its account: no note for those.
     const all = { ...state, installations: [installation({ repositorySelection: 'all', repos: [] })] };
-    expect(stepsOf(all).byId.project!.note?.text).toBe("1 project isn't covered by the App: blog");
+    expect(stepsOf(all).byId.project!.note).toEqual({ text: "1 project isn't covered by the App: blog", href: '/github/installed#not-covered', label: 'How to add it' });
     // Before any installation, step 1 already says to install it: no note.
     expect(stepsOf({ ...state, installations: [] }).byId.project!.note).toBeUndefined();
   });
