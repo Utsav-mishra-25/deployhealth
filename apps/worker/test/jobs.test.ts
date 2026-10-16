@@ -61,6 +61,7 @@ describe('checkEndpoints job', () => {
 
   it('keeps going when one endpoint fails to record, and respects the concurrency limit', async () => {
     const logs: string[] = [];
+    const reported: unknown[] = [];
     let running = 0;
     let peak = 0;
     const summary = await checkEndpoints({
@@ -79,9 +80,12 @@ describe('checkEndpoints job', () => {
       },
       notify: async () => true,
       log: (m) => void logs.push(m),
+      report: (error) => void reported.push(error),
       concurrency: 3,
     });
     expect(summary).toMatchObject({ checked: 6, errors: 1 });
+    // The error itself goes to error reports, which scrub it (packages/db/src/sentry.ts).
+    expect(reported).toEqual([expect.objectContaining({ code: '23505' })]);
     expect(peak).toBeLessThanOrEqual(3);
     // The host only, and the error's name and code: never the URL or the message.
     expect(logs).toEqual(['[check] e3.example could not be processed: Error 23505']);

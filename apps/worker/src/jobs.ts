@@ -30,6 +30,8 @@ export interface CheckEndpointsDeps {
   /** Marks the worker alive (worker_heartbeats), at the end of every run, even with nothing due. */
   heartbeat: () => Promise<void>;
   log: (message: string) => void;
+  /** One endpoint's processing error, for error reports (Sentry). Optional. */
+  report?: (error: unknown) => void;
   /** Checks run in parallel, up to this many at a time. */
   concurrency?: number;
   /** Resolves at `until` (or at once if it has passed). Tests pass a fake clock. */
@@ -101,6 +103,7 @@ async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary
     // The host only, and the error's name and code: never the URL (its path or query may hold a
     // token) or a message that could quote it.
     deps.log(`[check] ${endpoint.hostname} could not be processed: ${errorLabel(error)}`);
+    deps.report?.(error);
   }
 }
 

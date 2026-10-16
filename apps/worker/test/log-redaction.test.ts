@@ -45,7 +45,7 @@ describe('log redaction', () => {
 
   it('both servers install the redacting console at startup', () => {
     const worker = readFileSync(join(ROOT, 'apps/worker/src/index.ts'), 'utf8');
-    const web = readFileSync(join(ROOT, 'apps/web/src/instrumentation.ts'), 'utf8');
+    const web = readFileSync(join(ROOT, 'apps/web/src/lib/observability.ts'), 'utf8');
     for (const text of [worker, web]) expect(text).toMatch(/installConsoleRedaction\(\)/);
     // The worker installs it before anything can log: at module level, ahead of main().
     expect(worker.indexOf('installConsoleRedaction();')).toBeLessThan(worker.indexOf('async function main'));

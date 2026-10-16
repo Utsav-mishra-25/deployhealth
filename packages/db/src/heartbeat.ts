@@ -30,3 +30,12 @@ export async function workerIsHealthy(db: Db, maxAgeSeconds = WORKER_HEARTBEAT_M
   );
   return result.rows[0]?.healthy === true;
 }
+
+/** Seconds since the named heartbeat was last written (database clock), or null if it never was. */
+export async function heartbeatAgeSeconds(db: Db, name: string = CHECK_HEARTBEAT): Promise<number | null> {
+  const result = await db.execute<{ age: string | number }>(
+    sql`select extract(epoch from (now() - ${workerHeartbeats.lastRunAt})) as age from ${workerHeartbeats} where ${workerHeartbeats.name} = ${name}`,
+  );
+  const age = result.rows[0]?.age;
+  return age === undefined ? null : Math.max(0, Number(age));
+}

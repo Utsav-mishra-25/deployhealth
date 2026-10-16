@@ -8,10 +8,20 @@ describe('parseWorkerEnv', () => {
   it('defaults the demo to off and needs no base URL then', () => {
     expect(parseWorkerEnv({ DATABASE_URL, DEMO_PUBLIC: undefined, DEMO_BASE_URL: undefined })).toEqual({
       DATABASE_URL,
+      NODE_ENV: 'development',
       DEMO_PUBLIC: '0',
       DEMO_BASE_URL: null,
       GITHUB_APP: null,
+      SENTRY_DSN: null,
+      RAILWAY_GIT_COMMIT_SHA: null,
+      OPERATOR_WEBHOOK_URL: null,
     });
+  });
+
+  it('keeps the optional observability settings raw and never throws over them', () => {
+    const env = parseWorkerEnv({ DATABASE_URL, SENTRY_DSN: ' not a dsn ', OPERATOR_WEBHOOK_URL: 'nope', RAILWAY_GIT_COMMIT_SHA: 'ABCDEF0123456789abcdef0123456789abcdef01' });
+    expect(env).toMatchObject({ SENTRY_DSN: 'not a dsn', OPERATOR_WEBHOOK_URL: 'nope', RAILWAY_GIT_COMMIT_SHA: 'abcdef0123456789abcdef0123456789abcdef01' });
+    expect(parseWorkerEnv({ DATABASE_URL, RAILWAY_GIT_COMMIT_SHA: 'main' }).RAILWAY_GIT_COMMIT_SHA).toBeNull();
   });
 
   it('requires an http(s) DEMO_BASE_URL when DEMO_PUBLIC=1', () => {
