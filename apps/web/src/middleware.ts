@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { clientIp, createRateLimiter } from '@/lib/rate-limit';
+import { HIDE_PUBLIC_NAV_HEADER } from '@/lib/site-nav';
 import { WORKER_HEALTH_PATH } from '@/lib/worker-health';
 
 /** Public shared reports: 30 requests per minute per IP. */
@@ -13,7 +14,13 @@ const workerHealth = createRateLimiter(WORKER_HEALTH_LIMIT);
 export function middleware(request: NextRequest): NextResponse {
   const limiter = request.nextUrl.pathname === WORKER_HEALTH_PATH ? workerHealth : sharedReports;
   const result = limiter.check(clientIp(request.headers));
-  if (result.ok) return NextResponse.next();
+  if (result.ok) {
+    if (request.nextUrl.pathname === WORKER_HEALTH_PATH) return NextResponse.next();
+    // A shared report is for the client: the layout shows the logo, not the site's navigation.
+    const headers = new Headers(request.headers);
+    headers.set(HIDE_PUBLIC_NAV_HEADER, '1');
+    return NextResponse.next({ request: { headers } });
+  }
   return new NextResponse('Too many requests. Try again in a minute.', {
     status: 429,
     headers: { 'retry-after': String(result.retryAfterSeconds), 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },

@@ -1,9 +1,13 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { auth, signOut } from '@/auth';
+import { PublicNav } from '@/components/public-nav';
 import { publicOrigin } from '@/lib/app-url';
 import { SITE_DESCRIPTION } from '@/lib/brand';
+import { isDemoPublic } from '@/lib/demo';
 import { REPO_URL } from '@/lib/legal';
+import { HIDE_PUBLIC_NAV_HEADER } from '@/lib/site-nav';
 import './globals.css';
 
 /**
@@ -23,11 +27,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
+  // Signed out: the public nav, except on shared reports (middleware.ts), which a client opens.
+  const showPublicNav = !session?.user && (await headers()).get(HIDE_PUBLIC_NAV_HEADER) !== '1';
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
         <header className="border-b border-gray-200 bg-white print:hidden">
-          <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+          <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
             <Link href={session ? '/clients' : '/'} className="font-semibold tracking-tight">
               deploy<span className="text-emerald-700">health</span>
             </Link>
@@ -46,6 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </form>
               </div>
             )}
+            {showPublicNav && <PublicNav demo={isDemoPublic()} />}
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
