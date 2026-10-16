@@ -28,7 +28,9 @@ import {
   recordScan,
   rotateProjectToken,
 } from '../src/queries';
+import { deleteOwnAccount } from '../src/account';
 import { deleteUser } from '../src/delete-user';
+import { exportUserData } from '../src/export';
 import { listDeployHistory } from '../src/deploy-history';
 import { getHandoffData } from '../src/handoff';
 import { getOnboardingState } from '../src/onboarding';
@@ -140,6 +142,18 @@ describe("user A cannot read user B's data", () => {
     expect(await agentPrStats(db, b.id, bClient.id, ...range)).toEqual({ undeclared: 1, total: 1 });
     expect(await listPrChecksForOwner(db, b.id, bProject.id)).toHaveLength(1);
   });
+
+  it("data export: A's export holds none of B's rows, names or ids", async () => {
+    const { a, b, bClient, bProject, bEndpoint, bDeploy } = await twoUsers();
+    const inst = await upsertInstallation(db, { githubInstallationId: 3, accountLogin: 'bob', accountType: 'User', installerGithubId: b.githubId }, [bProject.repoFullName]);
+    await upsertPrCheck(db, { projectId: bProject.id, installationId: inst.id, prNumber: 1, headSha: 'h', baseSha: 'b', authorLogin: 'bob', conclusion: 'success' });
+    const json = JSON.stringify(await exportUserData(db, a.id));
+    for (const value of [b.id, b.login, bClient.id, 'Bob Co', bProject.id, 'bob-app', bEndpoint.id, 'bob.example', bDeploy.deployId, 'bob/']) expect(json).not.toContain(value);
+    const own = await exportUserData(db, a.id);
+    expect(own!.projects.map((p) => p.name)).toEqual(['alice-app']);
+    expect(own!.clients.map((c) => c.name)).toEqual(['Alice Co']);
+    expect([own!.deploys, own!.endpoints, own!.alerts, own!.pullRequestChecks, own!.githubAppInstallations]).toEqual([[], [], [], [], []]);
+  });
 });
 
 describe("user A's first-run checklist never counts user B's data", () => {
@@ -238,6 +252,16 @@ describe("user A cannot modify user B's data", () => {
     expect(await listOpenAlerts(db, b.id, bProject.id)).toHaveLength(1);
     expect(await getGithubAppStatus(db, b.id, bProject.id)).not.toBeNull();
     expect(await listPrChecksForOwner(db, b.id, bProject.id)).toHaveLength(1);
+  });
+
+  it("deleting user A's account from the account page leaves B's data whole", async () => {
+    const { a, b, bClient, bProject, bDeploy } = await twoUsers();
+    await deleteOwnAccount(db, a.id);
+    expect((await listClients(db, b.id)).map((c) => c.id)).toEqual([bClient.id]);
+    expect(await getProjectForOwner(db, bProject.id, b.id)).not.toBeNull();
+    expect(await getLatestScan(db, bProject.id, bDeploy.deployId)).not.toBeNull();
+    expect(await listEndpointsForOwner(db, b.id, bProject.id)).toHaveLength(1);
+    expect(await listOpenAlerts(db, b.id, bProject.id)).toHaveLength(1);
   });
 
   it('while the owner can do all of it', async () => {
