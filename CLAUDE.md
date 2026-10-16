@@ -6,7 +6,8 @@ var drift between code and env files), is it up (uptime checks), and did the las
 
 Built: Phases 1–6, from config health to "can't check" on unsupported stacks, PHP/Laravel and
 Java/Kotlin with Spring (CLI 0.5.0), docs pages, the Action and a security pass, plus Phase 7 part 1
-(landing page, header nav, /pricing, 404, demo guide) (list: development.md).
+(landing page, header nav, /pricing, 404, demo guide) and Phase 8.1 (first-run onboarding: setup
+checklist, App coverage, no token at creation) (list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for
 an area before changing it (index at the end). Each app and package has a short CLAUDE.md naming

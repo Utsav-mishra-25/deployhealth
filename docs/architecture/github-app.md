@@ -99,18 +99,37 @@ pull_requests: write; events: pull_request; installation events arrive regardles
   (`linkInstallationsForUser` in the Auth.js `jwt` callback). Never link from the setup URL's query
   string. `findPrCheckTarget` returns only the linked user's project for the repo (case-insensitive,
   oldest if several, installation not suspended); no match → nothing stored, one log line.
+- **Repository selection.** `installations.repository_selection` is GitHub's `repository_selection`
+  from installation and installation_repositories deliveries ('all' or 'selected'; anything else
+  is dropped and an existing value kept; null, rows from before it, reads as 'selected'). An
+  'all' installation covers every repository whose owner is its account, with or without a row in
+  `installation_repos`: `getGithubAppStatus`, `findPrCheckTarget` (`coversRepoSql`) and web's
+  `repoCoverage` all apply that one rule, so "not covered" never shows for a repository the App
+  does check.
 - **The settings page's status** (`getGithubAppStatus`) looks only at the user's own
   installations: linked to them, or installed from their GitHub id (not linked yet). Active or
   suspended names that installation's account; anything else, someone else's installation on the
-  repo included, reads "Not installed by you on owner/repo", so a project can't be used to learn
-  whether another account's private repository exists or has the App
-  (`packages/db/test/isolation.test.ts`).
+  repo included, reads "The GitHub App isn't installed on owner/repo from your GitHub account",
+  so a project can't be used to learn whether another account's private repository exists or has
+  the App (`packages/db/test/isolation.test.ts`). When the user has installations of their own but
+  none covers the repository, the coverage notice replaces that line and links to the fix, built
+  only from those installations.
+- **Coming back from the install.** deployhealth's install links carry GitHub's `state`
+  parameter, which GitHub passes on to the Setup URL: `clients`, `new-project` or
+  `settings.<project uuid>` (`lib/onboarding.ts`, a fixed allowlist). Signed in,
+  `/github/installed?state=…` redirects to that page with `?app=installed`, which shows one line
+  from the user's own installations ("GitHub App installed on acme (2 repositories)", or "Back from
+  GitHub… reload" while the webhook is on its way: the flag alone never claims an installation).
+  A `settings.<uuid>` that isn't the user's project is a 404; any other value shows the page
+  itself. `state` only picks the page; it never links an installation.
 - **Next steps.** `listInstallationsForUser` gives each repo the user's own project (or null) and
   `reposWithoutProject` the repos of non-suspended installations with none. `/github/installed`
   (public: signed out it says to sign in and come back via `/login?next=`) and `/clients` show
   "Add a project for owner/repo to start pull request checks", linking to `/projects/new?repo=`,
   which pre-fills the form (`lib/github-app.ts`: `projectPrefill`; `safeReturnPath` admits only
-  paths on this site, never another origin or a query string).
+  paths on this site, never another origin or a query string). /clients shows them inside the
+  first-run checklist's step 2 while it's open. `/github/installed` also lists "Your projects the
+  App doesn't cover" (`#not-covered`) with the fix for each.
 - **Queue.** `pr-check` is `stately` with singletonKey `installation:repo#pr`: one running, at most
   one waiting. The job data is only `{ installationId, repoFullName, prNumber }`; the job reads the
   pull request's current head and its **merge base** (compare API) when it runs.
