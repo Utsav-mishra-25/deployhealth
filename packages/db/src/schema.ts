@@ -244,6 +244,12 @@ export const installations = pgTable(
     /** 'User' or 'Organization'. */
     accountType: text('account_type').notNull(),
     installerGithubId: bigint('installer_github_id', { mode: 'number' }).notNull(),
+    /**
+     * GitHub's `repository_selection`: 'all' covers every repository of the account, including ones
+     * not (yet) in installation_repos; 'selected' covers only those rows. Null (rows from before
+     * this column) reads as 'selected'.
+     */
+    repositorySelection: text('repository_selection'),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     suspendedAt: ts('suspended_at'),
     createdAt: ts('created_at').notNull().defaultNow(),

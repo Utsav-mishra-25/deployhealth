@@ -31,6 +31,7 @@ import {
 import { deleteUser } from '../src/delete-user';
 import { listDeployHistory } from '../src/deploy-history';
 import { getHandoffData } from '../src/handoff';
+import { getOnboardingState } from '../src/onboarding';
 import { agentPrStats, getGithubAppStatus, listPrChecksForOwner, updatePrCheckMode, upsertInstallation, upsertPrCheck } from '../src/github';
 import { alerts, clients, endpoints, projects } from '../src/schema';
 import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
@@ -138,6 +139,26 @@ describe("user A cannot read user B's data", () => {
     expect(await agentPrStats(db, a.id, bClient.id, ...range)).toEqual({ undeclared: 0, total: 0 });
     expect(await agentPrStats(db, b.id, bClient.id, ...range)).toEqual({ undeclared: 1, total: 1 });
     expect(await listPrChecksForOwner(db, b.id, bProject.id)).toHaveLength(1);
+  });
+});
+
+describe("user A's first-run checklist never counts user B's data", () => {
+  it("B's installation, projects, endpoints, deploys and clients never reach A's onboarding state, even for the same repository", async () => {
+    const { a, b, bProject } = await twoUsers();
+    // B installs the App with every repository of the account that also owns A's project's repo.
+    await upsertInstallation(
+      db,
+      { githubInstallationId: 77, accountLogin: 'acme', accountType: 'Organization', installerGithubId: b.githubId, repositorySelection: 'all' },
+      [bProject.repoFullName, 'acme/alice-app'],
+    );
+    const state = await getOnboardingState(db, a.id);
+    expect(state.installations).toEqual([]);
+    expect(state.projects.map((p) => p.name)).toEqual(['alice-app']);
+    expect(state).toMatchObject({ endpoints: 0, deploys: 0, clients: 1 });
+    // B's own view does see it.
+    const bState = await getOnboardingState(db, b.id);
+    expect(bState.installations).toHaveLength(1);
+    expect(bState).toMatchObject({ endpoints: 1, deploys: 1, clients: 1 });
   });
 });
 
