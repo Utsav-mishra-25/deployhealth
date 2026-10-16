@@ -54,32 +54,37 @@ export function PrChecksSection({
       {checks.length === 0 ? (
         <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
           No pull requests checked yet.{' '}
-          {!readOnly && 'Install the GitHub App from Settings to check env vars on every pull request.'}
+          {!readOnly && `They show up here once the GitHub App covers ${repoFullName} and a pull request is opened or updated.`}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <table className="w-full text-sm whitespace-nowrap">
-            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="py-2 pr-3 pl-4 font-medium">Pull request</th>
-                <th className="px-3 py-2 font-medium">Author</th>
-                <th className="px-3 py-2 font-medium">Result</th>
-                <th className="px-3 py-2 font-medium">Undeclared</th>
-                <th className="py-2 pr-4 pl-3 font-medium">Checked</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {checks.map((c) => {
-                const [tone, label] = RESULT[prResult(c)];
-                return (
-                  <tr key={c.prNumber} data-testid="pr-check-row">
-                    <td className="py-2 pr-3 pl-4">
-                      {sample ? (
-                        <>
-                          <span className="font-medium text-gray-900">#{c.prNumber}</span>
-                          <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600" data-testid="sample-marker">
-                            Sample
-                          </span>
+        <>
+          <p className="mb-2 text-xs text-gray-500" data-testid="undeclared-legend">
+            <span className="font-medium text-gray-600">Undeclared</span>: env vars a pull request starts reading that aren&apos;t in{' '}
+            <code>.env.example</code>.
+          </p>
+          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+            <table className="w-full text-sm whitespace-nowrap">
+              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="py-2 pr-3 pl-4 font-medium">Pull request</th>
+                  <th className="px-3 py-2 font-medium">Author</th>
+                  <th className="px-3 py-2 font-medium">Result</th>
+                  <th className="px-3 py-2 font-medium">Undeclared</th>
+                  <th className="py-2 pr-4 pl-3 font-medium">Checked</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {checks.map((c) => {
+                  const [tone, label] = RESULT[prResult(c)];
+                  return (
+                    <tr key={c.prNumber} data-testid="pr-check-row">
+                      <td className="py-2 pr-3 pl-4">
+                        {sample ? (
+                          <>
+                            <span className="font-medium text-gray-900">#{c.prNumber}</span>
+                            <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600" data-testid="sample-marker">
+                              Sample
+                            </span>
                         </>
                       ) : (
                         <a href={`https://github.com/${repoFullName}/pull/${c.prNumber}`} className="font-medium text-gray-900 hover:text-emerald-700">
@@ -113,6 +118,7 @@ export function PrChecksSection({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
   );
