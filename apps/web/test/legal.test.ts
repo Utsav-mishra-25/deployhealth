@@ -8,7 +8,9 @@ import SecurityPage from '@/app/security/page';
 import TermsPage from '@/app/terms/page';
 import { resetServerEnvForTests } from '@/env';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { CHECK_RETENTION_TEXT, formatLegalDate, LEGAL_LAST_UPDATED, OPERATOR, SUBPROCESSORS } from '@/lib/legal';
+import { CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, formatLegalDate, LEGAL_LAST_UPDATED, OPERATOR, SELF_SERVE_DATA_TEXT, SUBPROCESSORS } from '@/lib/legal';
+import { ACCOUNT_DELETION_RECORD_DAYS } from '@deployhealth/db';
+import { REDACTED } from '@deployhealth/db/redact';
 
 const saved = { ...process.env };
 beforeAll(() => {
@@ -41,6 +43,24 @@ describe('/privacy and /security agree', () => {
     expect(plain(textOf(security, 'signin-reads') ?? '')).toBe(githubSignInReads());
     expect(githubSignInReads()).toContain('read:user, user:email');
     expect(githubSignInReads()).toContain('private');
+  });
+
+  it('describe error reports, self-serve export and deletion, and the deletion record the same way', () => {
+    const privacy = render(PrivacyPage);
+    const security = render(SecurityPage);
+    for (const [testId, text] of [
+      ['error-reports', ERROR_REPORTS_TEXT],
+      ['self-serve-data', SELF_SERVE_DATA_TEXT],
+      ['deletion-record', DELETION_RECORD_TEXT],
+    ] as const) {
+      expect(plain(textOf(privacy, testId) ?? '')).toBe(text);
+      expect(plain(textOf(security, testId) ?? '')).toBe(text);
+    }
+    // True to the code: the scrubber's placeholder, the record's retention, Sentry as a subprocessor.
+    expect(ERROR_REPORTS_TEXT).toContain(REDACTED);
+    expect(DELETION_RECORD_TEXT).toContain(`${ACCOUNT_DELETION_RECORD_DAYS} days`);
+    expect(SUBPROCESSORS.map((s) => s.name)).toContain('Sentry');
+    expect(plain(privacy)).not.toContain('planned');
   });
 
   it('use the same contact', () => {

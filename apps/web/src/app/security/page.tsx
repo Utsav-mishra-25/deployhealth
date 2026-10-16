@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { li, ProsePage, Section } from '@/components/prose-page';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { CHECK_RETENTION_TEXT, REPO_URL } from '@/lib/legal';
+import { CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, REPO_URL, SELF_SERVE_DATA_TEXT } from '@/lib/legal';
 import { securityContact } from '@/lib/security';
 import { SHARE_LINK_DAYS } from '@/lib/share-link';
 
@@ -66,6 +66,20 @@ export default function SecurityPage() {
             optional GitHub App below is separate). Clients, deploy notes and contact emails are what you type in.
           </li>
         </ul>
+      </Section>
+
+      <Section title="Error reports and logs">
+        <p data-testid="error-reports">{ERROR_REPORTS_TEXT}</p>
+      </Section>
+
+      <Section title="Exporting and deleting your data">
+        <p>
+          <span data-testid="self-serve-data">{SELF_SERVE_DATA_TEXT}</span> Deleting removes the same rows, in one database
+          transaction, as a deletion we run on request: your account, clients, projects, deploys and scans, endpoints and
+          their checks, alerts, and the GitHub App installations linked to you or installed from your account, with their
+          pull request checks.
+        </p>
+        <p data-testid="deletion-record">{DELETION_RECORD_TEXT}</p>
       </Section>
 
       <Section title="How checks run">

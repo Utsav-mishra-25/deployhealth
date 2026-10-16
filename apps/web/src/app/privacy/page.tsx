@@ -2,7 +2,18 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { li, ProsePage, Section } from '@/components/prose-page';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { CHECK_RETENTION_TEXT, DELETION_REQUEST_DAYS, formatLegalDate, HOSTING, LEGAL_LAST_UPDATED, OPERATOR, SUBPROCESSORS } from '@/lib/legal';
+import {
+  CHECK_RETENTION_TEXT,
+  DELETION_RECORD_TEXT,
+  DELETION_REQUEST_DAYS,
+  ERROR_REPORTS_TEXT,
+  formatLegalDate,
+  HOSTING,
+  LEGAL_LAST_UPDATED,
+  OPERATOR,
+  SELF_SERVE_DATA_TEXT,
+  SUBPROCESSORS,
+} from '@/lib/legal';
 import { securityContact } from '@/lib/security';
 
 export const metadata: Metadata = { title: 'Privacy · deployhealth' };
@@ -89,8 +100,12 @@ export default function PrivacyPage() {
       <Section title="How long we keep it">
         <p>
           <span data-testid="retention">{CHECK_RETENTION_TEXT}</span> Uninstalling the GitHub App deletes its pull request
-          checks. Everything else is kept while your account exists, until you ask us to delete it.
+          checks. Everything else is kept while your account exists, until you delete it or ask us to.
         </p>
+      </Section>
+
+      <Section title="Error reports and logs">
+        <p data-testid="error-reports">{ERROR_REPORTS_TEXT}</p>
       </Section>
 
       <Section title="Where it is stored, and who processes it">
@@ -115,11 +130,12 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="Deleting your data">
+      <Section title="Exporting and deleting your data">
         <p>
-          Ask at {contactLink} from the email address on your GitHub account, and we will delete your account and everything
-          it owns within {DELETION_REQUEST_DAYS} days. Self-serve deletion in the app is planned.
+          <span data-testid="self-serve-data">{SELF_SERVE_DATA_TEXT}</span> Or ask at {contactLink} from the email address on
+          your GitHub account, and we will delete your account and everything it owns within {DELETION_REQUEST_DAYS} days.
         </p>
+        <p data-testid="deletion-record">{DELETION_RECORD_TEXT}</p>
       </Section>
 
       <Section title="Contact">
