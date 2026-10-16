@@ -24,6 +24,7 @@ test('landing page for a signed-out visitor: the hero first, the alert below it,
   const alert = landing.getByTestId('landing-alert');
   await expect(alert.getByRole('heading', { level: 2 })).toHaveText('What an alert looks like (live from the demo)');
   await expect(alert.getByRole('alert')).toContainText(SCRIPTED_ALERT);
+  await expect(alert.getByRole('alert')).toContainText('Alerts like this go to Slack or Discord.');
   const heroBox = (await hero.boundingBox())!;
   const shotBox = (await landing.getByTestId('landing-screenshot').boundingBox())!;
   const alertBox = (await alert.boundingBox())!;

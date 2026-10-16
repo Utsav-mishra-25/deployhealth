@@ -46,6 +46,14 @@ describe('the landing page order', () => {
     for (let i = 1; i < order.length; i++) expect(order[i]![1], `${order[i]![0]} after ${order[i - 1]![0]}`).toBeGreaterThan(order[i - 1]![1]);
   });
 
+  it("labels the alert as an example of what's sent, never as an alert that was posted (the demo has no webhook)", () => {
+    for (const demo of [true, false]) {
+      const html = render(demo);
+      expect(html).toContain('Alerts like this go to Slack or Discord.');
+      expect(html).not.toMatch(/posted to Slack/i);
+    }
+  });
+
   it('without the public demo: no demo button or link, sign-in is the primary button, the alert is an example', () => {
     const html = render(false);
     expect(html).not.toContain('See the live demo');

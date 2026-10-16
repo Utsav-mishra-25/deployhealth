@@ -74,7 +74,7 @@ export function Landing({ demo }: { demo: boolean }) {
         </h2>
         <AlertCard
           message={landingAlertMessage()}
-          aside="posted to Slack or Discord"
+          aside="Alerts like this go to Slack or Discord."
           link={demo ? { href: demoProject, label: 'View deploy b52952e and its findings' } : undefined}
         />
       </section>
