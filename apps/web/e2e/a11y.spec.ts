@@ -21,6 +21,7 @@ test('public pages have no serious or critical accessibility violations', async 
     '/docs/laravel',
     '/docs/spring-boot',
     '/pricing',
+    '/account/deleted',
   ]) {
     await expectAccessible(page, path);
   }
@@ -53,6 +54,7 @@ test('the signed-in lists, a project with a deploy, its settings and a shared re
   await expectAccessible(page, `${projectPath}/settings`);
   await expectAccessible(page, '/clients');
   await expectAccessible(page, clientPath);
+  await expectAccessible(page, '/account');
 
   await page.goto(`${clientPath}/report`);
   await page.getByRole('button', { name: 'Share report' }).click();

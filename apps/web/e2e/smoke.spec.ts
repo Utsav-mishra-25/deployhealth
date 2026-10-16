@@ -501,6 +501,36 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   await stranger.close();
 });
 
+test('account page: export downloads the signed-in user\'s data as JSON, without tokens; the dev user can\'t delete itself', async ({ page }) => {
+  // Signed out, the account page and the export send you to sign in.
+  await page.goto('/account');
+  await expect(page).toHaveURL(/\/login/);
+
+  await signInAsDev(page);
+  const suffix = Date.now();
+  const projectPath = await createProject(page, { name: `export-${suffix}`, repo: 'acme/export' });
+  const token = await createToken(page, projectPath);
+
+  await page.goto('/account');
+  await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Export your data' })).toBeVisible();
+  const download = page.waitForEvent('download');
+  await page.getByTestId('export-data').click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^deployhealth-export-\d{4}-\d{2}-\d{2}\.json$/);
+  const text = await readFile((await file.path())!, 'utf8');
+  const data = JSON.parse(text) as { format: string; projects: Array<{ name: string }> };
+  expect(data.format).toBe('deployhealth-export/1');
+  expect(data.projects.map((p) => p.name)).toContain(`export-${suffix}`);
+  expect(text).not.toContain(token);
+  expect(text).not.toMatch(/dh_[A-Za-z0-9_-]{8}/);
+
+  // The dev user is refused, like in the operator's delete-user: the section says so, with no form.
+  await expect(page.getByRole('heading', { name: 'Delete your account' })).toBeVisible();
+  await expect(page.getByText("This account can't be deleted here: it's the local dev user.")).toBeVisible();
+  await expect(page.getByTestId('delete-account')).toHaveCount(0);
+});
+
 test('the old CLI download is still served, marked deprecated', async ({ request }) => {
   const response = await request.get('/deployhealth-scan.mjs');
   expect(response.status()).toBe(200);

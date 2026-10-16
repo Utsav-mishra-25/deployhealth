@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { formatCounts, parseCommand, UNINSTALL_REMINDER } from '../src/delete-user-cli';
-import { deleteOwnAccount, planOwnAccountDeletion } from '../src/account';
+import { deleteOwnAccount, planOwnAccountDeletion, userExists } from '../src/account';
 import {
   ACCOUNT_DELETION_RECORD_DAYS,
   DELETION_TABLE_LABELS,
@@ -175,7 +175,9 @@ describe('self-serve deletion (the account page)', () => {
     const bobBefore = await planUserDeletion(db, { login: 'bob' });
     const plan = await planOwnAccountDeletion(db, alice.id);
     expect(plan).toEqual(await planUserDeletion(db, { login: 'alice' }));
+    expect(await userExists(db, alice.id)).toBe(true);
     const deleted = await deleteOwnAccount(db, alice.id);
+    expect(await userExists(db, alice.id)).toBe(false);
     expect(deleted.counts).toEqual(ONE_OF_EVERYTHING);
     expect(await allRows()).toEqual(ONE_OF_EVERYTHING);
     expect(await planUserDeletion(db, { login: 'bob' })).toEqual(bobBefore);
