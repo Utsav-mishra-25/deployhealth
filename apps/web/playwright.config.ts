@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_WEBHOOK_SECRET } from './e2e/webhook-secret';
 
 // `next start` loads .env.local too; load it here so global setup seeds the same database and signs
 // the session with the same AUTH_SECRET.
@@ -35,6 +36,8 @@ export default defineConfig({
       DEMO_PUBLIC: '1',
       SECURITY_CONTACT_EMAIL: 'security@deployhealth.example',
       GITHUB_APP_SLUG: 'deployhealth',
+      // A fixed test constant (e2e/webhook-secret.ts): onboarding.spec.ts sends signed installation events.
+      GITHUB_APP_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
       // Required in production; nothing in the tests contacts GitHub.
       AUTH_GITHUB_ID: 'e2e-placeholder',
       AUTH_GITHUB_SECRET: 'e2e-placeholder',

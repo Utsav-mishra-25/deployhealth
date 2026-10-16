@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import { createProject, createToken } from './helpers';
 import { addDevSession, signInAsDev } from './session';
 
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
@@ -196,13 +197,7 @@ test('public URLs come from PUBLIC_ORIGIN, never a spoofed Host or X-Forwarded-H
 
   // Signed in: the Action snippet on a project's settings page, its --url quoted.
   await signInAsDev(page);
-  await page.goto('/projects/new');
-  await page.getByLabel('Project name').fill(`origin-${Date.now()}`);
-  await page.getByLabel('GitHub repository').fill('acme/origin');
-  await page.getByRole('button', { name: 'Create project' }).click();
-  await page.getByRole('link', { name: 'Go to project' }).click();
-  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
-  const projectPath = new URL(page.url()).pathname;
+  const projectPath = await createProject(page, { name: `origin-${Date.now()}`, repo: 'acme/origin' });
   // Hosts only: with X-Forwarded-Proto https, Auth.js would look for the __Secure- cookie instead.
   const settingsResponse = await page.request.get(`${projectPath}/settings`, { headers: { host: 'evil.example', 'x-forwarded-host': 'evil.example' }, maxRedirects: 0 });
   expect(settingsResponse.status()).toBe(200);
@@ -307,12 +302,9 @@ test('public demo without a session: clients, project, handoff and report', asyn
 test('a project with no env file: one notice instead of MISSING rows, and a starting .env.example', async ({ page }) => {
   // The demo's projects all have env files, so this one is reported through ingest as the CLI would.
   await signInAsDev(page);
-  await page.goto('/projects/new');
   const projectName = `no-env-${Date.now()}`;
-  await page.getByLabel('Project name').fill(projectName);
-  await page.getByLabel('GitHub repository').fill('acme/no-env');
-  await page.getByRole('button', { name: 'Create project' }).click();
-  const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
+  const projectPath = await createProject(page, { name: projectName, repo: 'acme/no-env' });
+  const token = await createToken(page, projectPath);
   const response = await page.request.post('/api/ingest/scan', {
     headers: { authorization: `Bearer ${token}` },
     data: {
@@ -328,9 +320,8 @@ test('a project with no env file: one notice instead of MISSING rows, and a star
     },
   });
   expect(response.status()).toBe(201);
-  await page.getByRole('link', { name: 'Go to project' }).click();
+  await page.goto(projectPath);
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
-  const projectPath = new URL(page.url()).pathname;
 
   const notice = page.getByTestId('no-env-file-notice');
   await expect(notice).toHaveCount(1);
@@ -400,16 +391,15 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   const clientUrl = page.url();
 
   await page.getByRole('link', { name: 'Add project' }).click();
+  await expect(page).toHaveURL(/\/projects\/new\?client=/);
   await expect(page.getByLabel('Client')).toHaveValue(/[0-9a-f-]{36}/);
   const projectName = `smoke-${suffix}`;
-  await page.getByLabel('Project name').fill(projectName);
-  await page.getByLabel('GitHub repository').fill('acme/smoke');
-  await page.getByRole('button', { name: 'Create project' }).click();
-  const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
-  expect(token).toMatch(/^dh_[A-Za-z0-9_-]{43}$/);
-  // Two setup options: pull request checks need no token; the Action needs it as a repository secret.
+  const projectPath = await createProject(page, { name: projectName, repo: 'acme/smoke' });
+  // Creating a project shows no token: pull request checks need none. The Action's is made in settings.
+  await expect(page.getByTestId('new-token')).toHaveCount(0);
+  const token = await createToken(page, projectPath);
   await expect(page.getByTestId('pr-checks-option')).toContainText('No token, no secret, no variable.');
-  await expect(page.getByTestId('deploy-history-option')).toContainText('Secrets tab → New repository secret, named DEPLOYHEALTH_TOKEN');
+  await expect(page.getByTestId('deploy-history-steps')).toContainText('Secrets tab → New repository secret, named DEPLOYHEALTH_TOKEN');
   await expect(page.getByText(token, { exact: true })).toHaveCount(1);
 
   // Report a scan with the new token, as the GitHub Action would, including the variable list.
@@ -428,7 +418,7 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   });
   expect(response.status()).toBe(201);
 
-  await page.getByRole('link', { name: 'Go to project' }).click();
+  await page.goto(projectPath);
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
   await expect(page).toHaveTitle(`${projectName} · deployhealth`);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(clientName);
@@ -459,15 +449,15 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   // Deploy notes are untrusted Markdown: no raw HTML, no images in the handoff.
   await page.getByRole('link', { name: /Settings/ }).click();
   await expect(page.locator('pre').filter({ hasText: 'npx --yes deployhealth-scan@' })).toHaveCount(2); // Action + local run
-  await expect(page.getByRole('heading', { level: 2, name: 'Pull request checks' })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'Deploy history and alerts' })).toBeVisible();
+  // Setup order: pull request checks (the App), then the optional Action, then client and alerts.
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Pull request checks (GitHub App)', 'Optional: deploy history (GitHub Action)', 'Client, alerts & handoff']);
   await expect(page.getByTestId('secret-steps')).toContainText('In acme/smoke: Settings → Secrets and variables → Actions → Secrets tab');
   await expect(page.getByTestId('secret-steps')).toContainText('Not a Variable');
   await expect(page.getByText(token)).toHaveCount(0);
 
   // The GitHub App: install link, status, and the mode.
-  await expect(page.getByTestId('install-github-app')).toHaveAttribute('href', 'https://github.com/apps/deployhealth/installations/new');
-  await expect(page.getByTestId('github-app-status')).toHaveText(`Not installed by you on acme/smoke.`);
+  await expect(page.getByTestId('install-github-app')).toHaveAttribute('href', `https://github.com/apps/deployhealth/installations/new?state=settings.${projectPath.split('/').at(-1)}`);
+  await expect(page.getByTestId('github-app-status')).toHaveText("The GitHub App isn't installed on acme/smoke from your GitHub account.");
   await page.getByLabel(/Strict/).check();
   await page.getByRole('button', { name: 'Save mode' }).click();
   await expect(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save mode' }) }).getByText('Saved')).toBeVisible();

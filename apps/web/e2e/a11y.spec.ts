@@ -1,20 +1,8 @@
-import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { createProject, createToken, expectAccessible } from './helpers';
 import { signInAsDev } from './session';
 
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
-
-/** WCAG 2.x A and AA rules; a serious or critical violation fails the page. */
-async function expectAccessible(page: Page, path: string, status = 200) {
-  const response = await page.goto(path);
-  expect(response?.status(), path).toBe(status);
-  await page.waitForLoadState('networkidle');
-  const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
-  const blocking = violations
-    .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-    .map((v) => `${v.id} (${v.impact}): ${v.help}\n${v.nodes.map((n) => `    ${n.target.join(' ')}`).join('\n')}`);
-  expect.soft(blocking, `${path}\n${blocking.join('\n')}`).toEqual([]);
-}
 
 test('public pages have no serious or critical accessibility violations', async ({ page }) => {
   for (const path of [
@@ -50,19 +38,17 @@ test('the signed-in lists, a project with a deploy, its settings and a shared re
   await expect(page.getByRole('heading', { name: clientName })).toBeVisible();
   const clientPath = new URL(page.url()).pathname;
   await page.getByRole('link', { name: 'Add project' }).click();
-  await page.getByLabel('Project name').fill(`a11y-${suffix}`);
-  await page.getByLabel('GitHub repository').fill('acme/a11y');
-  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page).toHaveURL(/\/projects\/new\?client=/);
+  const projectPath = await createProject(page, { name: `a11y-${suffix}`, repo: 'acme/a11y' });
   // A scan, so the project page has a deploy row with a commit link to GitHub.
-  const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
+  const token = await createToken(page, projectPath);
   const scan = await page.request.post('/api/ingest/scan', {
     headers: { authorization: `Bearer ${token}` },
     data: { sha: '0123456789abcdef0123456789abcdef01234567', branch: 'main', timestamp: new Date().toISOString(), findings: [] },
   });
   expect(scan.status()).toBe(201);
-  await page.getByRole('link', { name: 'Go to project' }).click();
+  await page.goto(projectPath);
   await expect(page.getByRole('heading', { name: `a11y-${suffix}` })).toBeVisible();
-  const projectPath = new URL(page.url()).pathname;
   await expectAccessible(page, projectPath);
   await expectAccessible(page, `${projectPath}/settings`);
   await expectAccessible(page, '/clients');
