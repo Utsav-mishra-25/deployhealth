@@ -161,6 +161,16 @@ describe('the landing screenshot', () => {
     expect(html).toContain(`width="${LANDING_SCREENSHOT.width}" height="${LANDING_SCREENSHOT.height}"`);
     expect(LANDING_SCREENSHOT.alt).toMatch(/clients list/);
   });
+
+  it('links to the live demo when it is public (no JavaScript), and is a plain image when it is not', () => {
+    const linked = render(true);
+    const anchor = linked.match(/<a [^>]*data-testid="landing-screenshot-link"[^>]*>([\s\S]*?)<\/a>/);
+    expect(anchor?.[0]).toMatch(/^<a [^>]*href="\/demo"/);
+    expect(anchor?.[1]).toMatch(/^<span class="sr-only">Open the live demo: <\/span><img [^>]*alt="The deployhealth demo&#x27;s clients list[^"]*"[^>]*\/>$/);
+    const plain = render(false);
+    expect(plain).not.toContain('landing-screenshot-link');
+    expect(plain).toContain('data-testid="landing-screenshot"');
+  });
 });
 
 describe('the landing page metadata', () => {
