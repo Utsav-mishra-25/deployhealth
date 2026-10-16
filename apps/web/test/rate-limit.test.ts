@@ -39,6 +39,20 @@ describe('middleware on /share', () => {
   });
 });
 
+describe('middleware and the public nav', () => {
+  it('marks /share requests so the layout hides the nav, and nothing else', async () => {
+    const { middleware } = await import('@/middleware');
+    const { HIDE_PUBLIC_NAV_HEADER } = await import('@/lib/site-nav');
+    const { WORKER_HEALTH_PATH } = await import('@/lib/worker-health');
+    const forwarded = `x-middleware-request-${HIDE_PUBLIC_NAV_HEADER}`;
+    const share = middleware(new NextRequest('http://localhost/share/reports/abc.def', { headers: { 'x-forwarded-for': '198.51.100.40' } }));
+    expect(share.status).toBe(200);
+    expect(share.headers.get(forwarded)).toBe('1');
+    const health = middleware(new NextRequest(`http://localhost${WORKER_HEALTH_PATH}`, { headers: { 'x-forwarded-for': '198.51.100.40' } }));
+    expect(health.headers.get(forwarded)).toBeNull();
+  });
+});
+
 describe('GET /api/health', () => {
   it('answers ok and logs nothing, whatever the query or headers', async () => {
     const { GET } = await import('@/app/api/health/route');
