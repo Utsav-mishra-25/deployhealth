@@ -13,6 +13,7 @@ import {
   updateProjectSettings,
 } from '@deployhealth/db';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { requireWritableUser } from '@/lib/guard';
 import { MAX_DEPLOY_NOTES } from '@/lib/validation';
@@ -20,14 +21,15 @@ import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { REPO_FULL_NAME_PATTERN } from '@/lib/github-app';
+import { CREATED_PARAM } from '@/lib/onboarding';
 
-/** Returned once, right after a token is created. The plaintext token is never stored. */
+/** Returned once, right after a token is created in settings. The plaintext token is never stored. */
 export type TokenReveal = { projectId: string; projectName: string; token: string; snippet: string };
 
+/** Success redirects to the project page (`?created=1`), so only errors come back. */
 export type CreateProjectState =
   | { status: 'idle' }
-  | { status: 'error'; message: string; fields?: { name?: string; repoFullName?: string; clientId?: string; newClientName?: string } }
-  | ({ status: 'created' } & TokenReveal);
+  | { status: 'error'; message: string; fields?: { name?: string; repoFullName?: string; clientId?: string; newClientName?: string } };
 
 const newProject = z.object({
   name: z.string().trim().min(1, 'Give the project a name').max(64, 'Keep it under 64 characters'),
@@ -59,7 +61,10 @@ export async function createProjectAction(_prev: CreateProjectState, form: FormD
   }
 
   const db = getDb();
+  // The token column is required, but a new project's token is never shown: pull request checks
+  // need none. The Action's token is created when it's wanted, in settings (regenerateTokenAction).
   const token = generateToken();
+  let projectId: string;
   try {
     // The project is created first so a duplicate name never leaves a stray new client behind.
     const project = await createProject(db, {
@@ -74,13 +79,7 @@ export async function createProjectAction(_prev: CreateProjectState, form: FormD
       await assignProjectToClient(db, user.id, project.id, client.id);
     }
     revalidatePath('/clients');
-    return {
-      status: 'created',
-      projectId: project.id,
-      projectName: project.name,
-      token,
-      snippet: githubActionSnippet({ appUrl: await publicOrigin() }),
-    };
+    projectId = project.id;
   } catch (error) {
     if (error instanceof DuplicateProjectNameError) {
       return { status: 'error', message: error.message, fields: { name: error.message } };
@@ -90,6 +89,7 @@ export async function createProjectAction(_prev: CreateProjectState, form: FormD
     }
     throw error;
   }
+  redirect(`/projects/${projectId}?${CREATED_PARAM}=1`);
 }
 
 export type RegenerateState = { status: 'idle' } | { status: 'error'; message: string } | ({ status: 'created' } & TokenReveal);
