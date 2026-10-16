@@ -39,11 +39,14 @@ test('landing page for a signed-out visitor: the hero first, the alert below it,
   await expect(shot).toHaveAttribute('alt', /clients list/);
   expect(await shot.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(2080);
 
-  // The languages sentence moved to the FAQ, which is plain <details>.
+  // The FAQ is plain <details>; the languages are one line in it, not in the hero.
   const faq = landing.getByTestId('faq');
   await expect(faq.locator('details')).toHaveCount(4);
-  await faq.getByText("What if my stack isn't supported?").click();
-  await expect(faq.getByTestId('faq-languages')).toContainText('Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin.');
+  const stack = faq.locator('details').filter({ hasText: "What if my stack isn't supported?" });
+  await stack.getByText("What if my stack isn't supported?").click();
+  await expect(stack).toContainText('including WordPress');
+  await expect(stack).toContainText('Supported today: JS/TS, Python, Go, Ruby, PHP, Java/Kotlin.');
+  await expect(landing).not.toContainText('Reads JS/TS');
   await expect(landing.getByTestId('pricing-plans')).toContainText('Free during the beta: everything you see in the demo.');
 
   // Metadata: the landing page's own title and preview; the image stays the site's one.

@@ -65,7 +65,14 @@ export const FAQ_COST_ANSWER = `${PRICING.free} After the beta, the planned plan
   .map((p) => `${p.name} at ${p.price}`)
   .join(' and ')}. ${PRICING.notice}`;
 
-/** Plain <details>, no JavaScript. `extra` is a second paragraph (the languages sentence). */
+/**
+ * The FAQ's line on languages the scanner doesn't read. Its "Supported today" list is core's
+ * SUPPORTED_LANGUAGES labels (test/landing.test.ts), so it can't drift from what the scanner reads.
+ */
+export const FAQ_STACK_SENTENCE =
+  'On Rust, C# and other languages we don\'t read yet, the PR check and CLI report "can\'t check" instead of passing. Supported today: JS/TS, Python, Go, Ruby, PHP, Java/Kotlin.';
+
+/** Plain <details>, no JavaScript. */
 export const FAQ = [
   {
     question: 'Do you see my secrets?',
@@ -79,9 +86,7 @@ export const FAQ = [
   },
   {
     question: "What if my stack isn't supported?",
-    answer:
-      'Uptime checks, monthly reports and handoffs work for any site, including WordPress. Pull request checks say "can\'t check" instead of passing.',
-    languages: true,
+    answer: `Uptime checks, monthly reports and handoffs work for any site, including WordPress. ${FAQ_STACK_SENTENCE}`,
   },
   {
     question: 'What does it cost after the beta?',
