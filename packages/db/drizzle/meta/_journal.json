@@ -64,6 +64,13 @@
       "when": 1792183800886,
       "tag": "0008_installation_repository_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792228545862,
+      "tag": "0009_account_deletions",
+      "breakpoints": true
     }
   ]
 }

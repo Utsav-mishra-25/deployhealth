@@ -429,3 +429,18 @@ export type Installation = typeof installations.$inferSelect;
 export type PrCheck = typeof prChecks.$inferSelect;
 export type NewPrCheck = typeof prChecks.$inferInsert;
 export type PrCheckMode = (typeof prCheckMode.enumValues)[number];
+
+/**
+ * Accounts that were deleted (self-serve on /account or the operator's delete-user): the GitHub
+ * id and when, nothing else, with no link to any other row (it outlives them). A restore from a
+ * backup re-applies every deletion newer than the dump, so a restore never brings a deleted
+ * account back. Written in deleteUser()'s transaction; pruned after ACCOUNT_DELETION_RECORD_DAYS.
+ */
+export const accountDeletions = pgTable(
+  'account_deletions',
+  {
+    githubId: bigint('github_id', { mode: 'number' }).notNull(),
+    deletedAt: ts('deleted_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.githubId, t.deletedAt] }), index('account_deletions_deleted_at_idx').on(t.deletedAt)],
+);

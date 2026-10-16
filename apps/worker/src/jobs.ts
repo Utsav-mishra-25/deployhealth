@@ -1,5 +1,5 @@
 import { CHECK_RETENTION_DAYS, LimitExceededError, webhookPayload, type PrCheckJobData } from '@deployhealth/core';
-import type { CheckOutcome, DueEndpoint, NewPrCheck, PrCheck, PrCheckTarget, RecordCheckResult } from '@deployhealth/db';
+import { ACCOUNT_DELETION_RECORD_DAYS, type CheckOutcome, type DueEndpoint, type NewPrCheck, type PrCheck, type PrCheckTarget, type RecordCheckResult } from '@deployhealth/db';
 import type { CheckResult, CheckTarget } from './check';
 import type { GithubApi } from './github/api';
 import { detectAgent } from './pr-check/agents';
@@ -125,6 +125,8 @@ export async function pruneOldChecks(deps: {
   prune: (olderThan: Date) => Promise<number>;
   /** GitHub webhook delivery ids, kept 24 h for dedupe. */
   pruneDeliveries?: (olderThan: Date) => Promise<number>;
+  /** Records of deleted accounts, kept ACCOUNT_DELETION_RECORD_DAYS (past the oldest backup). */
+  pruneAccountDeletions?: (olderThan: Date) => Promise<number>;
   now?: () => Date;
   log: (message: string) => void;
 }): Promise<number> {
@@ -134,7 +136,10 @@ export async function pruneOldChecks(deps: {
   const cutoff = new Date(today - CHECK_RETENTION_DAYS * 24 * 3_600_000);
   const deleted = await deps.prune(cutoff);
   const deliveries = (await deps.pruneDeliveries?.(new Date(now.getTime() - 24 * 3_600_000))) ?? 0;
-  deps.log(`[prune] rolled up ${rolled} endpoint-days; deleted ${deleted} checks before ${cutoff.toISOString()} and ${deliveries} webhook deliveries`);
+  const deletions = (await deps.pruneAccountDeletions?.(new Date(now.getTime() - ACCOUNT_DELETION_RECORD_DAYS * 24 * 3_600_000))) ?? 0;
+  deps.log(
+    `[prune] rolled up ${rolled} endpoint-days; deleted ${deleted} checks before ${cutoff.toISOString()}, ${deliveries} webhook deliveries and ${deletions} account deletion records`,
+  );
   return deleted;
 }
 

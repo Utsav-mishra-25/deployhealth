@@ -155,7 +155,7 @@ Click **Deploy** on the staged-changes banner (or **Deploy** on each service).
   version keeps serving.
 - The **worker** waits for them: before it starts pg-boss or works any queue, it checks that the
   database has every migration it was built with. Until web's pre-deploy step has applied them it
-  logs `[worker] waiting for migrations: 1 of 8 not applied, next try in 5s` (or `waiting for the
+  logs `[worker] waiting for migrations: 1 of 10 not applied, next try in 5s` (or `waiting for the
   database (ECONNREFUSED)`) every 5 seconds. After 10 minutes it exits non-zero and Railway
   restarts it. Then it creates its own `pgboss` schema and starts.
 - **What to expect before step 5:** `https://<your-domain>/api/health` returns `{"ok":true}`, so

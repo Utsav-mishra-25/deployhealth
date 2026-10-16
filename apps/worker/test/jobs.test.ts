@@ -208,6 +208,7 @@ describe('checkEndpoints heartbeat', () => {
 describe('pruneOldChecks job', () => {
   it('rolls up complete days first, then deletes whole days more than 30 days back', async () => {
     const calls: string[] = [];
+    const logs: string[] = [];
     const deleted = await pruneOldChecks({
       rollup: async (before) => {
         calls.push(`rollup before ${before.toISOString()}`);
@@ -221,14 +222,22 @@ describe('pruneOldChecks job', () => {
         calls.push(`deliveries before ${olderThan.toISOString()}`);
         return 3;
       },
+      pruneAccountDeletions: async (olderThan) => {
+        calls.push(`account deletions before ${olderThan.toISOString()}`);
+        return 1;
+      },
       now: () => new Date('2026-09-30T03:17:00Z'),
-      log: () => {},
+      log: (m) => void logs.push(m),
     });
     expect(deleted).toBe(42);
     expect(calls).toEqual([
       'rollup before 2026-09-30T00:00:00.000Z',
       'prune before 2026-08-31T00:00:00.000Z',
       'deliveries before 2026-09-29T03:17:00.000Z', // GitHub delivery ids are kept 24 hours
+      'account deletions before 2026-08-26T03:17:00.000Z', // 35 days: past the oldest backup
+    ]);
+    expect(logs).toEqual([
+      '[prune] rolled up 7 endpoint-days; deleted 42 checks before 2026-08-31T00:00:00.000Z, 3 webhook deliveries and 1 account deletion records',
     ]);
   });
 

@@ -1,11 +1,21 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { formatCounts, parseCommand, UNINSTALL_REMINDER } from '../src/delete-user-cli';
-import { DELETION_TABLES, deleteUser, planUserDeletion, UserDeletionError, type DeletionCounts } from '../src/delete-user';
+import { deleteOwnAccount, planOwnAccountDeletion } from '../src/account';
+import {
+  ACCOUNT_DELETION_RECORD_DAYS,
+  DELETION_TABLE_LABELS,
+  DELETION_TABLES,
+  deleteUser,
+  planUserDeletion,
+  pruneAccountDeletions,
+  UserDeletionError,
+  type DeletionCounts,
+} from '../src/delete-user';
 import { DEMO_GITHUB_ID, DEV_GITHUB_ID, ensureDevUser } from '../src/demo';
 import { changeInstallationRepos, findPrCheckTarget, upsertInstallation, upsertPrCheck } from '../src/github';
 import { recordScan } from '../src/queries';
-import { alerts, checks, endpointDailyStats, users } from '../src/schema';
+import { accountDeletions, alerts, checks, endpointDailyStats, users } from '../src/schema';
 import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
@@ -129,6 +139,63 @@ describe('delete-user', () => {
     expect((await allRows()).users).toBe(2);
     await deleteUser(db, { githubId: two.githubId });
     expect((await planUserDeletion(db, { login: 'carol' })).user.id).toBe(one.id);
+  });
+});
+
+describe('the deletion record', () => {
+  it('keeps the GitHub id and the time of every deletion, nothing else', async () => {
+    const alice = await userWithEverything('alice');
+    const before = Date.now();
+    await deleteUser(db, { login: 'alice' });
+    const rows = await db.select().from(accountDeletions);
+    expect(rows).toEqual([{ githubId: alice.githubId, deletedAt: expect.any(Date) }]);
+    expect(rows[0]!.deletedAt.getTime()).toBeGreaterThan(before - 60_000);
+  });
+
+  it('is written in the same transaction: a refused deletion records nothing', async () => {
+    await db.insert(users).values({ githubId: DEMO_GITHUB_ID, login: 'demo' });
+    await expect(deleteUser(db, { login: 'demo' })).rejects.toThrow(UserDeletionError);
+    expect(await db.select().from(accountDeletions)).toEqual([]);
+  });
+
+  it(`is pruned after ${ACCOUNT_DELETION_RECORD_DAYS} days`, async () => {
+    await db.insert(accountDeletions).values([
+      { githubId: 1, deletedAt: new Date('2026-08-01T00:00:00Z') },
+      { githubId: 2, deletedAt: new Date('2026-09-20T00:00:00Z') },
+    ]);
+    expect(await pruneAccountDeletions(db, new Date('2026-09-01T00:00:00Z'))).toBe(1);
+    expect((await db.select().from(accountDeletions)).map((r) => r.githubId)).toEqual([2]);
+  });
+});
+
+describe('self-serve deletion (the account page)', () => {
+  it('removes exactly what delete-user removes, by the signed-in user id, and records it', async () => {
+    const alice = await userWithEverything('alice');
+    await userWithEverything('bob');
+    const bobBefore = await planUserDeletion(db, { login: 'bob' });
+    const plan = await planOwnAccountDeletion(db, alice.id);
+    expect(plan).toEqual(await planUserDeletion(db, { login: 'alice' }));
+    const deleted = await deleteOwnAccount(db, alice.id);
+    expect(deleted.counts).toEqual(ONE_OF_EVERYTHING);
+    expect(await allRows()).toEqual(ONE_OF_EVERYTHING);
+    expect(await planUserDeletion(db, { login: 'bob' })).toEqual(bobBefore);
+    expect((await db.select().from(accountDeletions)).map((r) => r.githubId)).toEqual([alice.githubId]);
+  });
+
+  it('refuses the demo and dev users and an unknown id', async () => {
+    const [demo] = await db.insert(users).values({ githubId: DEMO_GITHUB_ID, login: 'demo' }).returning();
+    const dev = await ensureDevUser(db);
+    for (const id of [demo!.id, dev.id]) {
+      await expect(planOwnAccountDeletion(db, id)).rejects.toThrow(/demo or dev user/);
+      await expect(deleteOwnAccount(db, id)).rejects.toThrow(/demo or dev user/);
+    }
+    await expect(deleteOwnAccount(db, '00000000-0000-4000-8000-000000000000')).rejects.toThrow('No user with that id.');
+    expect((await allRows()).users).toBe(2);
+    expect(await db.select().from(accountDeletions)).toEqual([]);
+  });
+
+  it('labels every table it lists', () => {
+    expect(Object.keys(DELETION_TABLE_LABELS)).toEqual([...DELETION_TABLES]);
   });
 });
 
