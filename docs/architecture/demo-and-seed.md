@@ -29,6 +29,11 @@ or the reseed schedule.
   flag is off or the demo isn't seeded), route handlers `findDemoOwner()`. `test/demo.test.ts`
   checks every file under `app/demo` does, and none touches `@/auth`. `/api/demo/broken` is the
   demo's failing endpoint (503, no body) and 404s with the flag off.
+- **The demo guide:** /demo (the overview only) shows three links under the banner
+  (`components/demo-guide.tsx`, targets in `DEMO_GUIDE` in `lib/marketing.ts`): the project list
+  (`#projects`), the deploy that broke Acme's API (acme-storefront's `#deploys`), and Acme Corp's
+  monthly report and the storefront's handoff. They use `DEMO_PATHS` and the fixed project ids, so
+  they survive reseeds; the client's slug is checked against `slugify('Acme Corp')`.
 
 ## Seeding
 

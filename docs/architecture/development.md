@@ -22,7 +22,9 @@ Marketplace, the footer docs link, and the security review's items: a hardened p
 per-hostname spacing worded as it works, a bounded DNS resolver and a limit on endpoint saves, an
 App status that can't reveal other accounts' repositories, absolute URLs from `PUBLIC_ORIGIN`,
 /security stating strict mode's limit (too large or couldn't be checked is neutral),
-the token kept out of the Action snippet's command line, and e2e on a production build) are built.
+the token kept out of the Action snippet's command line, and e2e on a production build) and
+Phase 7 part 1 (a freelancer-first landing page with a product screenshot, a header nav on every
+public page, /pricing, a friendly 404 and a guide on /demo) are built.
 
 ## Repository files
 
@@ -98,7 +100,9 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   wait at most 15 s (a production build has no first-visit compile). A full run takes about
   110 s here, build included (on `next dev` it took about 250 s). The one dev-only step,
   clicking the dev login on `/login?next=`, is replaced by adding the session and reloading. It
-  runs: the landing page (signed out, one click to the demo); the public
+  runs: the landing page (signed out: the hero first, the alert below it, its metadata, one click
+  to the demo); the header on every public page with JavaScript off; /pricing; the demo guide's
+  links; the 404's links; the public
   demo without a session (overview → project with its sample PR checks → handoff page and `.md`
   download → monthly report); a signed-in project with no env file: its "No .env.example here"
   notice → the handoff's starting `.env.example` (page and `.md`); the signed-in flow as the dev user (`/` → /clients, client → project
