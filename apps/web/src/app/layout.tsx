@@ -7,7 +7,7 @@ import { publicOrigin } from '@/lib/app-url';
 import { SITE_DESCRIPTION } from '@/lib/brand';
 import { isDemoPublic } from '@/lib/demo';
 import { REPO_URL } from '@/lib/legal';
-import { HIDE_PUBLIC_NAV_HEADER } from '@/lib/site-nav';
+import { HIDE_PUBLIC_NAV_HEADER, statusPageUrl } from '@/lib/site-nav';
 import './globals.css';
 
 /**
@@ -29,6 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await auth();
   // Signed out: the public nav, except on shared reports (middleware.ts), which a client opens.
   const showPublicNav = !session?.user && (await headers()).get(HIDE_PUBLIC_NAV_HEADER) !== '1';
+  const status = statusPageUrl();
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
@@ -42,6 +43,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <span className="text-gray-700" data-testid="current-user">
                   {session.user.login}
                 </span>
+                <Link href="/account" className="text-gray-500 hover:text-gray-900">
+                  Account
+                </Link>
                 <form
                   action={async () => {
                     'use server';
@@ -73,6 +77,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Link href="/terms" className="hover:text-gray-900">
               Terms
             </Link>
+            {status && (
+              <a href={status} className="hover:text-gray-900">
+                Status
+              </a>
+            )}
             <a href={REPO_URL} className="hover:text-gray-900">
               Source on GitHub
             </a>

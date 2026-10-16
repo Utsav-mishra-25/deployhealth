@@ -511,7 +511,9 @@ test('account page: export downloads the signed-in user\'s data as JSON, without
   const projectPath = await createProject(page, { name: `export-${suffix}`, repo: 'acme/export' });
   const token = await createToken(page, projectPath);
 
-  await page.goto('/account');
+  // Signed in, the header links to the account page.
+  await page.getByRole('banner').getByRole('link', { name: 'Account' }).click();
+  await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Export your data' })).toBeVisible();
   const download = page.waitForEvent('download');
@@ -583,7 +585,9 @@ test('security: public page linked from the footer, and security.txt', async ({ 
 test('privacy and terms: public pages linked from the footer', async ({ page }) => {
   await page.goto('/');
   const footer = page.getByRole('navigation', { name: 'Footer' });
-  await expect(footer.getByRole('link')).toHaveText(['Docs', 'Pricing', 'Security', 'Privacy', 'Terms', 'Source on GitHub']);
+  // Status: STATUS_PAGE_URL (set for this run in playwright.config.ts); hidden when unset (test/status-link.test.ts).
+  await expect(footer.getByRole('link')).toHaveText(['Docs', 'Pricing', 'Security', 'Privacy', 'Terms', 'Status', 'Source on GitHub']);
+  await expect(footer.getByRole('link', { name: 'Status' })).toHaveAttribute('href', 'https://status.deployhealth.example/');
   await expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
   await expect(footer.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
   await page.goto('/privacy');

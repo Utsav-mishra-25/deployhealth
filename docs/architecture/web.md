@@ -83,11 +83,14 @@ And in core, for client components:
   OG image keep `BRAND_GREEN` (emerald-600): a graphic and large text need only 3:1.
 - **The header** (root layout): signed out, the logo then `PublicNav`: Demo (only with
   `DEMO_PUBLIC=1`) · Docs · Pricing · Sign in with GitHub (a link to /login, no inline action). No
-  JavaScript and no menu: at 375 px it wraps under the logo. Signed in, the user's login and Sign
-  out instead. On `/share/*` (a report a client opens) there is no nav, only the logo:
+  JavaScript and no menu: at 375 px it wraps under the logo. Signed in, the user's login, Account
+  (/account) and Sign out instead. On `/share/*` (a report a client opens) there is no nav, only the logo:
   `middleware.ts`, which already runs there, sets `HIDE_PUBLIC_NAV_HEADER` on the request and the
   layout reads it (forging it elsewhere only hides the nav for whoever sends it). The footer links
-  Docs, Pricing, Security, Privacy, Terms and the source.
+  Docs, Pricing, Security, Privacy, Terms, Status and the source. Status links to the public status
+  page in `STATUS_PAGE_URL` (decided in Phase 9; https only, parsed by `parseStatusPageUrl()` in
+  `lib/site-nav.ts`, never failing a page): unset or unusable, there's no link, and an unusable
+  value logs one error at startup.
 - **`/`** is the landing page for signed-out visitors (indexable) and redirects signed-in users to
   /clients. Freelancer first, in this order (`test/landing.test.ts` pins it): the hero (headline,
   subline, See the live demo (only with `DEMO_PUBLIC=1`) and Sign in with GitHub, the docs link,

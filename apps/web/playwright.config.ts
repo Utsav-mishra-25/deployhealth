@@ -38,6 +38,7 @@ export default defineConfig({
       GITHUB_APP_SLUG: 'deployhealth',
       // A fixed test constant (e2e/webhook-secret.ts): onboarding.spec.ts sends signed installation events.
       GITHUB_APP_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
+      STATUS_PAGE_URL: 'https://status.deployhealth.example',
       // Required in production; nothing in the tests contacts GitHub.
       AUTH_GITHUB_ID: 'e2e-placeholder',
       AUTH_GITHUB_SECRET: 'e2e-placeholder',

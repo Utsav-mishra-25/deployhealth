@@ -81,6 +81,7 @@ the build command builds the workspace packages it depends on first).
    | `GITHUB_APP_WEBHOOK_SECRET` | the webhook secret you set on the App | Optional: the GitHub App from step 8. Verifies every webhook delivery; unset, `/api/github/webhook` answers 404 |
    | `GITHUB_APP_SLUG` | e.g. `deployhealth` | Optional: the App's URL name (`github.com/apps/<slug>`), for the install link on project settings |
    | `SENTRY_DSN` | the Sentry project's DSN | Optional: error reports from web's server (step 12). Unset, nothing is sent |
+   | `STATUS_PAGE_URL` | e.g. `https://status.deployhealth.dev` | Optional: the public status page (step 14), linked from the footer as "Status". https only; unset, no link |
 
    Never set `AUTH_DEMO_LOGIN` here. The demo login is disabled in production anyway.
 
@@ -417,6 +418,21 @@ itself: the external monitor on `/api/health/worker` (step 9) covers that.
 3. Check: no `[operator] OPERATOR_WEBHOOK_URL is not usable` line in the worker's log. There's no
    test message; the first alert is a real one.
 
+## 14. Status page (optional)
+
+A public status page tells users about incidents and planned maintenance ([incident.md](incident.md),
+[maintenance.md](maintenance.md)). With `STATUS_PAGE_URL` set, every page's footer links to it.
+
+1. Better Stack → **Status pages** → **Create status page**: name `deployhealth`, a subdomain
+   (e.g. `deployhealth.betteruptime.com`), or your own (`status.deployhealth.dev`: add the CNAME
+   it shows in Cloudflare, **DNS only**, not proxied).
+2. Add three parts (resources): **Website and dashboard** (the web monitor from step 9),
+   **Uptime checks and alerts** (the worker monitor) and **Pull request checks** (no monitor;
+   you set its status by hand in an incident).
+3. Set `STATUS_PAGE_URL` on **web** to the page's https address. **Deploy**.
+4. Check: the footer shows **Status** linking there. A value that isn't an https URL hides the link
+   and web's log shows `STATUS_PAGE_URL is not an https URL` once at startup.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -437,4 +453,5 @@ itself: the external monitor on `/api/health/worker` (step 9) covers that.
 | GitHub App deliveries answer 404 | `GITHUB_APP_WEBHOOK_SECRET` isn't set on web. |
 | `/demo` is a 404 | `DEMO_PUBLIC` isn't `1` on web, or the worker hasn't reseeded yet (check its log). |
 | A log shows `[sentry] SENTRY_DSN is not a Sentry DSN` | The value isn't a DSN (`https://<key>@<host>/<project id>`); copy it again from Sentry (step 12). The service runs without error reports. |
+| The footer has no Status link | `STATUS_PAGE_URL` isn't set on web, or isn't an https URL (web's log says so at startup). |
 | The worker log shows `[operator] OPERATOR_WEBHOOK_URL is not usable` | The URL isn't a public http(s) URL; copy the webhook URL again (step 13). The worker runs without operator alerts. |
