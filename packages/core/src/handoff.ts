@@ -219,7 +219,7 @@ export function renderHandoffMarkdown(data: HandoffData): string {
   line();
   line(
     'Scans run in CI on every push. Save the project\'s ingest token as the repository secret `DEPLOYHEALTH_TOKEN` ' +
-      '(tokens are shown once; regenerate one on the project\'s settings page), then commit this workflow:',
+      '(create one in the project\'s settings, where it appears once), then commit this workflow:',
   );
   line();
   line('```yaml');

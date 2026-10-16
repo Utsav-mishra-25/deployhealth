@@ -114,9 +114,10 @@ With `--dry-run` nothing leaves your machine.
 
 ## Report every push from GitHub Actions
 
-Create a project in deployhealth, add its ingest token as a repository secret named
-`DEPLOYHEALTH_TOKEN` (Settings → Secrets and variables → Actions → Secrets tab → New repository
-secret; not a Variable, not an environment secret), then add `.github/workflows/deployhealth.yml`:
+Create a project in deployhealth, create its token in the project's settings and save it as a
+repository secret named `DEPLOYHEALTH_TOKEN` (Settings → Secrets and variables → Actions → Secrets
+tab → New repository secret; not a Variable, not an environment secret), then add
+`.github/workflows/deployhealth.yml`:
 
 ```yaml
 name: deployhealth

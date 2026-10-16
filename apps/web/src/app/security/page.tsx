@@ -58,7 +58,7 @@ export default function SecurityPage() {
             URLs contain secrets, so logs show only their host.
           </li>
           <li className={li}>
-            <strong>Ingest tokens</strong> only as a SHA-256 hash. The token itself is shown once, when it&apos;s created.
+            <strong>Ingest tokens</strong> only as a SHA-256 hash. The token itself is shown once, when it&apos;s created in the project&apos;s settings.
           </li>
           <li className={li}>
             <strong>Your account:</strong> your GitHub id, login, name, email address and avatar URL, from GitHub sign-in.{' '}
