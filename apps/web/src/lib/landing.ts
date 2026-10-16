@@ -1,11 +1,14 @@
 import { alertOpenedMessage } from '@deployhealth/core';
+import type { Metadata } from 'next';
+import { LANDING_METADATA } from './marketing';
 
-/**
- * The line under the landing headline. "Like Dependabot" is a comparison only: no logos or marks,
- * nothing that implies an affiliation with GitHub or Dependabot.
- */
-export const LANDING_SUPPORTING_LINE =
-  "Like Dependabot, but for your .env.example: a GitHub App that comments on every pull request that reads an env var it doesn't declare.";
+/** The landing page's own title and preview text; every other page keeps the generic cards. */
+export const LANDING_PAGE_METADATA: Metadata = {
+  title: LANDING_METADATA.title,
+  description: LANDING_METADATA.description,
+  openGraph: { title: LANDING_METADATA.ogTitle, description: LANDING_METADATA.description, siteName: 'deployhealth', type: 'website' },
+  twitter: { card: 'summary_large_image', title: LANDING_METADATA.ogTitle, description: LANDING_METADATA.description },
+};
 
 /** The demo incident's deploy (acme-storefront's last deploy in the seed). */
 export const LANDING_DEPLOY_SHA = 'b52952e8192c38c054e53b5447ea20de88f2e2e9';

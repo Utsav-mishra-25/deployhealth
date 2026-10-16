@@ -1,88 +1,109 @@
-import { CLI_BUNDLE_KB, LANGUAGES_SENTENCE } from '@deployhealth/core';
+import { CLI_BUNDLE_KB } from '@deployhealth/core';
 import { DEMO_PROJECT_IDS } from '@deployhealth/db';
 import Link from 'next/link';
-import { LANDING_SUPPORTING_LINE, landingAlertMessage } from '@/lib/landing';
+import { landingAlertMessage } from '@/lib/landing';
 import { REPO_URL } from '@/lib/legal';
+import { HERO, HOW_IT_WORKS, PRICING, WHO_FOR } from '@/lib/marketing';
 import { DEMO_PATHS } from '@/lib/paths';
 import { AlertCard } from './alert-card';
+import { Faq } from './faq';
+import { PricingPlans } from './pricing';
 
-const FEATURES = [
-  {
-    title: 'Env checks on every push and PR',
-    body: 'Variables your code reads but no env file defines, ones defined but never read, and env files out of sync. Reported by name and file:line, never values.',
-  },
-  {
-    title: 'Uptime with deploy-aware alerts',
-    body: 'Checks your endpoints as often as every minute, and posts to Slack or Discord when one goes down, naming the deploy just before it and what that deploy changed.',
-  },
-  {
-    title: 'Client reports and handoff docs',
-    body: 'A monthly report per client (uptime, incidents, deploys, config fixed) with a share link, and a handoff document per project, printable or as Markdown.',
-  },
-];
+/** The committed screenshot of /demo's clients list (2x; shown at half its pixel size). */
+export const LANDING_SCREENSHOT = {
+  src: '/landing/demo-clients.png',
+  width: 2080,
+  height: 912,
+  alt: "The deployhealth demo's clients list: projects grouped by client, worst first. acme-storefront is down, northwind-site needs attention and portfolio is healthy.",
+} as const;
 
-const STEPS = [
-  { title: 'Add the GitHub Action', body: 'One workflow step runs the scanner on every push and reports what it finds.' },
-  { title: 'Add your endpoints', body: 'Name them, pick an interval, and point alerts at a Slack or Discord webhook.' },
-  { title: 'Get alerts that name the deploy', body: 'When a check fails soon after a deploy, the alert says which deploy and which variables it introduced.' },
-];
-
-/** The signed-out home page: what deployhealth does, in one screen, and the way into the demo. */
+/**
+ * The signed-out home page, freelancer first: the hero, what the product looks like, a real alert,
+ * who it's for, the real setup order, pricing, questions, and the trust strip.
+ */
 export function Landing({ demo }: { demo: boolean }) {
   const demoProject = DEMO_PATHS.project(DEMO_PROJECT_IDS.storefront);
   const button = 'inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium';
+  const primary = `${button} bg-emerald-700 text-white hover:bg-emerald-800`;
+  const secondary = `${button} border border-gray-300 bg-white hover:bg-gray-50`;
   return (
     <div className="space-y-16" data-testid="landing">
-      <section className="space-y-6" aria-labelledby="landing-heading">
-        <AlertCard
-          message={landingAlertMessage()}
-          aside={demo ? 'live on the demo' : 'example alert'}
-          link={demo ? { href: demoProject, label: 'View deploy b52952e and its findings' } : undefined}
-        />
-        <h1 id="landing-heading" className="max-w-3xl text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-          deployhealth checks your env vars on every push and pull request, watches your endpoints, and tells you which deploy
-          broke what.
+      <section className="space-y-6" aria-labelledby="landing-heading" data-testid="landing-hero">
+        <h1 id="landing-heading" className="max-w-3xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+          {HERO.headline}
         </h1>
-        <p className="max-w-3xl text-base text-gray-700" data-testid="landing-supporting-line">
-          {LANDING_SUPPORTING_LINE}
+        <p className="max-w-3xl text-base leading-relaxed text-gray-700 sm:text-lg" data-testid="landing-subline">
+          {HERO.subline}
         </p>
-        <p className="max-w-3xl text-sm text-gray-600" data-testid="landing-languages">
-          {LANGUAGES_SENTENCE}
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          {demo && (
-            <Link href={DEMO_PATHS.clients} className={`${button} bg-emerald-700 text-white hover:bg-emerald-800`}>
-              See the live demo
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {demo && (
+              <Link href={DEMO_PATHS.clients} className={primary}>
+                See the live demo
+              </Link>
+            )}
+            <Link href="/login" className={demo ? secondary : primary}>
+              Sign in with GitHub
             </Link>
-          )}
-          <Link
-            href="/login"
-            className={demo ? `${button} border border-gray-300 bg-white hover:bg-gray-50` : `${button} bg-emerald-700 text-white hover:bg-emerald-800`}
-          >
-            Sign in with GitHub
-          </Link>
-          <Link href="/docs" className="text-sm font-medium text-emerald-700 hover:underline">
-            Docs: Next.js, Laravel, Spring Boot
-          </Link>
-          <span className="text-sm text-gray-600">Free while in beta.</span>
+          </div>
+          <p>
+            <Link href="/docs" className="text-sm font-medium text-emerald-700 hover:underline">
+              {HERO.docsLink}
+            </Link>
+          </p>
+          <p className="text-sm text-gray-600" data-testid="landing-free">
+            {PRICING.freeShort}
+          </p>
         </div>
       </section>
 
-      <section aria-label="What it does" className="grid gap-4 sm:grid-cols-3">
-        {FEATURES.map((f) => (
-          <div key={f.title} className="rounded-lg border border-gray-200 bg-white p-5">
-            <h2 className="font-semibold">{f.title}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-gray-600">{f.body}</p>
-          </div>
-        ))}
+      {/* A plain committed image: no optimizer route, nothing fetched from elsewhere. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={LANDING_SCREENSHOT.src}
+        width={LANDING_SCREENSHOT.width}
+        height={LANDING_SCREENSHOT.height}
+        alt={LANDING_SCREENSHOT.alt}
+        className="h-auto w-full max-w-4xl rounded-lg border border-gray-200 bg-white shadow-sm"
+        data-testid="landing-screenshot"
+      />
+
+      <section aria-labelledby="alert-heading" className="space-y-3" data-testid="landing-alert">
+        <h2 id="alert-heading" className="text-lg font-semibold">
+          {demo ? 'What an alert looks like (live from the demo)' : 'What an alert looks like'}
+        </h2>
+        <AlertCard
+          message={landingAlertMessage()}
+          aside="posted to Slack or Discord"
+          link={demo ? { href: demoProject, label: 'View deploy b52952e and its findings' } : undefined}
+        />
+      </section>
+
+      <section aria-labelledby="who-heading" className="space-y-4">
+        <h2 id="who-heading" className="text-lg font-semibold">
+          Who it&apos;s for
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {WHO_FOR.map((group) => (
+            <div key={group.title} className="rounded-lg border border-gray-200 bg-white p-5" data-testid="who-for">
+              <h3 className="font-semibold">{group.title}</h3>
+              <p className="mt-2 font-medium text-gray-900">{group.lead}</p>
+              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-gray-600">
+                {group.points.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="how-heading" className="space-y-4">
         <h2 id="how-heading" className="text-lg font-semibold">
           How it works
         </h2>
-        <ol className="grid gap-4 sm:grid-cols-3">
-          {STEPS.map((step, i) => (
+        <ol className="grid gap-4 sm:grid-cols-3" data-testid="how-it-works">
+          {HOW_IT_WORKS.map((step, i) => (
             <li key={step.title} className="flex gap-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-sm font-semibold text-white">
                 {i + 1}
@@ -94,10 +115,23 @@ export function Landing({ demo }: { demo: boolean }) {
             </li>
           ))}
         </ol>
-        <p className="text-sm text-gray-600">
-          Plus: install the GitHub App for pull request checks, a comment and a check on every pull request that adds env vars
-          nobody declared.
-        </p>
+      </section>
+
+      <section aria-labelledby="pricing-heading" className="space-y-4">
+        <h2 id="pricing-heading" className="text-lg font-semibold">
+          Pricing
+        </h2>
+        <PricingPlans headingLevel="h3" />
+        <Link href="/pricing" className="inline-block text-sm font-medium text-emerald-700 hover:underline">
+          More on pricing
+        </Link>
+      </section>
+
+      <section aria-labelledby="faq-heading" className="space-y-4">
+        <h2 id="faq-heading" className="text-lg font-semibold">
+          Questions
+        </h2>
+        <Faq />
       </section>
 
       <section aria-label="Trust" className="rounded-lg border border-gray-200 bg-white p-5">
