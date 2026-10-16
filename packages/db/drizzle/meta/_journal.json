@@ -57,6 +57,13 @@
       "when": 1790889940727,
       "tag": "0007_worker_heartbeats",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792183800886,
+      "tag": "0008_installation_repository_selection",
+      "breakpoints": true
     }
   ]
 }

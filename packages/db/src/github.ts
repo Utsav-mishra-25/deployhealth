@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './client';
 import {
   installationRepos,
@@ -48,6 +48,26 @@ export interface InstallationInput {
   accountType: string;
   /** The delivery's sender: the GitHub account that installed the App. */
   installerGithubId: number;
+  /** GitHub's `repository_selection`, when the delivery carries it (an existing value is kept otherwise). */
+  repositorySelection?: RepositorySelection;
+}
+
+/** 'all': every repository of the installation's account; 'selected': the rows in installation_repos. */
+export type RepositorySelection = 'all' | 'selected';
+
+/**
+ * Whether installation `i` can see `repo` (SQL, case-insensitive): a stored repository row, or
+ * repository_selection 'all' and the repository's owner is the installation's account. An 'all'
+ * installation covers a repository even before (or without) a stored row for it.
+ */
+function coversRepoSql(repo: string | SQL): SQL {
+  return sql`(
+    (${installations.repositorySelection} = 'all' and lower(${installations.accountLogin}) = lower(split_part(${repo}, '/', 1)))
+    or exists (
+      select 1 from ${installationRepos}
+      where ${installationRepos.installationId} = ${installations.id} and lower(${installationRepos.repoFullName}) = lower(${repo})
+    )
+  )`;
 }
 
 /**
@@ -65,6 +85,7 @@ export async function upsertInstallation(db: Db, input: InstallationInput, repos
         set: {
           accountLogin: input.accountLogin,
           accountType: input.accountType,
+          ...(input.repositorySelection ? { repositorySelection: input.repositorySelection } : {}),
           suspendedAt: null,
           // Keep an existing link; otherwise link to the installer if they have an account.
           userId: sql`coalesce(${installations.userId}, ${installer?.id ?? null}::uuid)`,
@@ -92,14 +113,25 @@ async function installationByGithubId(db: Db, githubInstallationId: number): Pro
   return row ?? null;
 }
 
-/** installation_repositories: added / removed. Unknown installations are ignored (false). */
+/**
+ * installation_repositories: added / removed, and the new repository_selection when the delivery
+ * carries it (switching between "All repositories" and "Only select repositories"). Unknown
+ * installations are ignored (false).
+ */
 export async function changeInstallationRepos(
   db: Db,
   githubInstallationId: number,
-  { added = [], removed = [] }: { added?: readonly string[]; removed?: readonly string[] },
+  {
+    added = [],
+    removed = [],
+    repositorySelection,
+  }: { added?: readonly string[]; removed?: readonly string[]; repositorySelection?: RepositorySelection },
 ): Promise<boolean> {
   const installation = await installationByGithubId(db, githubInstallationId);
   if (!installation) return false;
+  if (repositorySelection && repositorySelection !== installation.repositorySelection) {
+    await db.update(installations).set({ repositorySelection }).where(eq(installations.id, installation.id));
+  }
   await insertRepos(db, installation.id, added);
   if (removed.length > 0) {
     await db
@@ -168,19 +200,16 @@ export interface PrCheckTarget {
 
 /**
  * The project a pull request is checked for: owned by the user linked to the installation, with a
- * matching repo (case-insensitive) that the installation can see, installation not suspended.
+ * matching repo (case-insensitive) that the installation can see (a stored repository, or every
+ * repository of its account with repository_selection 'all'), installation not suspended.
  * The oldest such project if the user has several for one repo. Null: nothing to do.
  */
 export async function findPrCheckTarget(db: Db, githubInstallationId: number, repoFullName: string): Promise<PrCheckTarget | null> {
   const [row] = await db
     .select({ installationId: installations.id, id: projects.id, name: projects.name, prCheckMode: projects.prCheckMode })
     .from(installations)
-    .innerJoin(
-      installationRepos,
-      and(eq(installationRepos.installationId, installations.id), sql`lower(${installationRepos.repoFullName}) = lower(${repoFullName})`),
-    )
     .innerJoin(projects, and(eq(projects.ownerId, installations.userId), sql`lower(${projects.repoFullName}) = lower(${repoFullName})`))
-    .where(and(eq(installations.githubInstallationId, githubInstallationId), isNull(installations.suspendedAt)))
+    .where(and(eq(installations.githubInstallationId, githubInstallationId), isNull(installations.suspendedAt), coversRepoSql(repoFullName)))
     .orderBy(projects.createdAt)
     .limit(1);
   if (!row) return null;
@@ -254,13 +283,7 @@ export async function getGithubAppStatus(db: Db, ownerId: string, projectId: str
   const rows = await db
     .select({ accountLogin: installations.accountLogin, suspendedAt: installations.suspendedAt })
     .from(installations)
-    .innerJoin(installationRepos, eq(installationRepos.installationId, installations.id))
-    .where(
-      and(
-        sql`lower(${installationRepos.repoFullName}) = lower(${project.repoFullName})`,
-        or(eq(installations.userId, ownerId), eq(installations.installerGithubId, project.githubId)),
-      ),
-    )
+    .where(and(coversRepoSql(project.repoFullName), or(eq(installations.userId, ownerId), eq(installations.installerGithubId, project.githubId))))
     .orderBy(installations.createdAt);
   const mine = rows.find((r) => !r.suspendedAt) ?? rows[0];
   if (!mine) return { state: 'not-installed' };
@@ -362,9 +385,13 @@ export interface InstallationRepo {
 }
 
 export interface InstallationSummary {
+  /** GitHub's installation id: its settings page is where Repository access is changed. */
+  githubInstallationId: number;
   accountLogin: string;
   accountType: string;
   suspended: boolean;
+  /** 'all' covers every repository of `accountLogin`, listed in `repos` or not. Null reads as 'selected'. */
+  repositorySelection: RepositorySelection | null;
   repos: InstallationRepo[];
 }
 
@@ -374,7 +401,15 @@ export interface InstallationSummary {
  */
 export async function listInstallationsForUser(db: Db, userId: string): Promise<InstallationSummary[]> {
   const rows = await db
-    .select({ id: installations.id, accountLogin: installations.accountLogin, accountType: installations.accountType, suspendedAt: installations.suspendedAt, repo: installationRepos.repoFullName })
+    .select({
+      id: installations.id,
+      githubInstallationId: installations.githubInstallationId,
+      accountLogin: installations.accountLogin,
+      accountType: installations.accountType,
+      suspendedAt: installations.suspendedAt,
+      repositorySelection: installations.repositorySelection,
+      repo: installationRepos.repoFullName,
+    })
     .from(installations)
     .leftJoin(installationRepos, eq(installationRepos.installationId, installations.id))
     .where(eq(installations.userId, userId))
@@ -389,7 +424,14 @@ export async function listInstallationsForUser(db: Db, userId: string): Promise<
 
   const byId = new Map<string, InstallationSummary>();
   for (const r of rows) {
-    const summary = byId.get(r.id) ?? { accountLogin: r.accountLogin, accountType: r.accountType, suspended: r.suspendedAt !== null, repos: [] };
+    const summary = byId.get(r.id) ?? {
+      githubInstallationId: r.githubInstallationId,
+      accountLogin: r.accountLogin,
+      accountType: r.accountType,
+      suspended: r.suspendedAt !== null,
+      repositorySelection: r.repositorySelection === 'all' || r.repositorySelection === 'selected' ? r.repositorySelection : null,
+      repos: [],
+    };
     if (r.repo) summary.repos.push({ fullName: r.repo, projectId: projectByRepo.get(r.repo.toLowerCase()) ?? null });
     byId.set(r.id, summary);
   }
@@ -408,3 +450,4 @@ export function reposWithoutProject(summaries: readonly InstallationSummary[]): 
   }
   return [...repos.values()].sort((a, b) => a.localeCompare(b));
 }
+

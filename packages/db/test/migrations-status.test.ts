@@ -15,7 +15,7 @@ afterAll(async () => {
 describe('pendingMigrations', () => {
   it('bundles every migration in the journal, in order', () => {
     expect(BUNDLED_MIGRATIONS.map((m) => m.tag)).toEqual(journal.entries.map((e) => e.tag));
-    expect(BUNDLED_MIGRATIONS.at(-1)?.tag).toBe('0007_worker_heartbeats');
+    expect(BUNDLED_MIGRATIONS.at(-1)?.tag).toBe('0008_installation_repository_selection');
   });
 
   it('finds nothing pending on a migrated database', async () => {

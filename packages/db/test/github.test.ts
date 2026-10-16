@@ -149,6 +149,41 @@ describe('findPrCheckTarget', () => {
   });
 });
 
+describe("repository_selection 'all'", () => {
+  const installAll = (githubInstallationId: number, installerGithubId: number, accountLogin = 'acme') =>
+    upsertInstallation(db, { githubInstallationId, accountLogin, accountType: 'Organization', installerGithubId, repositorySelection: 'all' }, []);
+
+  it("covers every repository of the account with no stored repository rows: status, checks and the list's coverage", async () => {
+    const alice = await userWithGithubId(101);
+    const project = await makeProject(db, alice.id, 'shop', 'ACME/shop');
+    const other = await makeProject(db, alice.id, 'elsewhere', 'someone-else/shop');
+    const inst = await installAll(1, 101);
+    expect(await db.$count(installationRepos)).toBe(0);
+    expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'active', accountLogin: 'acme' });
+    expect((await findPrCheckTarget(db, 1, 'acme/SHOP'))?.project.id).toBe(project.id);
+    expect(inst.repositorySelection).toBe('all');
+    // Only the installation's own account: another owner's repository isn't covered.
+    expect(await getGithubAppStatus(db, alice.id, other.id)).toEqual({ state: 'not-installed' });
+    expect(await findPrCheckTarget(db, 1, 'someone-else/shop')).toBeNull();
+
+    const summaries = await listInstallationsForUser(db, alice.id);
+    expect(summaries[0]).toMatchObject({ githubInstallationId: 1, repositorySelection: 'all', repos: [] });
+  });
+
+  it('follows a switch between all and selected repositories, and a later upsert without one keeps it', async () => {
+    const alice = await userWithGithubId(101);
+    const project = await makeProject(db, alice.id, 'shop');
+    await install(1, 101, ['acme/api']);
+    expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'not-installed' });
+    await changeInstallationRepos(db, 1, { repositorySelection: 'all' });
+    expect(await getGithubAppStatus(db, alice.id, project.id)).toMatchObject({ state: 'active' });
+    await upsertInstallation(db, { githubInstallationId: 1, accountLogin: 'acme', accountType: 'Organization', installerGithubId: 101 });
+    expect(await getGithubAppStatus(db, alice.id, project.id)).toMatchObject({ state: 'active' });
+    await changeInstallationRepos(db, 1, { repositorySelection: 'selected', removed: [] });
+    expect(await getGithubAppStatus(db, alice.id, project.id)).toEqual({ state: 'not-installed' });
+  });
+});
+
 describe('pull request checks', () => {
   async function setup() {
     const alice = await userWithGithubId(101);
@@ -243,9 +278,11 @@ describe('project settings: App status and mode (owner-scoped)', () => {
     await install(2, 999, ['other/repo'], 'other');
     expect(await listInstallationsForUser(db, alice.id)).toEqual([
       {
+        githubInstallationId: 1,
         accountLogin: 'acme',
         accountType: 'Organization',
         suspended: false,
+        repositorySelection: null,
         repos: [
           { fullName: 'acme/api', projectId: null },
           { fullName: 'acme/shop', projectId: null },

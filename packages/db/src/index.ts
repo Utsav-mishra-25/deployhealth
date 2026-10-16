@@ -8,5 +8,6 @@ export * from './handoff';
 export * from './reports';
 export * from './demo';
 export * from './github';
+export * from './onboarding';
 export * from './heartbeat';
 export * from './migrations-status';
