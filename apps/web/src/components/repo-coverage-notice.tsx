@@ -9,7 +9,7 @@ const LINK = 'font-medium underline underline-offset-2 hover:text-amber-900';
  */
 export function RepoCoverageNotice({ coverage, repo }: { coverage: RepoCoverage; repo: string }) {
   if (coverage.state === 'covered' || coverage.state === 'no-app') return null;
-  const name = <strong className="font-semibold break-all">{repo}</strong>;
+  const name = <strong className="font-semibold break-words">{repo}</strong>;
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="repo-coverage" data-state={coverage.state}>
       {coverage.state === 'suspended' && (

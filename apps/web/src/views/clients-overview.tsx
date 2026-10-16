@@ -1,4 +1,5 @@
 import { listClientsOverview } from '@deployhealth/db';
+import type { AppCovers } from '@/lib/project-status';
 import Link from 'next/link';
 import { ProjectRows, ProjectTableHead, StatusSummary } from '@/components/project-rows';
 import { getDb } from '@/lib/db';
@@ -9,14 +10,25 @@ import { rankProjects, statusSummary, worstStatusRank } from '@/lib/project-stat
  * Every client with its projects, plus "No client", worst first: projects by status then name, and
  * clients by their worst project then name ("No client" stays last). Rendered at /clients and /demo.
  */
-export async function ClientsOverviewView({ ownerId, paths, readOnly }: { ownerId: string; paths: ViewPaths; readOnly: boolean }) {
+export async function ClientsOverviewView({
+  ownerId,
+  paths,
+  readOnly,
+  appCovers,
+}: {
+  ownerId: string;
+  paths: ViewPaths;
+  readOnly: boolean;
+  /** Signed in: whether the user's own App installations cover a repository ("Not set up"'s reason). */
+  appCovers?: AppCovers;
+}) {
   const overview = await listClientsOverview(getDb(), ownerId);
   const now = new Date();
   const clients = overview.clients
-    .map((c) => ({ ...c, projects: rankProjects(c.projects, now) }))
+    .map((c) => ({ ...c, projects: rankProjects(c.projects, now, appCovers) }))
     .map((c) => ({ ...c, rank: worstStatusRank(c.projects.map((p) => p.status)) }))
     .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
-  const unassigned = rankProjects(overview.unassigned, now);
+  const unassigned = rankProjects(overview.unassigned, now, appCovers);
   const summary = statusSummary([...clients.flatMap((c) => c.projects), ...unassigned].map((p) => p.status));
   const empty = clients.length === 0 && unassigned.length === 0;
   // Clients are optional and offered only after the first project: until then there's no "New
