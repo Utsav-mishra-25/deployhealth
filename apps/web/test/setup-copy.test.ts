@@ -3,18 +3,27 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { NO_REFERENCES_NOTICE, NoReferencesNotice } from '@/components/env-scope-notice';
 import { SecretSteps } from '@/components/secret-steps';
-import { SetupOptions } from '@/components/setup-options';
+import { SetupOrder } from '@/components/setup-order';
 import { TokenReveal } from '@/components/token-reveal';
+import { HOW_IT_WORKS } from '@/lib/marketing';
+import { DEPLOY_HISTORY_OPTION, PR_CHECKS_OPTION, TOKEN_ONCE } from '@/lib/setup-copy';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
 
 describe('the setup copy', () => {
-  it('splits setup into two options: pull request checks need no token at all', () => {
-    const html = text(renderToStaticMarkup(createElement(SetupOptions, {})));
-    expect(html).toContain('Pull request checks');
-    expect(html).toContain('Install the deployhealth GitHub App on the repository and add a project for its exact owner/repo. No token, no secret, no variable.');
-    expect(html).toContain('Deploy history and alerts');
-    expect(html).toContain('repository secret named DEPLOYHEALTH_TOKEN');
+  it('puts pull request checks first (no token at all) and the Action second, optional, for deploy history', () => {
+    expect(PR_CHECKS_OPTION.title).toBe('Pull request checks (GitHub App)');
+    expect(PR_CHECKS_OPTION.body).toContain('No token, no secret, no variable.');
+    expect(DEPLOY_HISTORY_OPTION.title).toBe('Optional: deploy history (GitHub Action)');
+    expect(DEPLOY_HISTORY_OPTION.body).toContain('deploy history and alerts that name the deploy');
+    expect(DEPLOY_HISTORY_OPTION.body).toContain('repository secret named DEPLOYHEALTH_TOKEN');
+  });
+
+  it('/github/installed lists setup in the landing page order, with no token steps', () => {
+    const html = text(renderToStaticMarkup(createElement(SetupOrder)));
+    for (const step of HOW_IT_WORKS) expect(html).toContain(`${step.title}. ${step.body}`);
+    expect(html.indexOf(HOW_IT_WORKS[0].title)).toBeLessThan(html.indexOf(HOW_IT_WORKS[2].title));
+    expect(html).not.toMatch(/New repository secret|DEPLOYHEALTH_TOKEN/);
   });
 
   it('says where the secret goes, and that it is not a Variable or an environment secret', () => {
@@ -24,12 +33,14 @@ describe('the setup copy', () => {
     expect(html).toContain('Not an environment secret');
   });
 
-  it('shows the token once, in the token box only, on the screen after a project is created', () => {
+  it('shows the token once, in the token box only, when it is created in settings', () => {
     const token = 'dh_0123456789abcdef0123456789abcdef';
-    const html = renderToStaticMarkup(createElement(TokenReveal, { token, snippet: 'jobs: {}' }));
+    const html = renderToStaticMarkup(createElement(TokenReveal, { token, snippet: 'jobs: {}', repo: 'acme/api' }));
     expect(html.split(token)).toHaveLength(2);
-    expect(text(html)).toContain('No token, no secret, no variable.');
-    expect(text(html)).toContain('Secrets tab → New repository secret');
+    expect(text(html)).toContain(TOKEN_ONCE);
+    expect(text(html)).toContain('In acme/api: Settings → Secrets and variables → Actions → Secrets tab → New repository secret');
+    // The old creation screen's wording is gone.
+    expect(text(html)).not.toMatch(/Copy your ingest token now|won't be shown again/);
   });
 });
 

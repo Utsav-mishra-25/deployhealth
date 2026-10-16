@@ -7,8 +7,8 @@ const render = (status: Parameters<typeof AppStatusLine>[0]['status'], repo: str
   renderToStaticMarkup(createElement(AppStatusLine, { status, repo })).replace(/<[^>]+>/g, '');
 
 describe("the settings page's GitHub App line", () => {
-  it('says "Not installed by you on owner/repo" when none of the user\'s own installations covers it', () => {
-    expect(render({ state: 'not-installed' }, 'acme/shop')).toBe('Not installed by you on acme/shop.');
+  it("says the App isn't installed on owner/repo from your account when none of the user's own installations covers it", () => {
+    expect(render({ state: 'not-installed' }, 'acme/shop')).toBe("The GitHub App isn&#x27;t installed on acme/shop from your GitHub account.");
   });
 
   it("never names another account: an existing private repo and a missing one render the same line", () => {

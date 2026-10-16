@@ -3,7 +3,7 @@ import type { GithubAppStatus } from '@deployhealth/db';
 /** Only the user's own installations reach this (getGithubAppStatus): anyone else's reads as not installed. */
 export function AppStatusLine({ status, repo }: { status: GithubAppStatus; repo: string }) {
   const text = {
-    'not-installed': <>Not installed by you on {repo}.</>,
+    'not-installed': <>The GitHub App isn&apos;t installed on {repo} from your GitHub account.</>,
     active: (
       <>
         <span className="font-medium text-emerald-700">Installed</span> on {'accountLogin' in status && status.accountLogin}: pull requests on {repo} are
