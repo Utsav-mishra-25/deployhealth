@@ -1,7 +1,8 @@
-import { ensureDevUser, linkInstallationsForUser, upsertGithubUser } from '@deployhealth/db';
+import { ensureDevUser, linkInstallationsForUser, upsertGithubUser, userExists } from '@deployhealth/db';
 import NextAuth, { type DefaultSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { serverEnv } from '@/env';
+import { SIGNED_OUT_PATH } from '@/lib/account';
 import { buildProviders } from '@/lib/auth-providers';
 import { getDb } from '@/lib/db';
 
@@ -74,9 +75,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
   };
 });
 
-/** The signed-in user, or a redirect to /login. Use at the top of every protected page/action. */
+/**
+ * The signed-in user, or a redirect to /login. Use at the top of every protected page/action.
+ * Sessions are JWTs, so one can outlive its account (deleted on /account in another browser, or by
+ * the operator): that one is sent to SIGNED_OUT_PATH, which signs it out, instead of erroring.
+ */
 export async function requireUser(): Promise<{ id: string; login: string; name?: string | null; image?: string | null }> {
   const session = await auth();
   if (!session?.user?.id) redirect('/login');
+  if (!(await userExists(getDb(), session.user.id))) redirect(SIGNED_OUT_PATH);
   return session.user;
 }

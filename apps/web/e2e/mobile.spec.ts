@@ -24,6 +24,7 @@ test('public pages fit a 375 px phone, signed out', async ({ page }) => {
     '/docs/spring-boot',
     '/github/installed',
     '/pricing',
+    '/account/deleted',
   ]) {
     await expectNoSidewaysScroll(page, path);
   }
@@ -78,7 +79,7 @@ test('signed-in pages and a shared report fit a 375 px phone', async ({ page, br
   await expect(page.getByTestId('endpoint-card')).toHaveCount(1);
 
   const clientPath = new URL(clientUrl).pathname;
-  for (const path of ['/clients', clientPath, `${clientPath}/report`, projectUrl, `${projectUrl}/settings`, `${projectUrl}/handoff`]) {
+  for (const path of ['/clients', clientPath, `${clientPath}/report`, projectUrl, `${projectUrl}/settings`, `${projectUrl}/handoff`, '/account']) {
     await expectNoSidewaysScroll(page, path);
   }
 
