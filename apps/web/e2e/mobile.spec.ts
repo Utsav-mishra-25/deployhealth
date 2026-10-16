@@ -1,21 +1,10 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { createProject, createToken, expectNoSidewaysScroll } from './helpers';
 import { signInAsDev } from './session';
 
 const STOREFRONT = '0d3e0000-0000-4000-8000-000000000001';
 
 test.use({ viewport: { width: 375, height: 812 } });
-
-/** The page never scrolls sideways: wide tables scroll inside their own box instead. */
-async function expectNoSidewaysScroll(page: Page, path: string, status = 200) {
-  const response = await page.goto(path);
-  expect(response?.status(), path).toBe(status);
-  await page.waitForLoadState('networkidle');
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(scrollWidth, `${path} is ${scrollWidth}px wide at ${clientWidth}px`).toBeLessThanOrEqual(clientWidth);
-}
 
 test('public pages fit a 375 px phone, signed out', async ({ page }) => {
   for (const path of [
@@ -66,10 +55,9 @@ test('signed-in pages and a shared report fit a 375 px phone', async ({ page, br
   await expect(page.getByRole('heading', { name: clientName })).toBeVisible();
   const clientUrl = page.url();
   await page.getByRole('link', { name: 'Add project' }).click();
-  await page.getByLabel('Project name').fill(`mobile-${suffix}`);
-  await page.getByLabel('GitHub repository').fill('acme/a-repository-with-quite-a-long-name');
-  await page.getByRole('button', { name: 'Create project' }).click();
-  const token = (await page.getByTestId('new-token').textContent())?.trim() ?? '';
+  await expect(page).toHaveURL(/\/projects\/new\?client=/);
+  const projectUrl = await createProject(page, { name: `mobile-${suffix}`, repo: 'acme/a-repository-with-quite-a-long-name' });
+  const token = await createToken(page, projectUrl);
   const scan = await page.request.post('/api/ingest/scan', {
     headers: { authorization: `Bearer ${token}` },
     data: {
@@ -81,9 +69,8 @@ test('signed-in pages and a shared report fit a 375 px phone', async ({ page, br
     },
   });
   expect(scan.status()).toBe(201);
-  await page.getByRole('link', { name: 'Go to project' }).click();
+  await page.goto(projectUrl);
   await expect(page.getByRole('heading', { name: `mobile-${suffix}` })).toBeVisible();
-  const projectUrl = new URL(page.url()).pathname;
   const addForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add endpoint' }) });
   await addForm.getByLabel('Name').fill('Billing API');
   await addForm.getByLabel('URL').fill('https://example.com/a/very/long/health/check/path/that/keeps/going?with=a&query=string');
