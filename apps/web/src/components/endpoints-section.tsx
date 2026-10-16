@@ -7,6 +7,7 @@ import { LatencyChart } from './latency-chart';
 import { EndpointStatusBadge, FailingFor } from './status-badge';
 
 const EVERY: Record<number, string> = { 60: 'every minute', 300: 'every 5 min', 900: 'every 15 min' };
+const INTERVAL_LABEL: Record<number, string> = { 60: 'a minute', 300: '5 minutes', 900: '15 minutes' };
 
 function percent(value: number | null): string {
   if (value === null) return '—';
@@ -26,13 +27,16 @@ export function EndpointsSection({
 }) {
   return (
     <section aria-labelledby="endpoints" className="space-y-4">
-      <h2 id="endpoints" className="text-lg font-semibold">
-        Endpoints
-      </h2>
+      <div>
+        <h2 id="endpoints" className="text-lg font-semibold">
+          Endpoints
+        </h2>
+        <p className="mt-1 text-sm text-gray-600">Sites and health-check URLs deployhealth requests on a schedule, for uptime and alerts.</p>
+      </div>
 
       {endpoints.length === 0 && (
         <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500">
-          {readOnly ? 'No endpoints.' : 'No endpoints yet. Add a health-check URL below and the worker will check it on its interval.'}
+          {readOnly ? 'No endpoints.' : 'No sites watched yet. Add one below: deployhealth requests it on its interval and alerts you when it fails.'}
         </p>
       )}
 
@@ -61,7 +65,9 @@ export function EndpointsSection({
           </header>
 
           {m.recent.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-gray-500">No checks yet</p>
+            <p className="px-4 py-6 text-center text-sm text-gray-500">
+              No checks yet{m.endpoint.enabled ? `: the first one runs within ${INTERVAL_LABEL[m.endpoint.intervalSeconds] ?? 'its interval'}.` : ' (paused).'}
+            </p>
           ) : (
             <div className="grid gap-6 px-4 py-4 lg:grid-cols-2">
               <div className="min-w-0">
@@ -105,7 +111,7 @@ export function EndpointsSection({
       ))}
 
       {!readOnly && (
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <div id="add-endpoint" className="scroll-mt-4 rounded-lg border border-gray-200 bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold">Add endpoint</h3>
         <EndpointForm
           action={saveEndpointAction.bind(null, projectId, null)}

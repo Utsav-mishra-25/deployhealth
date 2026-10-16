@@ -3,7 +3,9 @@ import {
   getLatestScan,
   getProjectForOwner,
   getProjectMonitoring,
+  listClients,
   listDeployHistory,
+  listInstallationsForUser,
   listOpenAlerts,
   listPrChecksForOwner,
 } from '@deployhealth/db';
@@ -11,16 +13,19 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertsBanner } from '@/components/alerts-banner';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { SummaryCards } from '@/components/counts';
+import { FindingsLegend, SummaryCards } from '@/components/counts';
 import { DeployList } from '@/components/deploy-list';
 import { EndpointsSection } from '@/components/endpoints-section';
 import { NoEnvFileNotices, NoReferencesNotice } from '@/components/env-scope-notice';
 import { FindingsByKind } from '@/components/findings-table';
 import { PrChecksSection } from '@/components/pr-checks';
+import { ProjectGettingStarted } from '@/components/project-getting-started';
 import { TimeAgo } from '@/components/time-ago';
 import { getDb } from '@/lib/db';
 import { isUuid, shortSha } from '@/lib/format';
+import { installAppHref } from '@/lib/onboarding';
 import type { ViewPaths } from '@/lib/paths';
+import { appCoverage, repoCoverage } from '@/lib/repo-coverage';
 
 /**
  * A project: open alerts, latest (or selected) scan, endpoints, findings and deploys. Rendered at
@@ -32,25 +37,35 @@ export async function ProjectView({
   requestedDeploy,
   paths,
   readOnly,
+  created = false,
+  appSlug,
 }: {
   ownerId: string;
   projectId: string;
   requestedDeploy: string | undefined;
   paths: ViewPaths;
   readOnly: boolean;
+  /** Just created (`?created=1`): a one-line confirmation. */
+  created?: boolean;
+  /** GITHUB_APP_SLUG, for the install links of a signed-in project with no data yet. */
+  appSlug?: string;
 }) {
   if (!isUuid(projectId)) notFound();
   const db = getDb();
   const project = await getProjectForOwner(db, projectId, ownerId);
   if (!project) notFound();
 
-  const [client, deploys, openAlerts, monitoring, prChecks] = await Promise.all([
+  const [client, deploys, openAlerts, monitoring, prChecks, installations, clients] = await Promise.all([
     project.clientId ? getClientForOwner(db, ownerId, project.clientId) : null,
     listDeployHistory(db, ownerId, project.id),
     listOpenAlerts(db, ownerId, project.id),
     getProjectMonitoring(db, ownerId, project.id),
     listPrChecksForOwner(db, ownerId, project.id),
+    readOnly ? [] : listInstallationsForUser(db, ownerId),
+    project.clientId ? [] : listClients(db, ownerId),
   ]);
+  // "No client" only means something once the owner has clients; until then it's just "Projects".
+  const rootCrumb = client || clients.length > 0 ? 'Clients' : 'Projects';
   const latestId = deploys[0]?.deploy.id;
   // A deploy id that isn't this project's (or no longer exists: the demo is reseeded every 30
   // minutes) shows the latest deploy instead of an empty page.
@@ -64,12 +79,21 @@ export async function ProjectView({
       <div className="space-y-4">
         <Breadcrumb
           items={[
-            { label: 'Clients', href: paths.clients },
-            client ? { label: client.name, href: paths.client(client.slug) } : { label: 'No client', href: `${paths.clients}#no-client` },
+            { label: rootCrumb, href: paths.clients },
+            ...(client
+              ? [{ label: client.name, href: paths.client(client.slug) }]
+              : clients.length > 0
+                ? [{ label: 'No client', href: `${paths.clients}#no-client` }]
+                : []),
             { label: project.name },
           ]}
         />
         <AlertsBanner projectPath={projectPath} alerts={openAlerts} />
+        {created && !readOnly && (
+          <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="project-created">
+            Added <strong className="break-all">{project.name}</strong>. Here&apos;s what shows up on this page, and what makes it appear.
+          </p>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold break-words">{project.name}</h1>
@@ -99,7 +123,7 @@ export async function ProjectView({
                 href={`/projects/${project.id}/settings`}
                 className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
               >
-                Settings &amp; GitHub Action
+                Settings
               </Link>
             )}
           </div>
@@ -125,19 +149,20 @@ export async function ProjectView({
           <SummaryCards
             counts={{ missing: detail.scan.missingCount, unused: detail.scan.unusedCount, mismatch: detail.scan.mismatchCount }}
           />
+          <FindingsLegend />
         </section>
+      ) : !readOnly ? (
+        <ProjectGettingStarted
+          projectId={project.id}
+          repo={project.repoFullName}
+          coverage={repoCoverage(appCoverage(installations, installAppHref(appSlug, { to: 'settings', projectId: project.id })), project.repoFullName)}
+          prCheckMode={project.prCheckMode}
+          prChecks={prChecks.length}
+          endpoints={monitoring.length}
+        />
       ) : (
         <div className="rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
           <p className="font-medium">No scans yet</p>
-          {!readOnly && (
-            <p className="mt-1 text-sm text-gray-600">
-              Add the GitHub Action from{' '}
-              <Link href={`/projects/${project.id}/settings`} className="text-emerald-700 hover:underline">
-                Settings
-              </Link>{' '}
-              and push to see the first scan here.
-            </p>
-          )}
         </div>
       )}
 

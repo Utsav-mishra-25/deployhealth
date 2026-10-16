@@ -25,3 +25,23 @@ export function SummaryCards({ counts }: { counts: FindingCounts }) {
     </div>
   );
 }
+
+/** What the three kinds mean, in one line, where the counts first appear. */
+export const FINDINGS_LEGEND: Record<FindingKind, string> = {
+  missing: 'read in code, but in no env file',
+  unused: 'in an env file, never read',
+  mismatch: '.env and .env.example disagree',
+};
+
+export function FindingsLegend() {
+  return (
+    <p className="mt-2 text-xs text-gray-500" data-testid="findings-legend">
+      {KINDS.map((kind, i) => (
+        <span key={kind}>
+          {i > 0 && ' · '}
+          <span className="font-medium text-gray-600">{KIND_STYLES[kind].label}</span>: {FINDINGS_LEGEND[kind]}
+        </span>
+      ))}
+    </p>
+  );
+}
