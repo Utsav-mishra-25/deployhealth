@@ -32,6 +32,9 @@ export function parseInstallState(state: string | string[] | undefined): Install
 export const INSTALLED_PARAM = 'app';
 export const INSTALLED_VALUE = 'installed';
 
+/** The project page's flag after creating a project: a one-line confirmation. */
+export const CREATED_PARAM = 'created';
+
 /** Where a return step lands, with the confirmation flag. */
 export function installReturnPath(ret: InstallReturn): string {
   const path = ret.to === 'clients' ? '/clients' : ret.to === 'new-project' ? '/projects/new' : `/projects/${ret.projectId}/settings`;
