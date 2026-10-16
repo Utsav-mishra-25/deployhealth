@@ -38,6 +38,12 @@ test('landing page for a signed-out visitor: the hero first, the alert below it,
   await expect(shot).toHaveAttribute('height', '912');
   await expect(shot).toHaveAttribute('alt', /clients list/);
   expect(await shot.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(2080);
+  const shotLink = landing.getByTestId('landing-screenshot-link');
+  await expect(shotLink).toHaveAttribute('href', '/demo');
+  await expect(shotLink).toHaveAccessibleName(/^Open the live demo: The deployhealth demo's clients list/);
+  await shotLink.click();
+  await expect(page).toHaveURL(/\/demo$/);
+  await page.goBack();
 
   // The FAQ is plain <details>; the languages are one line in it, not in the hero.
   const faq = landing.getByTestId('faq');

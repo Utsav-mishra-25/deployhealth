@@ -26,6 +26,19 @@ export function Landing({ demo }: { demo: boolean }) {
   const button = 'inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium';
   const primary = `${button} bg-emerald-700 text-white hover:bg-emerald-800`;
   const secondary = `${button} border border-gray-300 bg-white hover:bg-gray-50`;
+  // A plain committed image: no optimizer route, nothing fetched from elsewhere. With the demo
+  // public it links there; the link's name starts "Open the live demo", then the image's alt.
+  const screenshot = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={LANDING_SCREENSHOT.src}
+      width={LANDING_SCREENSHOT.width}
+      height={LANDING_SCREENSHOT.height}
+      alt={LANDING_SCREENSHOT.alt}
+      className="h-auto w-full max-w-4xl rounded-lg border border-gray-200 bg-white shadow-sm"
+      data-testid="landing-screenshot"
+    />
+  );
   return (
     <div className="space-y-16" data-testid="landing">
       <section className="space-y-6" aria-labelledby="landing-heading" data-testid="landing-hero">
@@ -57,16 +70,14 @@ export function Landing({ demo }: { demo: boolean }) {
         </div>
       </section>
 
-      {/* A plain committed image: no optimizer route, nothing fetched from elsewhere. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={LANDING_SCREENSHOT.src}
-        width={LANDING_SCREENSHOT.width}
-        height={LANDING_SCREENSHOT.height}
-        alt={LANDING_SCREENSHOT.alt}
-        className="h-auto w-full max-w-4xl rounded-lg border border-gray-200 bg-white shadow-sm"
-        data-testid="landing-screenshot"
-      />
+      {demo ? (
+        <Link href={DEMO_PATHS.clients} className="block max-w-4xl rounded-lg hover:opacity-90" data-testid="landing-screenshot-link">
+          <span className="sr-only">Open the live demo: </span>
+          {screenshot}
+        </Link>
+      ) : (
+        screenshot
+      )}
 
       <section aria-labelledby="alert-heading" className="space-y-3" data-testid="landing-alert">
         <h2 id="alert-heading" className="text-lg font-semibold">
