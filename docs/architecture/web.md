@@ -21,7 +21,10 @@ apps/
                       read-body.ts (capped streaming body reader), legal.ts (operator, hosting,
                       subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts,
                       worker-health.ts (the deep health check's response), github-app.ts (project
-                      prefill and safe return paths for the App's next steps), security.ts
+                      prefill and safe return paths for the App's next steps), onboarding.ts (the
+                      first-run checklist, the install link's `state` allowlist and return paths),
+                      repo-coverage.ts (browser-safe: whether the user's own installations cover a
+                      repository, and the settings link to fix it), setup-copy.ts, security.ts
                       (security.txt and the security contact), marketing.ts (the public pages' copy: hero, who it's
                       for, how it works, FAQ, pricing, the demo guide, landing and /pricing metadata),
                       site-nav.ts (the header's public links and the share-page flag), app-url.ts (`publicOrigin()`: every
@@ -41,10 +44,13 @@ apps/
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, demo guide, print/share buttons, report toolbar,
                       alert card, landing, public-nav, pricing, faq, prose-page (layout of
-                      /security, /privacy, /terms)
+                      /security, /privacy, /terms), onboarding-checklist, install-confirmation,
+                      repo-coverage-notice, project-getting-started, setup-order
     public/landing/   demo-clients.png: the landing page's screenshot (committed, not generated)
     e2e/              Playwright on `next build` + `next start`: public demo (+ handoff, report) and the
-                      signed-in flow (+ share link); mobile.spec.ts (375 px), a11y.spec.ts (axe);
+                      signed-in flow (+ share link); onboarding.spec.ts (the first run on a fresh
+                      dev account); mobile.spec.ts (375 px), a11y.spec.ts (axe); helpers.ts
+                      (projects, tokens, signed webhooks, the dev reset, axe and 375 px checks);
                       session.ts (the dev user's minted session; development.md)
     railway.json      documentation only: the Railway build/deploy fields set by hand in the dashboard
 ```
@@ -65,7 +71,9 @@ And in core, for client components:
   names and paths get `break-all`/`break-words`). No new env vars for them without a decision.
 - **Accessibility:** every public page, the signed-in /clients, a client page, a project page with
   a deploy, its settings page and a shared report have no serious or critical axe violations (WCAG 2.1 A/AA tags; `e2e/a11y.spec.ts`; add new
-  public pages there). Small text and buttons with white text use emerald-700, never emerald-600
+  public pages there). Every first-run screen (the checklist home, the new-project form with and
+  without the picker, a project before any data, its settings, /github/installed signed in) gets
+  axe and the 375 px check in `e2e/onboarding.spec.ts` (`expectFirstRunScreen`). Small text and buttons with white text use emerald-700, never emerald-600
   (3.65:1 on white); muted text on white or gray-50 is gray-500, never gray-400. The icon and the
   OG image keep `BRAND_GREEN` (emerald-600): a graphic and large text need only 3:1.
 - **The header** (root layout): signed out, the logo then `PublicNav`: Demo (only with
@@ -116,14 +124,48 @@ And in core, for client components:
   Under the headline, one line names the languages the scanner reads: `LANGUAGES_SENTENCE` (core
   `languages.ts`), the same line as the README's opening and the npm README's (tests pin all three).
 - **Setup copy** is worded once in `lib/setup-copy.ts` (browser-safe: `TokenReveal` is rendered by
-  client forms): two options, **Pull request checks** (the App plus a project for the exact
-  owner/repo; no token, no secret, no variable) and **Deploy history and alerts** (the Action plus
-  the ingest token as the repository secret `DEPLOYHEALTH_TOKEN`, with the GitHub path to the
+  a client form), in the landing page's order: **Pull request checks (GitHub App)** (the App plus a
+  project for the exact owner/repo; no token, no secret, no variable), then **Optional: deploy
+  history (GitHub Action)** (deploy history and alerts that name the deploy: the Action plus the
+  project's token as the repository secret `DEPLOYHEALTH_TOKEN`, with the GitHub path to the
   Secrets tab and why not a Variable or an environment secret: `components/secret-steps.tsx`). The
-  project settings page groups its sections under the two options, the screen after creating a
-  project (`TokenReveal`) and `/github/installed` (`SetupOptions`, signed in or out) show both.
-  Short copy, no wizard. A token value appears only in `TokenReveal`'s box, once
-  (`test/setup-copy.test.ts`).
+  settings page is in that order, then Client, alerts & handoff; "Try the scan locally first" sits
+  inside the optional section. `/github/installed` shows the three steps of `HOW_IT_WORKS`
+  (`SetupOrder`), never the token steps. Short copy, no wizard.
+- **No token at creation.** Creating a project redirects to its page (`?created=1`, one line:
+  "Added <name>."); the hashed token the column needs is never shown. The token appears only when
+  the user asks for it in settings: **Create token** while no deploy has been reported (the same
+  `regenerateTokenAction`), **Regenerate token** after, each with a confirm. A token value
+  appears only in `TokenReveal`'s box, once (`test/setup-copy.test.ts`).
+- **First run** (`lib/onboarding.ts`, `components/onboarding-checklist.tsx`; owner-scoped data
+  from `getOnboardingState`). /clients shows "Get set up" until every required step is done:
+  1. Install the GitHub App (done: a non-suspended installation; the link is GitHub's install
+  page with `state=clients`; "Not available on this deployment" without `GITHUB_APP_SLUG`, which
+  then doesn't hold the checklist open), 2. Add a project for a repo (done: one project; the
+  repositories the App can see without a project are offered, pre-filled; when the user has an
+  installation and a project's repository isn't covered, "N project(s) aren't covered by the App:
+  <names>" links to `/github/installed#not-covered`), 3. Add a site (a URL to watch) (done: one
+  endpoint; links to the newest project's `#add-endpoint`), and "Optional: deploy history with
+  the Action" in a closed `<details>` (done: one deploy). Titles and bodies of steps 1, 3 and the
+  optional one are `HOW_IT_WORKS`'s, so the app and the landing page can't drift. With no
+  clients, the home's heading is "Projects", there's no "New client" button and no "No client"
+  group; after the first project a line offers "Group projects by client (optional)", and the
+  new-project form shows the Client field. Breadcrumbs say "Projects / <name>" until there's a
+  client.
+- **New project** picks from the repositories the user's installations cover without a project
+  (`reposWithoutProject`; "Another repository…" types one), fills the name from the repository,
+  and says as you type when the App doesn't cover it (`RepoCoverageNotice`: installed on the
+  owner but not selected → the installation's settings page, where Repository access is;
+  not on that account → install it there; suspended → unsuspend). An installation with "All
+  repositories" covers every repository of its account (`repoCoverage`, the same rule as the
+  database's `getGithubAppStatus` and `findPrCheckTarget`).
+- **A project before any data** (signed in, no scan): "What shows up here" instead of empty
+  tables (`ProjectGettingStarted`): pull request checks first (open a pull request; or the
+  coverage notice; or checks are off), then "Add a site (a URL to watch)", then "Optional: deploy
+  history". One-line legends explain MISSING, UNUSED and MISMATCH under the counts
+  (`FindingsLegend`) and Undeclared above the pull request table. On the project lists, "Not set
+  up" says "Waiting for the first pull request check" or "GitHub App not installed on this repo"
+  when the user's coverage is known (`notSetUpReason`; the demo keeps the generic line).
 - **Project lists** (/clients, a client's page, /demo and /demo/clients/…): one status per project
   from `projectStatus()` (`lib/project-status.ts`, whose comment names every field it reads):
   **Down** (an open alert), **Needs attention** (MISSING or MISMATCH in the latest deploy's latest

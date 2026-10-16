@@ -23,6 +23,9 @@ query (authorization rules for queries are in [security.md](security.md)).
                       owner-scoped reads for the UI: status, PR list, agent stats)
     src/heartbeat.ts  recordHeartbeat() / workerIsHealthy(): the deep health check's one row
     src/migrations-status.ts  pendingMigrations(): the bundled drizzle journal vs drizzle.__drizzle_migrations
+    src/onboarding.ts getOnboardingState(): the first-run checklist's data (own installations, projects,
+                      endpoint, deploy and client counts; owner-scoped)
+    src/dev-reset.ts  resetDevUser(): empties the dev account for e2e (test tooling; not exported)
     src/delete-user.ts  planUserDeletion() / deleteUser(): an account and everything it owns (operator only)
     src/delete-user-cli.ts  `pnpm --filter @deployhealth/db delete-user`; built to dist/delete-user.js
     src/stats.ts      usageStats(): counts for the operator, in one READ ONLY transaction

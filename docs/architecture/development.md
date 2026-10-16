@@ -24,7 +24,9 @@ App status that can't reveal other accounts' repositories, absolute URLs from `P
 /security stating strict mode's limit (too large or couldn't be checked is neutral),
 the token kept out of the Action snippet's command line, and e2e on a production build) and
 Phase 7 part 1 (a freelancer-first landing page with a product screenshot, a header nav on every
-public page, /pricing, a friendly 404 and a guide on /demo) are built.
+public page, /pricing, a friendly 404 and a guide on /demo) and Phase 8.1 (first-run onboarding:
+the setup checklist, the install round trip back to the step it started from, App coverage per
+repository, a project page that says what will appear, no token at creation) are built.
 
 ## Repository files
 
@@ -105,7 +107,15 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
   links; the 404's links; the public
   demo without a session (overview → project with its sample PR checks → handoff page and `.md`
   download → monthly report); a signed-in project with no env file: its "No .env.example here"
-  notice → the handoff's starting `.env.example` (page and `.md`); the signed-in flow as the dev user (`/` → /clients, client → project
+  notice → the handoff's starting `.env.example` (page and `.md`); `onboarding.spec.ts`, the first
+  run on a fresh dev account (checklist → project → settings → the signed installation webhook and
+  the Setup URL's `state` back to settings → the "App doesn't cover this repo" notice and its fix
+  → an "All repositories" installation → the picker → a site → the optional Action's token; axe
+  and 375 px on each screen). It empties the dev account before and after with `resetDevUser`
+  (packages/db `dev-reset.ts`: only the dev user's projects, clients and installations; the demo
+  and other users are never touched, `test/dev-reset.test.ts`), and signs deliveries with the
+  fixed test secret `E2E_WEBHOOK_SECRET` (`e2e/webhook-secret.ts`, passed to the server as
+  `GITHUB_APP_WEBHOOK_SECRET`); the signed-in flow as the dev user (`/` → /clients, client → project
   → scan with variables → named endpoint → SSRF rejection → untrusted deploy notes in the handoff
   → share a report → open the link in a fresh context → tampered link 404s); /privacy and /terms;
   the security headers; that a spoofed Host or X-Forwarded-Host never reaches security.txt, the
