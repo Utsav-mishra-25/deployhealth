@@ -22,7 +22,9 @@ apps/
                       subprocessors, retention wording), titles.ts (page titles), landing.ts, brand.ts,
                       worker-health.ts (the deep health check's response), github-app.ts (project
                       prefill and safe return paths for the App's next steps), security.ts
-                      (security.txt and the security contact), app-url.ts (`publicOrigin()`: every
+                      (security.txt and the security contact), marketing.ts (the public pages' copy: hero, who it's
+                      for, how it works, FAQ, pricing, the demo guide, landing and /pricing metadata),
+                      site-nav.ts (the header's public links and the share-page flag), app-url.ts (`publicOrigin()`: every
                       absolute URL, from PUBLIC_ORIGIN), db.ts (the shared database handle), project-status.ts
                       (one status per project, its reasons, ordering, the summary line),
                       deploy-changes.ts (a deploy's "what changed" and outage lines, commit links)
@@ -31,14 +33,16 @@ apps/
     src/app/          / (landing when signed out, else → /clients), /login, /clients, /clients/new,
                       /clients/[slug](/edit, /report), /projects/new, /projects/[id] (+ endpoint
                       actions, /settings, /handoff, /handoff.md), /demo/... (read-only mirror),
-                      /share/reports/[token], /api/demo/broken, /security, /privacy, /terms and
+                      /share/reports/[token], /api/demo/broken, /pricing, /security, /privacy, /terms and
                       /.well-known/security.txt (public), /api/health (Railway's, no database),
                       /api/health/worker (deep check), /api/github/webhook (GitHub App),
                       /github/installed (the App's setup URL); icon.svg, opengraph-image.tsx (+
-                      twitter-image), sitemap.ts
+                      twitter-image), sitemap.ts, not-found.tsx (every 404)
     src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
-                      SafeMarkdown, demo banner, print/share buttons, report toolbar, alert card,
-                      landing, prose-page (layout of /security, /privacy, /terms)
+                      SafeMarkdown, demo banner, demo guide, print/share buttons, report toolbar,
+                      alert card, landing, public-nav, pricing, faq, prose-page (layout of
+                      /security, /privacy, /terms)
+    public/landing/   demo-clients.png: the landing page's screenshot (committed, not generated)
     e2e/              Playwright on `next build` + `next start`: public demo (+ handoff, report) and the
                       signed-in flow (+ share link); mobile.spec.ts (375 px), a11y.spec.ts (axe);
                       session.ts (the dev user's minted session; development.md)
@@ -53,8 +57,8 @@ And in core, for client components:
 
 ## Conventions
 
-- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/security`, `/privacy`, `/terms`, `/docs/...`,
-  and `/github/installed` signed out): no
+- **Public pages** (`/`, `/login`, `/demo/...`, `/share/*`, `/pricing`, `/security`, `/privacy`, `/terms`,
+  `/docs/...`, `/github/installed` signed out, and the 404): no
   external assets (fonts, scripts, images, analytics), server components unless interactivity is
   unavoidable, and no sideways scroll at 375 px (`e2e/mobile.spec.ts`; wide tables go inside their
   own `overflow-x-auto` box, or `.doc-scroll` on printable pages, which prints full width; long
@@ -64,14 +68,35 @@ And in core, for client components:
   public pages there). Small text and buttons with white text use emerald-700, never emerald-600
   (3.65:1 on white); muted text on white or gray-50 is gray-500, never gray-400. The icon and the
   OG image keep `BRAND_GREEN` (emerald-600): a graphic and large text need only 3:1.
+- **The header** (root layout): signed out, the logo then `PublicNav`: Demo (only with
+  `DEMO_PUBLIC=1`) · Docs · Pricing · Sign in with GitHub (a link to /login, no inline action). No
+  JavaScript and no menu: at 375 px it wraps under the logo. Signed in, the user's login and Sign
+  out instead. On `/share/*` (a report a client opens) there is no nav, only the logo:
+  `middleware.ts`, which already runs there, sets `HIDE_PUBLIC_NAV_HEADER` on the request and the
+  layout reads it (forging it elsewhere only hides the nav for whoever sends it). The footer links
+  Docs, Pricing, Security, Privacy, Terms and the source.
 - **`/`** is the landing page for signed-out visitors (indexable) and redirects signed-in users to
-  /clients. Its example alert is built by `alertOpenedMessage()` with the demo incident's values
-  (`lib/landing.ts`, tested against the seed); the demo button shows only with `DEMO_PUBLIC=1`, and
-  "Sign in with GitHub" links to /login (no inline server action, so the guard test's list holds).
-  "Free while in beta", never prices. The bundle size it states is `CLI_BUNDLE_KB` (core), pinned to
-  the built CLI by `test/npm-package.test.ts`. Under the unchanged headline, the supporting line is
-  `LANDING_SUPPORTING_LINE` ("Like Dependabot, but for your .env.example: …"; a comparison only, no
-  logos or marks, nothing implying an affiliation), then `LANGUAGES_SENTENCE`; it links /docs.
+  /clients. Freelancer first, in this order (`test/landing.test.ts` pins it): the hero (headline,
+  subline, See the live demo (only with `DEMO_PUBLIC=1`) and Sign in with GitHub, the docs link,
+  "Free during the beta."); one committed screenshot of /demo's clients list
+  (`public/landing/demo-clients.png`, 2x, light, from a production build with demo data, under
+  200 KB, a plain `<img>` with width, height and alt; retake it when the list's look changes);
+  "What an alert looks like (live from the demo)", the example alert built by
+  `alertOpenedMessage()` with the demo incident's values (`lib/landing.ts`, tested against the
+  seed); who it's for (freelancers and agencies; small dev teams, with the Dependabot comparison:
+  a comparison only, no logos or marks, nothing implying an affiliation); how it works in the real
+  setup order (the App, no token; your sites; optionally the Action); pricing; the FAQ as plain
+  `<details>` (the `LANGUAGES_SENTENCE` lives there, not in the hero); the trust strip. The bundle
+  size it states is `CLI_BUNDLE_KB` (core), pinned to the built CLI by `test/npm-package.test.ts`.
+  All the copy is in `lib/marketing.ts`.
+- **Pricing** (`/pricing`, and the landing page's section, both `PricingPlans`): only what's true
+  today: "Free during the beta: everything you see in the demo.", then the planned prices as names
+  and prices only (Freelancer $15/month, Studio $29/month) and "Beta users get advance notice and an
+  early-user price." No limits table and no features that aren't built (email alerts, branded
+  reports, seats); `test/marketing.test.ts` checks. In the sitemap, linked from the header and the
+  footer. Change a price in `PRICING` and the FAQ answer and the description follow.
+- **The 404** (`app/not-found.tsx`, every unknown path and `notFound()`): "Page not found" in the
+  site's style with links to Home, Demo (with `DEMO_PUBLIC=1`) and Docs; nothing about why.
 - **Docs pages** (`/docs`, `/docs/nextjs`, `/docs/laravel`, `/docs/spring-boot`; the slugs are
   `DOCS_STACK_SLUGS` in core, shared with the worker's PR comment footer): static server components
   rendered from `lib/docs-pages.ts`, no session or user data, indexed, canonical URLs (resolved
@@ -134,8 +159,10 @@ And in core, for client components:
   never wins when it's set.
 - **Metadata:** the root layout sets `metadataBase` from `publicOrigin()` and generic Open Graph / Twitter
   (`summary_large_image`) cards titled "deployhealth" on every page, so link previews never carry a
-  client's name. `app/opengraph-image.tsx` (next/og, its bundled font, rendered at build) is the
-  preview. Page titles come from `lib/titles.ts`: "<project> · deployhealth", "Handoff · <project>
+  client's name. The landing page alone sets its own title, description and Open Graph / Twitter
+  title and description, from its headline (`LANDING_PAGE_METADATA`); /pricing its title and
+  description. `app/opengraph-image.tsx` (next/og, its bundled font, rendered at build) is the
+  preview: the landing headline on the brand green, with the headline as its alt. Page titles come from `lib/titles.ts`: "<project> · deployhealth", "Handoff · <project>
   · …", "<client> · …", "Report · <Month YYYY> · …", with "Live demo" before the site name on
   /demo; `/share/*` stays "Monthly report · deployhealth" and noindex. `sitemap.ts` lists the
   public pages; there is no robots route (Cloudflare manages robots.txt).
