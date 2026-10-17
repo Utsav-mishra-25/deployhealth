@@ -8,7 +8,8 @@ Built: Phases 1–6, from config health to "can't check" on unsupported stacks, 
 Java/Kotlin with Spring (CLI 0.5.0), docs pages, the Action and a security pass, plus Phase 7 part 1
 (landing page, header nav, /pricing, 404, demo guide), Phase 8.1 (first-run onboarding: setup
 checklist, App coverage, no token at creation) and Phase 9 part 1 (redacted logs, Sentry, operator
-alerts, /account export and deletion, status link, runbooks) (list: development.md).
+alerts, /account export and deletion, status link, runbooks) and part 2 (daily backups to R2 from a
+separate backup service, restore that re-applies deletions) (list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for
 an area before changing it (index at the end). Each app and package has a short CLAUDE.md naming
@@ -17,7 +18,8 @@ its docs, and `AGENTS.md` points other coding agents here.
 ## Layout
 
 - `apps/web`: Next.js 15 app: UI, Auth.js, ingest API, GitHub webhook, public pages.
-- `apps/worker`: Node process on pg-boss: uptime checks, alerts, prune, demo reseed, PR checks.
+- `apps/worker`: Node process on pg-boss: uptime checks, alerts, prune, demo reseed, PR checks; plus
+  the backup service (`dist/backup.js`, its own Dockerfile and Railway cron) and `dist/restore.js`.
 - `packages/core`: scanner, CLI, SSRF guard, alert, handoff and report rules (MIT).
 - `packages/db`: Drizzle schema, migrations, queries, seed.
 - `docs`: the Railway deploy guide, the incident and maintenance runbooks, the GitHub App manifest,
@@ -77,6 +79,9 @@ One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
 - **Account deletion** goes through `deleteUser()` (self-serve and the operator's CLI alike), which
   records it in `account_deletions`; a new user-owned table joins its lists and the export.
   → database.md
+- **Backups** keep `BACKUP_RETENTION_WEEKS` dumps (`packages/db/src/retention.ts`, the one number)
+  and prune only after a successful upload; a restore goes only into an empty database and
+  re-applies account deletions; the R2 keys live on the backup service alone. → worker.md
 - **Tokens:** only the SHA-256 is stored; the plaintext is shown once. → ingest-and-cli.md
 - **Untrusted Markdown** renders only through `SafeMarkdown`; never add rehype-raw. → web.md
 - **Public pages:** no external assets, server components, no sideways scroll at 375 px, no new

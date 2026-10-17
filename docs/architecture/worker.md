@@ -1,7 +1,8 @@
 # Worker (`apps/worker`)
 
 The pg-boss process: migration wait, uptime checks and alerts, the nightly prune, the demo reseed,
-the pull request check queue, and operator alerts and error reports. Read before changing anything under `apps/worker` (the PR check
+the pull request check queue, operator alerts and error reports, and the backup service and restore
+command (same package, separate entry points). Read before changing anything under `apps/worker` (the PR check
 itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](security.md)).
 
 ## Layout
@@ -20,9 +21,16 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
     src/operator.ts   operator alerts (OPERATOR_WEBHOOK_URL): heartbeat watch, repeated job failures,
                       rate limits; observeJob() (report + count every job's failures)
     src/guarded-http.ts  the ONLY outbound HTTP: guardedRequest / guardedPost on node:http(s) + guardedLookup,
-                      and githubFetch (Octokit's fetch: api.github.com only, keep-alive, response cap)
-    src/env.ts        the ONLY place the worker reads process.env
-    railway.json      documentation only, like web's
+                      githubFetch (Octokit's fetch: api.github.com only, keep-alive, response cap) and
+                      r2Request (Cloudflare R2 hosts only, for backups)
+    src/env.ts        the ONLY place the worker reads process.env (workerEnv, backupEnv, restoreEnv)
+    src/backup/r2.ts  the backup bucket: aws4-signed put / list / delete / get through r2Request
+    src/backup/run.ts the backup service's daily run (deletions.json, a dump when due, prune, heartbeat), withRetries
+    src/backup/restore.ts  restore logic: --list, --download, restore into an empty database + re-apply deletions
+    src/backup-cli.ts dist/backup.js: the backup service's command (Railway cron)
+    src/restore-cli.ts dist/restore.js: the operator's restore command (docs/maintenance.md)
+    Dockerfile        the backup service's image: this package plus PGDG's postgresql-client-18
+    railway.json      documentation only, like web's; railway.backup.json, the backup service's
 ```
 
 ## Conventions
@@ -88,3 +96,26 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   all, in memory. Messages hold queue names, counts and `errorLabel()` only. A URL that isn't
   public http(s) logs one line and leaves alerts off; the worker runs either way. A dead process
   can't alert: the external monitor covers it (deploy-railway.md step 9).
+
+## The backup service and restores
+
+- **The backup service** is a separate Railway service (cron, daily at 03:41 UTC, restart policy
+  Never) built from `apps/worker/Dockerfile`; the worker itself still builds with Railpack and
+  never holds the R2 keys. `backup.js` runs `runBackup()` with `withRetries()` (two retries, 1 and
+  5 minutes apart): upload `deletions.json` (`deletionsManifest()`), then dump only when the newest
+  dump is older than `BACKUP_DUMP_INTERVAL_DAYS` (6.5; a failed day retries the next), upload it as
+  `deployhealth/<database time>.dump`, list to confirm, and only then delete all but the
+  `BACKUP_RETENTION_WEEKS` (4) newest; finally the `backup` heartbeat. A failed run is reported
+  through the shared Sentry module (`service:backup`) and exits 1. `assertToolCanReach()` refuses
+  a `pg_dump` older than the server. Logs: keys, sizes, durations, counts; errors through
+  `describeBackupError()` (our own BackupError and R2Error messages, else name and code).
+- **The stale-backup alert** lives in the worker's heartbeat watch: `heartbeatAgeSeconds(db,
+  BACKUP_HEARTBEAT)` older than `BACKUP_STALE_DAYS` (8) alerts at most once a day. Backups count
+  as set up once the row exists (the first run writes it): no setting on the worker.
+- **restore.js** (`backup/restore.ts`, injected deps, tested without R2 or Postgres; the real dump
+  and restore are tested in packages/db): `--list`; `--download <dir>` (the dump under its bucket
+  name and `deletions.json`); a restore from `--latest`, `--key` or `--file` into `--into`, which
+  must be empty and must not be `DATABASE_URL`'s database (`sameDatabase()`). Deletions to
+  re-apply come from `deletions.json` (the bucket's, or `--deletions-file`) and, with
+  `--live-deletions`, `DATABASE_URL`'s `account_deletions` (read only); with none it refuses unless
+  `--skip-deletions`. It prints each source and the manifest's age, then rows per table.

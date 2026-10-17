@@ -52,6 +52,11 @@ links, headers, anything that logs or reports errors, or those pages.
   contains `fetch(`, `http(s).request(`/`.get(`, axios, undici, `got(`, node-fetch, or imports
   `node:http(s)`/`http2`. Its allowlist names every exception with a reason (the guarded module,
   the CLI, the scanner's Ruby `ENV.fetch` pattern) and fails if an entry goes stale.
+  **R2 (backups):** `r2Request` talks only to `<32-hex account id>.r2.cloudflarestorage.com` (or
+  `.eu.`), https, no redirects, through the guarded lookup on the system resolver (a fixed host,
+  like GitHub's); like `githubFetch` it reads response bodies, capped in memory
+  (`MAX_R2_RESPONSE_BYTES`) or streamed to a file. Requests are signed with `aws4`; credentials
+  never reach a log or an error message.
   **The one outbound request that isn't guarded:** Sentry's SDK sends error reports to the host in
   `SENTRY_DSN` with its own transport (`packages/db/src/sentry.ts`). That host is the operator's
   setting, never user input, and no file in the repo makes the request, so the walk doesn't see it.
@@ -127,6 +132,16 @@ links, headers, anything that logs or reports errors, or those pages.
   `userExists()` and redirects to `/account/signed-out`, which signs out only a session whose user
   no longer exists (so a link to it can't sign anyone out) and shows `/account/deleted`.
 
+## Backups
+
+- The backup service (worker.md) holds the only R2 credentials: a token scoped to the one backup
+  bucket (Object Read & Write). Dumps hold the whole database, alert webhook URLs (which work like
+  passwords), emails and token hashes included, never env values; R2 encrypts them at rest, they
+  aren't encrypted again. The 4 newest weekly dumps are kept (`BACKUP_RETENTION_WEEKS`), so deleted
+  data leaves every backup within about 4 weeks; `deletions.json` (GitHub ids and times only,
+  ACCOUNT_DELETION_RECORD_DAYS) lets a restore re-apply deletions made after its dump. /privacy and
+  /security state it from `BACKUPS_TEXT` (web `lib/legal.ts`).
+
 ## Security headers
 
 - **Security headers** (`SECURITY_HEADERS` in `next.config.ts`, on `/:path*`, tested with Next's own
@@ -151,7 +166,7 @@ links, headers, anything that logs or reports errors, or those pages.
   `CHECK_RETENTION_TEXT`) and `lib/auth-providers.ts` (`GITHUB_OAUTH_SCOPES`, `githubSignInReads()`,
   also shown on /login and /security). The contact is `securityContact()`. `test/legal.test.ts`
   checks /privacy and /security render the same retention and scope text, and the same
-  `ERROR_REPORTS_TEXT`, `SELF_SERVE_DATA_TEXT` and `DELETION_RECORD_TEXT`. Sentry is a
+  `ERROR_REPORTS_TEXT`, `SELF_SERVE_DATA_TEXT`, `DELETION_RECORD_TEXT` and `BACKUPS_TEXT`. Sentry is a
   subprocessor. Bump
   `LEGAL_LAST_UPDATED` with any change to either page, and keep /privacy true to the code like
   /security.

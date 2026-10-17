@@ -4,7 +4,7 @@ What to check, in order, when deployhealth (or part of it) is down, and how to t
 status page. The setup is in [deploy-railway.md](deploy-railway.md): three Railway services
 (**web**, **worker**, **Postgres**; on the hosted instance web is named `deployhealth`), Cloudflare
 in front of web, two external monitors (step 9), optional Sentry error reports, operator alerts and
-a status page (steps 12–14).
+a status page (steps 12–14), and daily backups to Cloudflare R2 (step 15).
 
 ## 0. Say so first
 
@@ -28,6 +28,7 @@ minutes while it's open. Never paste log lines, user names, repository names or 
 | Only the **worker** monitor (`/api/health/worker`) is red | web is up; `check-endpoints` hasn't finished a run in 3 minutes | 3 |
 | Operator alert "heartbeat is N minutes old" | the worker process runs, but uptime checks don't | 3.3 |
 | Operator alert "<queue> failed 3 times in a row" | one job keeps failing (the name and code are in the alert) | 3.4 |
+| Operator alert "the backup service hasn't succeeded for N days" | the daily backup runs fail or stopped; no new dump | the backup service's Deployments (each run's log), deploy-railway.md troubleshooting |
 | Both red | usually the database, or Railway itself | 4, then 2 and 3 |
 
 Also look at <https://status.railway.com> and <https://www.cloudflarestatus.com>: if either has an
@@ -85,6 +86,9 @@ incident in your region, link it from your status page update and wait it out.
 3. **Data looks wrong or missing**: stop the worker first, so nothing writes on top of it (its
    active deployment's ⋯ menu → **Remove**; redeploy it when you're done), then work out what
    happened before changing anything.
+4. **Data is lost or damaged beyond repair**: restore the newest backup into a new Postgres
+   service and switch to it ([maintenance.md](maintenance.md), "Restoring production"). It
+   re-applies every account deletion made since the dump, so no deleted account comes back.
 
 ## 5. Close it
 
