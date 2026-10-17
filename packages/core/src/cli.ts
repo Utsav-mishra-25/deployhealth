@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import type { IngestPayload, IngestResponse } from './ingest';
 import { scanProject, type ScanResult } from './scan';
 import { TOKEN_SECRET_NAME } from './constants';
+import { isDeclarationFile } from './env-files';
 import { NO_SOURCE_FILES_LINE } from './languages';
 import { SHA_PATTERN, type FindingKind } from './types';
 import { CLI_VERSION } from './version';
@@ -195,19 +196,32 @@ function toJson(result: ScanResult) {
 
 const TITLES: Record<FindingKind, string> = { missing: 'MISSING', unused: 'UNUSED', mismatch: 'MISMATCH' };
 
+/** Under MISMATCH, when a variable the code reads is in `.env` but not in the declaration file. */
+export const MISMATCH_READ_LINE = 'A variable read in code and set in .env but not in .env.example is the one a deploy or a teammate misses first.';
+/** The last line of every `--dry-run` text output (never in `--json`). */
+export const DRY_RUN_LAST_LINE = 'Nothing was sent. On every pull request instead: install the GitHub App at https://deployhealth.dev';
+
 function renderText(result: ScanResult, showOptional: boolean): string {
   const scopes = result.scopes.map((s) => s || '(root)').join(', ');
   const files = result.sourceFiles === 1 ? 'file' : 'files';
   const out = [`deployhealth-scan: ${result.sourceFiles} source ${files}, scopes: ${scopes}`, ''];
-  if (result.sourceFiles === 0) out.push(NO_SOURCE_FILES_LINE, '');
+  const canCheck = result.sourceFiles > 0;
+  if (!canCheck) out.push(NO_SOURCE_FILES_LINE, '');
+  // Read in code, by scope: a MISMATCH row names an env file in the scope's directory.
+  const read = new Set(result.variables.map((v) => `${v.scope}\0${v.var_name}`));
   for (const kind of ['missing', 'unused', 'mismatch'] as const) {
     const rows = result.findings.filter((f) => f.kind === kind);
+    // Nothing read could reference a variable: MISSING and UNUSED say nothing, MISMATCH only with rows.
+    if (!canCheck && (kind !== 'mismatch' || rows.length === 0)) continue;
     out.push(`${TITLES[kind]} (${result.counts[kind]})`);
     if (rows.length === 0) out.push('  none');
     for (const f of rows) {
       const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ''}` : '';
       const extra = kind === 'mismatch' ? ` (missing from ${f.env_file})` : '';
       out.push(`  ${f.var_name.padEnd(28)} ${where}${extra}`);
+    }
+    if (kind === 'mismatch' && rows.some((f) => f.env_file && isDeclarationFile(baseName(f.env_file)) && read.has(`${dirName(f.env_file)}\0${f.var_name}`))) {
+      out.push(`  ${MISMATCH_READ_LINE}`);
     }
     out.push('');
   }
@@ -250,8 +264,13 @@ function renderText(result: ScanResult, showOptional: boolean): string {
     out.push(`Skipped (the platform or runtime provides them): ${result.defaultIgnored.join(', ')}. --no-default-ignore includes them.`);
     out.push('');
   }
+  out.push(DRY_RUN_LAST_LINE, '');
   return `${out.join('\n')}`;
 }
+
+/** `apps/web/.env.example` → `.env.example`; `apps/web`; '' at the root (scan paths use `/`). */
+const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+const dirName = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
 
 /** The first few paths, then how many more `--json` lists. */
 function listSome(paths: readonly string[], shown = 5): string {
