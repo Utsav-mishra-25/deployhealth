@@ -169,7 +169,7 @@ describe('operator alerts: check-endpoints falling behind', () => {
     for (let run = 1; run < BACKLOG_RUNS_BEFORE_ALERT; run++) await alerts.checkBacklog(3);
     expect(sent).toEqual([]);
     await alerts.checkBacklog(12);
-    expect(sent).toEqual(['[deployhealth worker] check-endpoints left 12 due endpoints unclaimed 5 runs in a row: checks are falling behind their intervals.']);
+    expect(sent).toEqual(['[deployhealth worker] check-endpoints left 12 due endpoints unclaimed 5 runs in a row, not counting per-host spacing: checks are falling behind their intervals.']);
   });
 
   it('a run that leaves none resets the count, silently when nothing was sent', async () => {
@@ -194,7 +194,7 @@ describe('operator alerts: check-endpoints falling behind', () => {
     advance(ALERT_REPEAT_MS);
     await alerts.checkBacklog(2);
     expect(sent).toHaveLength(2);
-    expect(sent[1]).toBe('[deployhealth worker] check-endpoints left 2 due endpoints unclaimed 36 runs in a row: checks are falling behind their intervals.');
+    expect(sent[1]).toBe('[deployhealth worker] check-endpoints left 2 due endpoints unclaimed 36 runs in a row, not counting per-host spacing: checks are falling behind their intervals.');
 
     await alerts.checkBacklog(0);
     await alerts.checkBacklog(0);

@@ -15,6 +15,7 @@ import {
   updateEndpoint,
   type CheckOutcome,
 } from '../src/monitoring';
+import type { Db } from '../src/client';
 import { listProjectsForOwner, recordScan } from '../src/queries';
 import { alerts, checkHosts, checks, endpointDailyStats, endpoints, projects } from '../src/schema';
 import { makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
@@ -36,6 +37,9 @@ const ok = (at: Date): CheckOutcome => ({ checkedAt: at, statusCode: 200, latenc
 const fail = (at: Date): CheckOutcome => ({ checkedAt: at, statusCode: 503, latencyMs: 80, ok: false, error: 'Expected 200, got 503' });
 const missing = (var_name: string): FindingRow => ({ kind: 'missing', var_name, file: 'src/x.ts', line: 1, env_file: null });
 
+/** The claimed endpoints only (most tests don't look at hostsAtCap). */
+const claimEndpoints = async (d: Db, opts?: Parameters<typeof claimDueEndpoints>[1]) => (await claimDueEndpoints(d, opts)).endpoints;
+
 async function setup() {
   const user = await makeUser(db);
   const project = await makeProject(db, user.id, 'shop');
@@ -52,7 +56,7 @@ describe('claimDueEndpoints (scheduling query)', () => {
     await makeEndpoint(db, p.id, { nextCheckAt: minutes(5) }); // not due yet
     await makeEndpoint(db, p.id, { nextCheckAt: minutes(-10), enabled: false }); // disabled
 
-    const claimed = await claimDueEndpoints(db, { now: T0 });
+    const claimed = await claimEndpoints(db, { now: T0 });
     expect(claimed.map((e) => e.id).sort()).toEqual([due60.id, due300.id].sort());
 
     const rows = await db.select().from(endpoints);
@@ -61,9 +65,9 @@ describe('claimDueEndpoints (scheduling query)', () => {
     expect(byId.get(due300.id)?.nextCheckAt).toEqual(minutes(5));
 
     // Claimed endpoints are no longer due at the same instant.
-    expect(await claimDueEndpoints(db, { now: T0 })).toEqual([]);
+    expect(await claimEndpoints(db, { now: T0 })).toEqual([]);
     // One minute later the 60s endpoint is due again.
-    expect((await claimDueEndpoints(db, { now: minutes(1) })).map((e) => e.id)).toEqual([due60.id]);
+    expect((await claimEndpoints(db, { now: minutes(1) })).map((e) => e.id)).toEqual([due60.id]);
   });
 
   it('respects the limit, oldest first, and never hands the same endpoint to two workers', async () => {
@@ -73,14 +77,14 @@ describe('claimDueEndpoints (scheduling query)', () => {
     for (let i = 0; i < 6; i++) created.push(await makeEndpoint(db, p.id, { nextCheckAt: minutes(-10 + i) }));
 
     // The two oldest are claimed (RETURNING order is unspecified, so compare as sets).
-    const firstBatch = (await claimDueEndpoints(db, { now: T0, limit: 2 })).map((e) => e.id).sort();
+    const firstBatch = (await claimEndpoints(db, { now: T0, limit: 2 })).map((e) => e.id).sort();
     expect(firstBatch).toEqual([created[0]!.id, created[1]!.id].sort());
 
     const second = openTestDb();
     try {
       const [a, b] = await Promise.all([
-        claimDueEndpoints(db, { now: T0, limit: 10 }),
-        claimDueEndpoints(second.db, { now: T0, limit: 10 }),
+        claimEndpoints(db, { now: T0, limit: 10 }),
+        claimEndpoints(second.db, { now: T0, limit: 10 }),
       ]);
       const ids = [...a, ...b].map((e) => e.id);
       expect(new Set(ids).size).toBe(ids.length);
@@ -93,17 +97,62 @@ describe('claimDueEndpoints (scheduling query)', () => {
 
 const seconds = (n: number) => new Date(T0.getTime() + n * 1000);
 
-describe('countDueEndpoints (what a claim left for next time)', () => {
-  it('counts enabled endpoints still due after the claim: one host past its 5 slots leaves the rest', async () => {
+describe('countDueEndpoints and hostsAtCap (what a claim left, and why)', () => {
+  it('counts enabled endpoints still due after the claim, and those on a host the claim left at its cap', async () => {
     const user = await makeUser(db);
     const p = await makeProject(db, user.id);
     for (let i = 0; i < 7; i++) await makeEndpoint(db, p.id, { url: `https://busy.example/${i}`, nextCheckAt: minutes(-1) });
     await makeEndpoint(db, p.id, { nextCheckAt: minutes(-1), enabled: false });
     await makeEndpoint(db, p.id, { nextCheckAt: minutes(5) });
 
-    expect(await countDueEndpoints(db, T0)).toBe(7);
-    expect(await claimDueEndpoints(db, { now: T0 })).toHaveLength(5);
-    expect(await countDueEndpoints(db, T0)).toBe(2);
+    expect(await countDueEndpoints(db, { now: T0 })).toEqual({ due: 7, waitingOnHost: 0 });
+    const claim = await claimDueEndpoints(db, { now: T0 });
+    expect(claim.endpoints).toHaveLength(5);
+    expect(claim.hostsAtCap).toEqual(['busy.example']);
+    expect(await countDueEndpoints(db, { now: T0, hostsAtCap: claim.hostsAtCap })).toEqual({ due: 2, waitingOnHost: 2 });
+  });
+
+  /** Claim and count once a minute, like check-endpoints: due_but_unclaimed - due_waiting_on_host per run. */
+  async function backlogBeyondSpacing(runs: number, opts: { limit?: number } = {}) {
+    const seen: Array<{ due: number; beyond: number }> = [];
+    for (let k = 0; k < runs; k++) {
+      const now = minutes(k);
+      const { hostsAtCap } = await claimDueEndpoints(db, { now, ...opts });
+      const { due, waitingOnHost } = await countDueEndpoints(db, { now, hostsAtCap });
+      seen.push({ due, beyond: due - waitingOnHost });
+    }
+    return seen;
+  }
+
+  it('8 every-minute endpoints on one host: whatever is left waits on the host, never a backlog', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    for (let i = 0; i < 8; i++) await makeEndpoint(db, p.id, { url: `https://busy.example/${i}`, intervalSeconds: 60, nextCheckAt: minutes(0) });
+    const seen = await backlogBeyondSpacing(12);
+    expect(seen.some((r) => r.due > 0)).toBe(true);
+    expect(seen.map((r) => r.beyond)).toEqual(Array(12).fill(0));
+  });
+
+  it('8 endpoints on 8 hosts with a low claim limit: a real backlog, every run, until the limit allows them', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    for (let i = 0; i < 8; i++) await makeEndpoint(db, p.id, { intervalSeconds: 60, nextCheckAt: minutes(0) });
+    expect((await backlogBeyondSpacing(6, { limit: 3 })).map((r) => r.beyond)).toEqual([5, 5, 5, 5, 5, 5]);
+    const { hostsAtCap } = await claimDueEndpoints(db, { now: minutes(6) });
+    expect(hostsAtCap).toEqual([]);
+    expect(await countDueEndpoints(db, { now: minutes(6), hostsAtCap })).toEqual({ due: 0, waitingOnHost: 0 });
+  });
+
+  it('a host whose slots in the window ran out is at the cap too', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    for (let i = 0; i < 3; i++) await makeEndpoint(db, p.id, { url: `https://slots.example/${i}`, nextCheckAt: minutes(-1) });
+    // A previous claim reserved the host until 30 s from now: two slots (30 s, 40 s) remain.
+    await db.insert(checkHosts).values({ hostname: 'slots.example', nextSlotAt: new Date(T0.getTime() + 30_000) });
+    const claim = await claimDueEndpoints(db, { now: T0 });
+    expect(claim.endpoints).toHaveLength(2);
+    expect(claim.hostsAtCap).toEqual(['slots.example']);
+    expect(await countDueEndpoints(db, { now: T0, hostsAtCap: claim.hostsAtCap })).toEqual({ due: 1, waitingOnHost: 1 });
   });
 });
 
@@ -142,7 +191,7 @@ describe('claimDueEndpoints: host spacing across all users', () => {
       'http://203.0.113.9/',
     ];
     for (const url of urls) await makeEndpoint(db, p.id, { url, nextCheckAt: minutes(-1) });
-    const claimed = await claimDueEndpoints(db, { now: T0 });
+    const claimed = await claimEndpoints(db, { now: T0 });
     expect(new Map(claimed.map((c) => [c.url, c.hostname]))).toEqual(new Map(urls.map((u) => [u, new URL(u).hostname])));
   });
 
@@ -155,7 +204,7 @@ describe('claimDueEndpoints: host spacing across all users', () => {
     }
     const other = await makeEndpoint(db, pb.id, { url: 'https://other.example/', nextCheckAt: minutes(-1) });
 
-    const first = await claimDueEndpoints(db, { now: T0 });
+    const first = await claimEndpoints(db, { now: T0 });
     const at = (list: typeof first, id: string) => list.find((c) => c.id === id)?.runAt;
     expect(shared.slice(0, 5).map((e) => at(first, e.id))).toEqual([0, 10, 20, 30, 40].map(seconds));
     expect(at(first, other.id)).toEqual(T0);
@@ -171,10 +220,10 @@ describe('claimDueEndpoints: host spacing across all users', () => {
     );
 
     // A second claim at the same moment gets nothing: the host's slots in this window are taken.
-    expect(await claimDueEndpoints(db, { now: T0 })).toEqual([]);
+    expect(await claimEndpoints(db, { now: T0 })).toEqual([]);
     // The next run continues the host's 10s grid: the two that waited go first, then the one
     // checked at T0, which is due again (60s interval).
-    const next = await claimDueEndpoints(db, { now: minutes(1) });
+    const next = await claimEndpoints(db, { now: minutes(1) });
     expect(new Map(next.map((c) => [c.id, c.runAt]))).toEqual(
       new Map([
         [shared[5]!.id, seconds(60)],
@@ -191,7 +240,7 @@ describe('claimDueEndpoints: host spacing across all users', () => {
     for (let i = 0; i < 12; i++) await makeEndpoint(db, p.id, { url: `https://busy.example/${i}`, nextCheckAt: minutes(-1) });
     const second = openTestDb();
     try {
-      const [a, b] = await Promise.all([claimDueEndpoints(db, { now: T0 }), claimDueEndpoints(second.db, { now: T0 })]);
+      const [a, b] = await Promise.all([claimEndpoints(db, { now: T0 }), claimEndpoints(second.db, { now: T0 })]);
       const starts = [...a, ...b].map((c) => c.runAt.getTime()).sort((x, y) => x - y);
       expect(new Set([...a, ...b].map((c) => c.id)).size).toBe(starts.length);
       expect(starts.map((t) => (t - T0.getTime()) / 1000)).toEqual([0, 10, 20, 30, 40]);
@@ -205,7 +254,7 @@ describe('claimDueEndpoints: host spacing across all users', () => {
     const p = await makeProject(db, user.id);
     await db.insert(endpoints).values(Array.from({ length: 40 }, (_, i) => ({ projectId: p.id, url: `https://busy.example/${i}`, nextCheckAt: minutes(-30) })));
     const quiet = await makeEndpoint(db, p.id, { url: 'https://quiet.example/', nextCheckAt: minutes(-1) });
-    const claimed = await claimDueEndpoints(db, { now: T0, limit: 6 });
+    const claimed = await claimEndpoints(db, { now: T0, limit: 6 });
     expect(claimed.map((c) => c.hostname).sort()).toEqual(['busy.example', 'busy.example', 'busy.example', 'busy.example', 'busy.example', 'quiet.example']);
     expect(claimed.find((c) => c.id === quiet.id)?.runAt).toEqual(T0);
   });
@@ -219,10 +268,10 @@ describe('claimDueEndpoints: fairness between owners', () => {
     await db.insert(endpoints).values(Array.from({ length: 60 }, (_, i) => ({ projectId: pb.id, url: `https://h${i}.example/`, nextCheckAt: minutes(-30 + i * 0.1) })));
     const lone = await makeEndpoint(db, ps.id, { url: 'https://small.example/', nextCheckAt: minutes(-1) });
 
-    const first = await claimDueEndpoints(db, { now: T0 });
+    const first = await claimEndpoints(db, { now: T0 });
     expect(first.filter((c) => c.projectId === pb.id)).toHaveLength(MAX_CLAIM_PER_OWNER);
     expect(first.some((c) => c.id === lone.id)).toBe(true);
-    const next = await claimDueEndpoints(db, { now: T0 });
+    const next = await claimEndpoints(db, { now: T0 });
     expect(next).toHaveLength(60 - MAX_CLAIM_PER_OWNER);
   });
 
@@ -231,7 +280,7 @@ describe('claimDueEndpoints: fairness between owners', () => {
     const [pa, pb] = [await makeProject(db, a.id), await makeProject(db, b.id)];
     await db.insert(endpoints).values(Array.from({ length: 10 }, (_, i) => ({ projectId: pa.id, url: `https://a${i}.example/`, nextCheckAt: minutes(-30 + i) })));
     await db.insert(endpoints).values(Array.from({ length: 10 }, (_, i) => ({ projectId: pb.id, url: `https://b${i}.example/`, nextCheckAt: minutes(-5 + i * 0.1) })));
-    const claimed = await claimDueEndpoints(db, { now: T0, limit: 6 });
+    const claimed = await claimEndpoints(db, { now: T0, limit: 6 });
     expect(claimed.map((c) => (c.projectId === pa.id ? 'a' : 'b'))).toEqual(['a', 'b', 'a', 'b', 'a', 'b']);
   });
 });

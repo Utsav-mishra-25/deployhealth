@@ -1,5 +1,5 @@
 import { CHECK_RETENTION_DAYS, LimitExceededError, webhookPayload, type AlertWebhookJobData, type PrCheckJobData } from '@deployhealth/core';
-import { ACCOUNT_DELETION_RECORD_DAYS, type CheckOutcome, type DueEndpoint, type NewPrCheck, type PrCheck, type PrCheckTarget, type RecordCheckResult } from '@deployhealth/db';
+import { ACCOUNT_DELETION_RECORD_DAYS, type CheckOutcome, type ClaimResult, type DueCount, type DueEndpoint, type NewPrCheck, type PrCheck, type PrCheckTarget, type RecordCheckResult } from '@deployhealth/db';
 import type { CheckResult, CheckTarget } from './check';
 import type { GithubApi } from './github/api';
 import { detectAgent } from './pr-check/agents';
@@ -23,9 +23,12 @@ export const RESEED_QUEUE = 'reseed-demo';
 export { ALERT_WEBHOOK_QUEUE, PR_CHECK_QUEUE } from '@deployhealth/core';
 
 export interface CheckEndpointsDeps {
-  claimDue: () => Promise<DueEndpoint[]>;
-  /** Enabled endpoints still due right after the claim (left for a later run). Optional. */
-  countDue?: () => Promise<number>;
+  claimDue: () => Promise<ClaimResult>;
+  /**
+   * Enabled endpoints still due right after the claim (left for a later run), and how many of
+   * them are on the hostnames the claim left at the per-host cap. Optional.
+   */
+  countDue?: (hostsAtCap: string[]) => Promise<DueCount>;
   check: (target: CheckTarget) => Promise<CheckResult>;
   record: (endpointId: string, outcome: CheckOutcome) => Promise<RecordCheckResult>;
   notify: (webhookUrl: string, payload: { text: string }) => Promise<boolean>;
@@ -54,17 +57,37 @@ export interface CheckEndpointsSummary {
   errors: number;
   /** Enabled endpoints still due after the claim; null when not counted (no countDue, or it failed). */
   dueButUnclaimed: number | null;
+  /** Of those, the ones waiting on per-host spacing (by design, never a backlog); null when not counted. */
+  dueWaitingOnHost: number | null;
   /** The whole run: claim, checks, webhooks and heartbeat. */
   runMs: number;
 }
 
 /**
- * The run's log line: `[check] {"claimed":3,"checked":3,"failed":1,"opened":1,"resolved":0,"errors":0,"due_but_unclaimed":0,"run_ms":5120}`.
- * Counts and a duration only.
+ * The run's log line, counts and a duration only:
+ * `[check] {"claimed":5,"checked":5,"failed":0,"opened":0,"resolved":0,"errors":0,"due_but_unclaimed":3,"due_waiting_on_host":3,"run_ms":41230}`.
  */
 export function checkSummaryLine(s: CheckEndpointsSummary): string {
   const { claimed, checked, failed, opened, resolved, errors } = s;
-  return `[check] ${JSON.stringify({ claimed, checked, failed, opened, resolved, errors, due_but_unclaimed: s.dueButUnclaimed, run_ms: s.runMs })}`;
+  return `[check] ${JSON.stringify({
+    claimed,
+    checked,
+    failed,
+    opened,
+    resolved,
+    errors,
+    due_but_unclaimed: s.dueButUnclaimed,
+    due_waiting_on_host: s.dueWaitingOnHost,
+    run_ms: s.runMs,
+  })}`;
+}
+
+/**
+ * What the operator's falling-behind alert counts: due endpoints the claim left that aren't
+ * waiting on per-host spacing (which holds checks back by design). Null when not counted.
+ */
+export function backlogBeyondSpacing(s: CheckEndpointsSummary): number | null {
+  return s.dueButUnclaimed === null ? null : s.dueButUnclaimed - (s.dueWaitingOnHost ?? 0);
 }
 
 /** Whether a run is worth a log line: it claimed something, hit an error, or left endpoints due. */
@@ -86,12 +109,24 @@ export function checkSummaryWorthLogging(s: CheckEndpointsSummary): boolean {
 export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEndpointsSummary> {
   const clock = deps.clock ?? (() => performance.now());
   const started = clock();
-  const due = await deps.claimDue();
-  const summary: CheckEndpointsSummary = { claimed: due.length, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, runMs: 0 };
+  const { endpoints: due, hostsAtCap } = await deps.claimDue();
+  const summary: CheckEndpointsSummary = {
+    claimed: due.length,
+    checked: 0,
+    failed: 0,
+    opened: 0,
+    resolved: 0,
+    errors: 0,
+    dueButUnclaimed: null,
+    dueWaitingOnHost: null,
+    runMs: 0,
+  };
   const sleepUntil = deps.sleepUntil ?? realSleepUntil;
   if (deps.countDue) {
     try {
-      summary.dueButUnclaimed = await deps.countDue();
+      const counted = await deps.countDue(hostsAtCap);
+      summary.dueButUnclaimed = counted.due;
+      summary.dueWaitingOnHost = counted.waitingOnHost;
     } catch (error) {
       deps.log(`[check] due endpoints not counted: ${errorLabel(error)}`);
     }
