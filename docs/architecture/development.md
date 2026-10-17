@@ -29,19 +29,21 @@ the setup checklist, the install round trip back to the step it started from, Ap
 repository, a project page that says what will appear, no token at creation) and Phase 9 part 1
 (production readiness: redacted logs, Sentry error reports, operator alerts, self-serve export and
 deletion on /account with a deletion record, a status page link, incident and maintenance
-runbooks) are built.
+runbooks) and part 2 (daily backups to Cloudflare R2 from a separate backup service on Postgres
+18's client, a restore command that re-applies account deletions, a stale-backup alert) are built.
 
 ## Repository files
 
 ```
-docker-compose.yml    Postgres 16 (creates deployhealth and deployhealth_test)
+docker-compose.yml    Postgres 18, like production (creates deployhealth and deployhealth_test; volume pgdata18)
+.dockerignore         for apps/worker/Dockerfile (the backup service): no env files, dependencies or build output
 LICENSE               FSL-1.1-MIT (everything except packages/core, which has its own MIT LICENSE)
 .github/workflows/ci.yml   typecheck, lint, unit tests, build; e2e on a production build (parallel job)
 .github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main
 .github/workflows/publish-cli.yml    manual, not used yet: build job, then a publish job behind the npm-publish environment
 docs/deploy-railway.md     Railway dashboard steps and every variable (root directory stays empty)
 docs/incident.md           what to check, in order, when the site or the worker is down; the status page
-docs/maintenance.md        planned downtime, migrations, rotating the GitHub App key, webhook secret and others
+docs/maintenance.md        planned downtime, migrations, restoring a backup, rotating the GitHub App key, webhook secret and others
 scripts/eval-repos.mjs     `pnpm eval:repos`: scanner accuracy on pinned public repos (manual, not in CI)
 scripts/laravel-framework-names.mjs  `pnpm laravel:names`: regenerates core's LARAVEL_FRAMEWORK_NAMES from
                            pinned laravel/framework tags (manual, not in CI, not shipped)
@@ -92,7 +94,12 @@ pnpm load:demo       # manual: builds web, `next start` on :3200, 20 connections
 
 - One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
 - **db tests** use `TEST_DATABASE_URL` (default `.../deployhealth_test`). Global setup drops and
-  re-migrates that database's schema on every run, so never point it at real data.
+  re-migrates that database's schema on every run, so never point it at real data. The backup
+  test also creates and drops `deployhealth_restore_test`, and needs `pg_dump` and `pg_restore` of
+  at least the server's major version on `PATH` (18 for docker-compose's and CI's Postgres:
+  `postgresql-client-18`, or `brew install postgresql@18`). Moving from the old Postgres 16 volume:
+  `docker compose down`, then `up -d` creates the new `pgdata18` volume (empty; run
+  `pnpm db:migrate` and `pnpm db:seed` again).
 - **e2e** runs on a production build: `pnpm e2e` builds core and web (`next build`), then
   Playwright starts `next start` on :3100 (never reusing a server already there) with the demo on,
   `PUBLIC_ORIGIN=http://localhost:3100` and placeholder `AUTH_GITHUB_*` (required in production,

@@ -36,6 +36,11 @@ query (authorization rules for queries are in [security.md](security.md)).
     src/redact.ts     `@deployhealth/db/redact`: redactText / redactValue / scrubErrorEvent /
                       installConsoleRedaction (no database code; security.md, "Logs and error reports")
     src/sentry.ts     `@deployhealth/db/sentry`: Sentry for web and worker (initSentry, reportError)
+    src/retention.ts  BACKUP_RETENTION_WEEKS (4), ACCOUNT_DELETION_RECORD_DAYS ((4 + 1) × 7), the backup
+                      service's 6.5-day dump interval and the 8-day stale limit
+    src/backup.ts     `@deployhealth/db/backup` (operator code, not in the index): pg_dump / pg_restore
+                      (connection in PG* variables, never argv), version checks, isEmptyDatabase,
+                      rowCounts, the deletions manifest, reapplyDeletions()
     src/delete-user-cli.ts  `pnpm --filter @deployhealth/db delete-user`; built to dist/delete-user.js
     src/stats.ts      usageStats(): counts for the operator, in one READ ONLY transaction
     src/stats-cli.ts  `pnpm --filter @deployhealth/db stats`; built to dist/stats.js
@@ -76,6 +81,20 @@ query (authorization rules for queries are in [security.md](security.md)).
   hints, alert webhook URLs (`alertWebhook: "set"`), raw checks, GitHub comment and check-run ids.
   One `READ ONLY`, `REPEATABLE READ` transaction. A new table a user owns joins it (and
   `test/export.test.ts`, `test/isolation.test.ts`).
+
+## Backups and restores
+
+- `dumpDatabase()` runs `pg_dump --format=custom --compress=9 --no-owner --no-acl
+  --exclude-schema=pgboss`; `restoreDump()` runs `pg_restore --single-transaction --exit-on-error`
+  into a database `isEmptyDatabase()` says is empty. Both get the connection as `PG*` variables and
+  nothing else from the environment but `PATH`; their errors are `BackupError`s, redacted.
+- `reapplyDeletions(db, deletions, dumpedAt)` deletes again, through `deleteUser()` (with the
+  original `deletedAt`), every account whose latest deletion is at or after the dump's time and
+  that the dump holds; it counts the ones it doesn't. `test/backup.test.ts` dumps a seeded test
+  database, deletes an account, restores into a new empty database (`deployhealth_restore_test`)
+  with identical row counts per table, re-applies, and then matches the live database row for row.
+  It needs `pg_dump` and `pg_restore` of at least the server's major version on `PATH` (CI installs
+  18) and fails, never skips, without them.
 
 ## Usage counts
 

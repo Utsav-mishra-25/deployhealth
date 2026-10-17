@@ -1,12 +1,14 @@
 # Deploy to Railway
 
 deployhealth runs on Railway as three services in one project: **Postgres**, **web** (Next.js)
-and **worker** (pg-boss). Every build and deploy setting is entered by hand in each service's
-dashboard (steps 2.4 and 3.4), along with the source, the variables and a domain.
+and **worker** (pg-boss), plus an optional fourth, **backup**, a daily cron job that copies the
+database to Cloudflare R2 (step 15). Every build and deploy setting is entered by hand in each
+service's dashboard (steps 2.4, 3.4 and 15.3), along with the source, the variables and a domain.
 
 **About `railway.json`.** Railway has deprecated config-as-code, and new services can't opt in to
-it. `apps/web/railway.json` and `apps/worker/railway.json` are kept in the repo as documentation
-only: Railway doesn't read them; they record the values the tables below tell you to enter.
+it. `apps/web/railway.json`, `apps/worker/railway.json` and `apps/worker/railway.backup.json` (the
+backup service) are kept in the repo as documentation only: Railway doesn't read them; they
+record the values the tables below tell you to enter.
 If you change one, change the dashboard (and this guide) to match.
 
 Time needed: about 15 minutes, plus a GitHub OAuth app (step 5).
@@ -433,6 +435,76 @@ A public status page tells users about incidents and planned maintenance ([incid
 4. Check: the footer shows **Status** linking there. A value that isn't an https URL hides the link
    and web's log shows `STATUS_PAGE_URL is not an https URL` once at startup.
 
+## 15. Backups to Cloudflare R2 (optional)
+
+A fourth service, **backup**, built from `apps/worker/Dockerfile` (the worker package plus
+PostgreSQL 18's `pg_dump`), runs once a day at 03:41 UTC and exits:
+
+1. it uploads `deletions.json`: the account deletions on record (GitHub numeric ids and times, the
+   last 35 days), so a restore can re-apply deletions made after its dump;
+2. it takes a dump (`pg_dump`, custom format, compressed, without pg-boss's job tables) only when
+   the newest dump in the bucket is older than 6.5 days, so there is one a week and a failed run
+   is retried the next day;
+3. after a successful upload, and only then, it deletes all but the 4 newest dumps;
+4. it writes the `backup` heartbeat. The worker's operator alert (step 13) fires when it's older
+   than 8 days.
+
+Each run retries twice (1 and 5 minutes apart), reports a failure to Sentry when `SENTRY_DSN` is
+set, and exits non-zero, so Railway shows the run as failed. Its version check refuses to dump
+when `pg_dump` is older than the server.
+
+**What a dump holds.** Everything in the database: account emails, client names and contact
+emails, endpoint URLs, **alert webhook URLs (they work like passwords)**, ingest token hashes,
+deploy and scan history. Never env values: the database never has them. R2 encrypts it at rest;
+it isn't encrypted again before upload. So the bucket is private, used for nothing else, and its
+API token can reach that one bucket only.
+
+1. **The bucket.** Cloudflare → **R2 Object Storage** → **Create bucket**: name it, e.g.
+   `deployhealth-backups`; location: Automatic (or the hint nearest Railway's Singapore region).
+   Leave public access off (no r2.dev URL, no custom domain). No lifecycle rule: the backup
+   service prunes.
+2. **The token.** R2 → **Manage API tokens** → **Create API token**: permission **Object Read &
+   Write**, **Apply to specific buckets only** → the backup bucket, no expiry (or a reminder to
+   rotate it, maintenance.md). Create it, then keep the page open for the **Access Key ID** and
+   **Secret Access Key** (shown once) and note the **Account ID** (the 32 characters in the
+   bucket's S3 endpoint, `https://<account id>.r2.cloudflarestorage.com`).
+3. **The service.** Railway → **+ Create** → **GitHub Repo** → `deployhealth` → rename it
+   **`backup`**. Settings (the values are in `apps/worker/railway.backup.json`):
+
+   | Section | Field | Value |
+   | --- | --- | --- |
+   | Source | Root Directory | leave empty; **Branch** `main` |
+   | Build | Builder | **Dockerfile** |
+   | Build | Dockerfile Path | `apps/worker/Dockerfile` |
+   | Build | Watch paths | `/apps/worker/**`, `/packages/**`, `/package.json`, `/pnpm-lock.yaml`, `/pnpm-workspace.yaml`, `/tsconfig.base.json`, `/.nvmrc`, `/.dockerignore` |
+   | Deploy | Start command | `node apps/worker/dist/backup.js` (the Dockerfile's default too) |
+   | Deploy | Cron Schedule | `41 3 * * *` (UTC) |
+   | Deploy | Restart policy | **Never** |
+   | Deploy | Healthcheck path | leave empty |
+
+   No domain. The worker service doesn't change: it keeps building with Railpack.
+4. **Variables**, on the **backup** service only (never on web or the worker):
+
+   | Name | Value |
+   | --- | --- |
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+   | `NODE_ENV` | `production` |
+   | `BACKUP_R2_ACCOUNT_ID` | the Account ID from 15.2 |
+   | `BACKUP_R2_BUCKET` | the bucket's name |
+   | `BACKUP_R2_ACCESS_KEY_ID` | the token's Access Key ID |
+   | `BACKUP_R2_SECRET_ACCESS_KEY` | the token's Secret Access Key |
+   | `SENTRY_DSN` | optional: the same DSN as web and worker (reports tagged `service:backup`) |
+
+   Paste the token's values straight into Railway, never into a file or a chat, then close the
+   Cloudflare page. **Deploy**.
+5. **The first run.** Railway runs a cron service only on its schedule. Set **Cron Schedule** to a
+   time a few minutes ahead in UTC (at 14:20 UTC, `25 14 * * *`), wait for that run, then set it
+   back to `41 3 * * *`. Its log should end with `[backup] done: dumped deployhealth/<time>.dump`,
+   after `deletions.json uploaded` and `… uploaded (N MB) in Ns`. A second run within 6.5 days logs
+   `newest dump is N days old` and only refreshes `deletions.json` and the heartbeat.
+6. **A test restore** into a scratch database: [maintenance.md](maintenance.md), "Restore from
+   backup". Do one now, and after any Postgres major upgrade.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -453,5 +525,9 @@ A public status page tells users about incidents and planned maintenance ([incid
 | GitHub App deliveries answer 404 | `GITHUB_APP_WEBHOOK_SECRET` isn't set on web. |
 | `/demo` is a 404 | `DEMO_PUBLIC` isn't `1` on web, or the worker hasn't reseeded yet (check its log). |
 | A log shows `[sentry] SENTRY_DSN is not a Sentry DSN` | The value isn't a DSN (`https://<key>@<host>/<project id>`); copy it again from Sentry (step 12). The service runs without error reports. |
+| The backup run logs `pg_dump 17 can't work with a PostgreSQL 18 server` (or another pair) | The server's major version moved past the image's client: change `postgresql-client-18` in `apps/worker/Dockerfile` to the new major, and `BACKUP_PG_MAJOR` in packages/db `backup.ts`. |
+| The backup run logs `Set all four BACKUP_R2_* variables, or none` | One of the four is missing on the backup service (step 15.4). |
+| The backup run logs `R2 PUT … answered HTTP 403 (AccessDenied)` | The token can't write to this bucket: check it's scoped to `BACKUP_R2_BUCKET` with Object Read & Write, and that the keys are that token's. |
+| The worker posts "the backup service hasn't succeeded for 8 days" | The backup's cron runs fail (its Deployments tab shows them red; the log says why) or stopped (check the Cron Schedule). |
 | The footer has no Status link | `STATUS_PAGE_URL` isn't set on web, or isn't an https URL (web's log says so at startup). |
 | The worker log shows `[operator] OPERATOR_WEBHOOK_URL is not usable` | The URL isn't a public http(s) URL; copy the webhook URL again (step 13). The worker runs without operator alerts. |
