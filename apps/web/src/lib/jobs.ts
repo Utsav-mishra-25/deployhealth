@@ -1,4 +1,4 @@
-import { PR_CHECK_QUEUE } from '@deployhealth/core';
+import { ALERT_WEBHOOK_QUEUE, PR_CHECK_QUEUE, type AlertWebhookJobData } from '@deployhealth/core';
 import { PgBoss } from 'pg-boss';
 import { serverEnv } from '@/env';
 import type { PrCheckJob } from './github-webhook';
@@ -32,4 +32,13 @@ function boss(): Promise<PgBoss> {
 export async function enqueuePrCheck(job: PrCheckJob): Promise<void> {
   const client = await boss();
   await client.send(PR_CHECK_QUEUE, { ...job }, { singletonKey: `${job.installationId}:${job.repoFullName.toLowerCase()}#${job.prNumber}` });
+}
+
+/**
+ * Queue an alert webhook for the worker to send (all outbound HTTP is the worker's). The job holds
+ * the project id and the message, never the webhook URL: the worker reads that when it sends.
+ */
+export async function enqueueAlertWebhook(job: AlertWebhookJobData): Promise<void> {
+  const client = await boss();
+  await client.send(ALERT_WEBHOOK_QUEUE, { ...job });
 }

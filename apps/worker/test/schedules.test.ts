@@ -1,6 +1,6 @@
 import { DEMO_FRESHNESS, SCENARIO } from '@deployhealth/db/seed';
 import { describe, expect, it } from 'vitest';
-import { CHECK_QUEUE, PR_CHECK_QUEUE, PRUNE_QUEUE, RESEED_QUEUE } from '../src/jobs';
+import { ALERT_WEBHOOK_QUEUE, CHECK_QUEUE, PR_CHECK_QUEUE, PRUNE_QUEUE, RESEED_QUEUE } from '../src/jobs';
 import { type BossQueues, CHECK_CRON, PRUNE_CRON, QUEUES, registerQueues, RESEED_CRON, RESEED_INTERVAL_MINUTES } from '../src/schedules';
 
 function fakeBoss() {
@@ -35,7 +35,7 @@ describe('worker schedules', () => {
     await registerQueues(boss, { demo: true });
     expect(RESEED_CRON).toBe('*/30 * * * *');
     expect(Object.fromEntries(schedules)).toEqual({ [CHECK_QUEUE]: CHECK_CRON, [PRUNE_QUEUE]: PRUNE_CRON, [RESEED_QUEUE]: RESEED_CRON });
-    expect([...created.keys()].sort()).toEqual([CHECK_QUEUE, PR_CHECK_QUEUE, PRUNE_QUEUE, RESEED_QUEUE].sort());
+    expect([...created.keys()].sort()).toEqual([ALERT_WEBHOOK_QUEUE, CHECK_QUEUE, PR_CHECK_QUEUE, PRUNE_QUEUE, RESEED_QUEUE].sort());
   });
 
   it('removes the reseed schedule when the demo is off, and still creates every queue', async () => {
@@ -45,6 +45,14 @@ describe('worker schedules', () => {
     expect(calls).toContain(`unschedule ${RESEED_QUEUE}`);
     expect(created.has(RESEED_QUEUE)).toBe(true);
     expect(created.has(PR_CHECK_QUEUE)).toBe(true);
+    expect(created.has(ALERT_WEBHOOK_QUEUE)).toBe(true);
+  });
+
+  it('sends each alert webhook once: a standard queue with no queue retries (sendWebhook retries once itself)', async () => {
+    const { boss, created } = fakeBoss();
+    await registerQueues(boss, { demo: false });
+    expect(created.get(ALERT_WEBHOOK_QUEUE)).toEqual({ policy: 'standard', retryLimit: 0, expireInSeconds: 60 });
+    expect(ALERT_WEBHOOK_QUEUE).toBe('alert-webhook');
   });
 
   it('creates each queue before scheduling it', async () => {
@@ -85,6 +93,6 @@ describe('worker schedules', () => {
   it('retries a failed reseed with a delay, so it can wait for web to apply a new migration', () => {
     expect(QUEUES[RESEED_QUEUE]).toMatchObject({ policy: 'singleton', retryDelay: 60, retryBackoff: true });
     expect(QUEUES[RESEED_QUEUE]!.retryLimit).toBeGreaterThanOrEqual(3);
-    expect(Object.values(QUEUES).map((q) => q.policy)).toEqual(['singleton', 'singleton', 'singleton', 'stately']);
+    expect(Object.values(QUEUES).map((q) => q.policy)).toEqual(['singleton', 'singleton', 'singleton', 'standard', 'stately']);
   });
 });

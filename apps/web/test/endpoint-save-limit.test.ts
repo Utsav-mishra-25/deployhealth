@@ -9,7 +9,7 @@ vi.mock('@/lib/db', () => ({ getDb: () => ({}) }));
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }));
 vi.mock('@deployhealth/db', () => ({
   isDemoUser: async () => false,
-  createEndpoint: async (_db: unknown, _owner: string, _project: string, input: { url: string }) => (saved.push(input.url), { endpoint: { id: 'e' }, event: null }),
+  createEndpoint: async (_db: unknown, _owner: string, _project: string, input: { url: string }) => (saved.push(input.url), { id: 'e' }),
   updateEndpoint: async (_db: unknown, _owner: string, _id: string, input: { url: string }) => (saved.push(input.url), { endpoint: { id: 'e' }, event: null }),
   deleteEndpoint: async () => {},
 }));

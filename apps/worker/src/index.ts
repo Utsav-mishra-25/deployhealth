@@ -1,5 +1,6 @@
-import { escapeChatText, type PrCheckJobData } from '@deployhealth/core';
+import { escapeChatText, type AlertWebhookJobData, type PrCheckJobData } from '@deployhealth/core';
 import {
+  alertWebhookTarget,
   BACKUP_HEARTBEAT,
   BUNDLED_MIGRATIONS,
   CHECK_HEARTBEAT,
@@ -29,7 +30,19 @@ import { workerEnv } from './env';
 import { githubApi } from './github/api';
 import { createGithubApp } from './github/app';
 import { isolateEntry } from './pr-check/isolate';
-import { CHECK_QUEUE, checkEndpoints, errorLabel, PR_CHECK_QUEUE, prCheck, PRUNE_QUEUE, pruneOldChecks, RESEED_QUEUE, reseedDemo } from './jobs';
+import {
+  ALERT_WEBHOOK_QUEUE,
+  CHECK_QUEUE,
+  checkEndpoints,
+  errorLabel,
+  PR_CHECK_QUEUE,
+  prCheck,
+  PRUNE_QUEUE,
+  pruneOldChecks,
+  RESEED_QUEUE,
+  reseedDemo,
+  sendAlertWebhook,
+} from './jobs';
 import { createOperatorAlerts, HEARTBEAT_WATCH_INTERVAL_MS, NO_OPERATOR_ALERTS, observeJob, operatorWebhookUrl } from './operator';
 import { waitForMigrations } from './readiness';
 import { registerQueues, RESEED_INTERVAL_MINUTES } from './schedules';
@@ -90,6 +103,16 @@ async function main(): Promise<void> {
     }),
   );
 
+  await boss.work<AlertWebhookJobData>(ALERT_WEBHOOK_QUEUE, ([job]) =>
+    observed(ALERT_WEBHOOK_QUEUE, () =>
+      sendAlertWebhook(job!.data, {
+        target: (projectId) => alertWebhookTarget(db, projectId),
+        notify: (url, payload) => sendWebhook(url, payload, { log }),
+        log,
+      }),
+    ),
+  );
+
   await boss.work(PRUNE_QUEUE, () =>
     observed(PRUNE_QUEUE, () =>
       pruneOldChecks({
@@ -136,7 +159,7 @@ async function main(): Promise<void> {
 
   log(
     `[worker] ready: ${CHECK_QUEUE} every minute, ${PRUNE_QUEUE} nightly${demo ? `, ${RESEED_QUEUE} every ${RESEED_INTERVAL_MINUTES} minutes and now` : ''}` +
-      `, ${PR_CHECK_QUEUE} ${GITHUB_APP ? `on (GitHub App ${GITHUB_APP.appId})` : 'off (no GitHub App)'}`,
+      `, ${ALERT_WEBHOOK_QUEUE} on, ${PR_CHECK_QUEUE} ${GITHUB_APP ? `on (GitHub App ${GITHUB_APP.appId})` : 'off (no GitHub App)'}`,
   );
 
   // The heartbeat watch runs on its own timer, not as a pg-boss job, so it still fires when the
