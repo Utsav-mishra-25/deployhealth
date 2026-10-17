@@ -19,7 +19,7 @@ its docs, and `AGENTS.md` points other coding agents here.
 
 - `apps/web`: Next.js 15 app: UI, Auth.js, ingest API, GitHub webhook, public pages.
 - `apps/worker`: Node process on pg-boss: uptime checks, alerts, prune, demo reseed, PR checks; plus
-  the backup service (`dist/backup.js`, its own Dockerfile and Railway cron) and `dist/restore.js`.
+  the backup service (`dist/backup.js`, `apps/worker/backup.Dockerfile` and Railway cron) and `dist/restore.js`.
 - `packages/core`: scanner, CLI, SSRF guard, alert, handoff and report rules (MIT).
 - `packages/db`: Drizzle schema, migrations, queries, seed.
 - `docs`: the Railway deploy guide, the incident and maintenance runbooks, the GitHub App manifest,

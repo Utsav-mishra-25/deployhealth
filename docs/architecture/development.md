@@ -36,7 +36,7 @@ runbooks) and part 2 (daily backups to Cloudflare R2 from a separate backup serv
 
 ```
 docker-compose.yml    Postgres 18, like production (creates deployhealth and deployhealth_test; volume pgdata18)
-.dockerignore         for apps/worker/Dockerfile (the backup service): no env files, dependencies or build output
+.dockerignore         for apps/worker/backup.Dockerfile (the backup service): no env files, dependencies or build output
 LICENSE               FSL-1.1-MIT (everything except packages/core, which has its own MIT LICENSE)
 .github/workflows/ci.yml   typecheck, lint, unit tests, build; e2e on a production build (parallel job)
 .github/workflows/deployhealth.yml   dogfood: the published CLI reports this repo on every push to main

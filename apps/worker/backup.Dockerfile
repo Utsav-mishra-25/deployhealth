@@ -1,6 +1,8 @@
 # The backup service (docs/deploy-railway.md, step 15): the worker package plus pg_dump and
 # pg_restore 18, run by Railway cron as `node apps/worker/dist/backup.js`. The worker service itself
-# doesn't use this file: it builds with Railpack, unchanged. Build context: the repository root.
+# doesn't use this file: it builds with Railpack, unchanged; the name isn't `Dockerfile`, so Railway
+# never auto-detects it. Build context: the repository root
+# (`docker build -f apps/worker/backup.Dockerfile .`).
 FROM node:22-bookworm-slim
 
 # Production Postgres is major version 18, and pg_dump must be at least the server's major version,
