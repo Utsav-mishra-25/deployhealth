@@ -20,6 +20,7 @@ import { NoEnvFileNotices, NoReferencesNotice } from '@/components/env-scope-not
 import { FindingsByKind } from '@/components/findings-table';
 import { PrChecksSection } from '@/components/pr-checks';
 import { ProjectGettingStarted } from '@/components/project-getting-started';
+import { projectSectionLinks, SectionLinks } from '@/components/section-links';
 import { TimeAgo } from '@/components/time-ago';
 import { getDb } from '@/lib/db';
 import { isUuid, shortSha } from '@/lib/format';
@@ -28,8 +29,9 @@ import type { ViewPaths } from '@/lib/paths';
 import { appCoverage, repoCoverage } from '@/lib/repo-coverage';
 
 /**
- * A project: open alerts, latest (or selected) scan, endpoints, findings and deploys. Rendered at
- * /projects/:id and, read-only, at /demo/projects/:id.
+ * A project, in this order: open alerts, the latest (or selected) scan's counts, findings, deploys,
+ * pull requests, endpoints, with links to those sections at the top. Rendered at /projects/:id
+ * and, read-only, at /demo/projects/:id.
  */
 export async function ProjectView({
   ownerId,
@@ -73,6 +75,7 @@ export async function ProjectView({
   const detail = requested ?? (latestId ? await getLatestScan(db, project.id, latestId) : null);
   const isLatest = detail?.deploy.id === latestId;
   const projectPath = paths.project(project.id);
+  const showPrChecks = prChecks.length > 0 || project.prCheckMode !== 'off';
 
   return (
     <div className="space-y-10">
@@ -128,6 +131,7 @@ export async function ProjectView({
             )}
           </div>
         </div>
+        <SectionLinks links={projectSectionLinks({ scanned: Boolean(detail), prChecks: showPrChecks })} />
       </div>
 
       {detail ? (
@@ -166,12 +170,6 @@ export async function ProjectView({
         </div>
       )}
 
-      <EndpointsSection projectId={project.id} endpoints={monitoring} readOnly={readOnly} />
-
-      {(prChecks.length > 0 || project.prCheckMode !== 'off') && (
-        <PrChecksSection repoFullName={project.repoFullName} checks={prChecks} readOnly={readOnly} sample={readOnly} />
-      )}
-
       {detail && (
         <>
           <section aria-labelledby="findings">
@@ -193,6 +191,10 @@ export async function ProjectView({
           </section>
         </>
       )}
+
+      {showPrChecks && <PrChecksSection repoFullName={project.repoFullName} checks={prChecks} readOnly={readOnly} sample={readOnly} />}
+
+      <EndpointsSection projectId={project.id} endpoints={monitoring} readOnly={readOnly} />
     </div>
   );
 }
