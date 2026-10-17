@@ -25,6 +25,8 @@ const DATA: ReportData = {
           openedAt: at('16T09:00:00'),
           resolvedAt: at('16T09:30:00'),
           durationMs: 30 * 60_000,
+          // Resolved by pausing the endpoint: only the technical details say so.
+          paused: true,
           message: 'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY',
           afterDeploy: { newConfigIssues: 2 },
         },
@@ -71,6 +73,14 @@ describe('the monthly report', () => {
     expect(text(technical)).toContain('New config issues');
     for (const name of VARS) expect(technical).toContain(name);
     expect(text(technical)).toContain('which introduced 2 missing env vars');
+  });
+
+  it('says "(paused)" after the duration in the technical details only', () => {
+    expect(text(technical)).toContain(
+      '2026-10-16 09:00 UTC · 30m (paused) : Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY',
+    );
+    expect(text(clientPart)).toContain('30m');
+    expect(text(clientPart)).not.toMatch(/paused/i);
   });
 
   it('links no commit (nor anything else on GitHub)', () => {

@@ -1,3 +1,4 @@
+import { formatDuration } from './alerts';
 import { formatPercent } from './format';
 import { FINDING_KINDS, type FindingKind, type FindingRow } from './types';
 
@@ -85,8 +86,10 @@ export interface ReportIncident {
   endpoint: string;
   openedAt: Date;
   resolvedAt: Date | null;
-  /** Open to resolve; one still open counts up to the month's end or now, whichever is first. */
+  /** Open to resolve (or to the pause); one still open counts up to the month's end or now, whichever is first. */
   durationMs: number;
+  /** Resolved by pausing the endpoint: technical details say so; the client-facing parts don't. */
+  paused: boolean;
   /** The alert's message (names variables and a short SHA): technical details only. */
   message: string;
   /**
@@ -167,6 +170,14 @@ function count(n: number, noun: string): string {
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** "30 minutes", "1 hour 5 minutes", "2 days 3 hours", "less than a minute": for clients, not "1h 5m". */
+/**
+ * An incident's duration in the technical details: "12m", or "12m (paused)" when pausing the
+ * endpoint resolved it. Never in the client-facing table or summary.
+ */
+export function incidentDetailDuration(incident: Pick<ReportIncident, 'durationMs' | 'paused'>): string {
+  return `${formatDuration(incident.durationMs)}${incident.paused ? ' (paused)' : ''}`;
+}
+
 export function durationWords(ms: number): string {
   const unit = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
   const minutes = Math.floor(Math.max(0, ms) / 60_000);

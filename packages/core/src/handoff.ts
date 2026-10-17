@@ -23,6 +23,8 @@ export interface HandoffAlert {
   endpoint: string;
   openedAt: Date;
   resolvedAt: Date | null;
+  /** Resolved by pausing the endpoint (it ended at the pause), not by recovering. */
+  paused: boolean;
   message: string;
 }
 
@@ -153,10 +155,11 @@ export function findingAction(f: FindingRow, envScopes: readonly EnvScope[] | nu
   return `Add it to ${f.env_file ?? '.env.example'}`;
 }
 
-/** How long an alert lasted, or has lasted so far. */
-export function alertDuration(alert: Pick<HandoffAlert, 'openedAt' | 'resolvedAt'>, now: Date): string {
+/** How long an alert lasted ("12m", "12m (paused)"), or has lasted so far ("12m so far"). */
+export function alertDuration(alert: Pick<HandoffAlert, 'openedAt' | 'resolvedAt'> & { paused?: boolean }, now: Date): string {
   const end = alert.resolvedAt ?? now;
-  return `${formatDuration(end.getTime() - alert.openedAt.getTime())}${alert.resolvedAt ? '' : ' so far'}`;
+  const suffix = !alert.resolvedAt ? ' so far' : alert.paused ? ' (paused)' : '';
+  return `${formatDuration(end.getTime() - alert.openedAt.getTime())}${suffix}`;
 }
 
 /** Table cells can't contain pipes or line breaks. */

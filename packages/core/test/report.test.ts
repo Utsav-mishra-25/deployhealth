@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   durationWords,
   findingsDiff,
+  incidentDetailDuration,
   monthOf,
   parseMonth,
   reportSummary,
@@ -68,7 +69,9 @@ describe('reportTotals', () => {
             { label: 'A', url: 'https://a', checks: 43_200, ok: 43_200, uptime: 1 },
             { label: 'B', url: 'https://b', checks: 10_000, ok: 9_988, uptime: 0.9988 },
           ],
-          incidents: [{ endpoint: 'B', openedAt: new Date(), resolvedAt: new Date(), durationMs: 21 * 60_000, message: 'B started failing', afterDeploy: null }],
+          incidents: [
+            { endpoint: 'B', openedAt: new Date(), resolvedAt: new Date(), durationMs: 21 * 60_000, paused: false, message: 'B started failing', afterDeploy: null },
+          ],
           deploys: [{ sha: 's', branch: 'main', deployedAt: new Date(), introduced: [], fixed: [{ kind: 'missing', var_name: 'X' }] }],
           openFindings: [],
         },
@@ -106,6 +109,7 @@ describe('reportSummary (the paragraph for the client)', () => {
     openedAt: at(opened),
     resolvedAt: minutes === null ? null : new Date(at(opened).getTime() + minutes * 60_000),
     durationMs: (minutes ?? 90) * 60_000,
+    paused: false,
     message: 'Acme API started failing 4m after deploy b52952e, which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY',
     afterDeploy,
   });
@@ -145,6 +149,22 @@ describe('reportSummary (the paragraph for the client)', () => {
       "In October, Acme's sites were up 99.81% of the time. There was one outage (30 minutes, 16 Oct) after a deploy that was missing two settings. " +
         '10 updates were deployed and seven configuration issues were fixed.',
     );
+  });
+
+  it('a paused incident reads like any other: no "(paused)" for the client', () => {
+    const paused = { ...incident('16T09:00:00', 30, { newConfigIssues: 2 }), paused: true };
+    const summary = reportSummary(report({ incidents: [paused] }));
+    expect(summary).toBe(
+      "In October, Acme's sites were up 99.81% of the time. There was one outage (30 minutes, 16 Oct) after a deploy that was missing two settings. " +
+        '10 updates were deployed and seven configuration issues were fixed.',
+    );
+    expect(summary).not.toContain('paused');
+  });
+
+  it('the technical details say "(paused)" after the duration', () => {
+    expect(incidentDetailDuration({ durationMs: 12 * 60_000, paused: true })).toBe('12m (paused)');
+    expect(incidentDetailDuration({ durationMs: 12 * 60_000, paused: false })).toBe('12m');
+    expect(incidentDetailDuration({ durationMs: 75 * 60_000, paused: false })).toBe('1h 15m');
   });
 
   it('no incidents', () => {

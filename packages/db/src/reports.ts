@@ -79,6 +79,7 @@ async function projectReport(db: Db, project: Project, month: ReportMonth, now: 
       openedAt: r.alert.createdAt,
       resolvedAt: r.alert.resolvedAt,
       durationMs: Math.max(0, (r.alert.resolvedAt?.getTime() ?? incidentEnd) - r.alert.createdAt.getTime()),
+      paused: r.alert.resolution === 'paused',
       message: r.alert.message,
       afterDeploy: await afterDeploy(db, project.id, r.alert.relatedDeployId),
     })),

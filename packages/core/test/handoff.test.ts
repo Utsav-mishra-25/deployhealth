@@ -33,8 +33,9 @@ function data(overrides: Partial<HandoffData> = {}): HandoffData {
     window: { from: at('2026-08-29T00:00:00Z'), to: at('2026-09-28T12:00:00Z') },
     uptime: 0.99937,
     alerts: [
-      { endpoint: 'Acme API', openedAt: at('2026-09-28T11:39:00Z'), resolvedAt: null, message: 'Acme API started failing | badly' },
-      { endpoint: 'Acme API', openedAt: at('2026-09-20T08:00:00Z'), resolvedAt: at('2026-09-20T08:21:00Z'), message: 'Acme API started failing' },
+      { endpoint: 'Acme API', openedAt: at('2026-09-28T11:39:00Z'), resolvedAt: null, paused: false, message: 'Acme API started failing | badly' },
+      { endpoint: 'Acme API', openedAt: at('2026-09-20T08:00:00Z'), resolvedAt: at('2026-09-20T08:21:00Z'), paused: false, message: 'Acme API started failing' },
+      { endpoint: 'Acme API', openedAt: at('2026-09-10T08:00:00Z'), resolvedAt: at('2026-09-10T08:12:00Z'), paused: true, message: 'Acme API started failing' },
     ],
     deployNotes: '### Railway\n\n1. Push to `main`.\n2. Watch the deploy.',
     actionSnippet: '# .github/workflows/deployhealth.yml\nname: deployhealth\n',
@@ -95,6 +96,7 @@ describe('renderHandoffMarkdown', () => {
     expect(md).toContain('| example.net | https://example.net/ | HEAD every 15 minutes (paused) | 204 | no data |');
     expect(md).toContain('| 2026-09-28 11:39 UTC | still open | 21m so far | Acme API started failing \\| badly |');
     expect(md).toContain('| 2026-09-20 08:00 UTC | 2026-09-20 08:21 UTC | 21m | Acme API started failing |');
+    expect(md).toContain('| 2026-09-10 08:00 UTC | 2026-09-10 08:12 UTC | 12m (paused) | Acme API started failing |');
     expect(md).toContain('### Railway\n\n1. Push to `main`.');
     expect(md).toContain('```yaml\n# .github/workflows/deployhealth.yml\nname: deployhealth\n```');
   });
