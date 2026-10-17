@@ -110,14 +110,53 @@ npx deployhealth-scan@0.5.0 --dry-run          # grouped findings with file:line
 npx deployhealth-scan@0.5.0 --dry-run --json   # the same, as JSON
 ```
 
-With `--dry-run` nothing leaves your machine.
+With `--dry-run` nothing leaves your machine, and the text output ends by saying so:
+
+```
+Nothing was sent. On every pull request instead: install the GitHub App at https://deployhealth.dev
+```
+
+Under MISMATCH, when a variable the code reads is in `.env` but not in `.env.example`, it adds:
+"A variable read in code and set in .env but not in .env.example is the one a deploy or a teammate
+misses first." In a directory with no source file it reads, it prints the can't-check line instead
+of empty MISSING and UNUSED sections (MISMATCH still shows when `.env` and `.env.example`
+disagree). `--json` output is unchanged.
 
 ## Report every push from GitHub Actions
 
 Create a project in deployhealth, create its token in the project's settings and save it as a
 repository secret named `DEPLOYHEALTH_TOKEN` (Settings → Secrets and variables → Actions → Secrets
 tab → New repository secret; not a Variable, not an environment secret), then add
-`.github/workflows/deployhealth.yml`:
+`.github/workflows/deployhealth.yml` with the
+[deployhealth env check](https://github.com/Utsav-mishra-25/deployhealth-action) Action, which runs
+this CLI pinned to an exact version:
+
+```yaml
+name: deployhealth
+on:
+  push:
+    branches: [main]
+jobs:
+  env-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: Utsav-mishra-25/deployhealth-action@v1
+        with:
+          token: ${{ secrets.DEPLOYHEALTH_TOKEN }}
+```
+
+For a self-hosted deployhealth, add `url: "https://your-instance"` under `with:`.
+
+### From any other CI
+
+The same scan without the Action: the CLI pinned to an exact npm version, here as a GitHub Actions
+workflow. Its `npx` command runs in any CI, with the token in the `DEPLOYHEALTH_TOKEN` environment
+variable.
 
 ```yaml
 name: deployhealth
