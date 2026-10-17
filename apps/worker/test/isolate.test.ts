@@ -37,7 +37,8 @@ describe('the pull request check isolate', () => {
     expect(bundled.file.href).toBe('file:///app/apps/worker/dist/pr-check-isolate.js');
     expect(bundled.worker).toEqual([bundled.file, {}]);
     const entry = (tsupConfig as { entry: Record<string, string> }).entry;
-    expect(entry).toEqual({ index: 'src/index.ts', [ISOLATE_BUNDLE]: 'src/pr-check/isolate-worker.ts' });
+    // The backup service's and the restore command's entries sit beside them (worker.md).
+    expect(entry).toEqual({ index: 'src/index.ts', [ISOLATE_BUNDLE]: 'src/pr-check/isolate-worker.ts', backup: 'src/backup-cli.ts', restore: 'src/restore-cli.ts' });
     // From source, the same file next to this module, through a bootstrap that only registers tsx.
     const source = isolateEntry('file:///repo/apps/worker/src/pr-check/isolate.ts');
     expect(source.file.href).toBe('file:///repo/apps/worker/src/pr-check/isolate-worker.ts');
