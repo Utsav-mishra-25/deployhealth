@@ -6,7 +6,8 @@ var drift between code and env files), is it up (uptime checks), and did the las
 
 Built: Phases 1–6, from config health to "can't check" on unsupported stacks, PHP/Laravel and
 Java/Kotlin with Spring (CLI 0.5.0), docs pages, the Action and a security pass, plus Phase 7 part 1
-(landing page, header nav, /pricing, 404, demo guide), Phase 8.1 (first-run onboarding: setup
+(landing page, header nav, /pricing, 404, demo guide) and part 2 (a project page in section order
+with what to do per finding, a monthly report written for clients), Phase 8.1 (first-run onboarding: setup
 checklist, App coverage, no token at creation) and Phase 9 part 1 (redacted logs, Sentry, operator
 alerts, /account export and deletion, status link, runbooks) and part 2 (daily backups to R2 from a
 separate backup service, restore that re-applies deletions) (list: development.md).

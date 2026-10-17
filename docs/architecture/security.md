@@ -87,6 +87,9 @@ links, headers, anything that logs or reports errors, or those pages.
   info `deployhealth-report-share`. Verify the signature (constant time) before parsing fields.
   Stateless, 90 days; rotating the key revokes every link. `/share/*` is rate-limited per IP in
   `middleware.ts` (Node runtime, 30/min, keyed on the last `X-Forwarded-For` hop).
+- **What a share link shows:** the client's report and, under "Prepared by", the report owner's
+  GitHub name (their login when they have no name); nothing else about the owner, and no commit
+  links (`getClientReport`'s `preparedBy`; alerts-and-reports.md).
 
 ## Logs and error reports
 

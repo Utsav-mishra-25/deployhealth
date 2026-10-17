@@ -96,11 +96,14 @@ data.
 
 ### Monthly client reports
 
-Every client gets a monthly report covering all their projects: uptime per endpoint, each incident
-(opened, resolved, how long, what happened), every deploy with the config issues it introduced or
-fixed, and what's open now. A one-line summary at the top is computed from the numbers:
-"3 projects, 99.94% uptime, 1 incident (21m), 14 deploys, 2 config issues fixed". **Share report**
-creates a signed link your client can open without an account, valid for 90 days.
+Every client gets a monthly report covering all their projects, written for the client: who
+prepared it, then a plain-language summary computed from the numbers, with no variable names:
+"In October, Acme's sites were up 99.81% of the time. There was one outage (30 minutes, 16 Oct)
+after a deploy that was missing two settings. 10 updates were deployed and seven configuration
+issues were fixed." Then uptime per endpoint and each outage, and under **Technical details**
+every deploy with the config issues it introduced or fixed, the alerts as sent, and what's open
+now. **Share report** creates a signed link your client can open without an account, valid for 90
+days.
 
 ![A monthly report: the summary line, key numbers, uptime, the incident, and deploys with what each introduced and fixed](docs/screenshots/report.png)
 

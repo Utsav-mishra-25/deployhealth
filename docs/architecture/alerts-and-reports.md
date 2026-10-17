@@ -10,7 +10,8 @@ names, and the monthly report's numbers. Read before changing `packages/core/src
     src/alerts.ts     decideAlert() state machine, alert messages, endpointLabel(), failingFor()
     src/format.ts     formatUtc(), formatPercent() (rounds down), formatInterval(), plural()
     src/handoff.ts    HandoffData, renderHandoffMarkdown(), parseHandoffVariables()
-    src/report.ts     report months (UTC), findingsDiff(), ReportData, reportTotals(), summaryLine()
+    src/report.ts     report months (UTC), findingsDiff(), ReportData, reportTotals(), reportSummary(),
+                      durationWords()
 ```
 
 ## Endpoint names
@@ -47,6 +48,11 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   `EndpointMonitoring.failingSince` and `ProjectListItem.failingSince`, and labelled by
   `failingFor()` in core.
 
+- **The deploy diff** behind the message (new MISSING, new undeclared) is `deployConfigChange()` in
+  db `deploy-config.ts`, which the monthly report also counts with. That module reads by project
+  and deploy id, so it isn't exported from the package; its callers scope first. A linked deploy's
+  message is pinned byte for byte (`test/monitoring.test.ts`).
+
 ## Deploy history
 
 - The project page's deploy history (`listDeployHistory`, db `deploy-history.ts`) diffs each
@@ -66,8 +72,35 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   `endpoint_daily_stats`, other days from raw checks. The report's uptime is the average of the
   endpoints that have checks (each endpoint counts once).
 - **Incidents** are alerts opened in the month; duration is open → resolve, or → month end / now.
+  `afterDeploy` is the alert's `related_deploy_id` (read within the project) and its
+  `deployConfigChange()` count (new MISSING plus new undeclared, as the message counted them; a
+  re-scan of that deploy since can change it); null without a linked deploy.
 - **Deploys** are the month's deploys; each is diffed (`findingsDiff`, by kind + variable) against
-  the previous scanned deploy (including one before the month): introduced and fixed.
+  the previous scanned deploy (including one before the month): introduced ("new config issues" on
+  the page) and fixed.
 - **Open findings** are the latest scan's, as of now.
-- `summaryLine(reportTotals(data))` is the plain-English line, pinned by tests in core and db:
-  "3 projects, 99.94% uptime, 1 incident (21m), 14 deploys, 2 config issues fixed".
+- **Prepared by** (`preparedBy`) is the client's owner's GitHub name, else their login: the one
+  thing about the owner a report (and so a share link) shows.
+- **The summary** is `reportSummary(data)`, a paragraph for the client, pinned by tests in core
+  and db: "In October, Acme's sites were up 99.81% of the time. There was one outage (30 minutes,
+  16 Oct) after a deploy that was missing two settings. 10 updates were deployed and seven
+  configuration issues were fixed." Built from the numbers only: no variable, file, commit or
+  branch. Counts of things up to nine in words, durations in words with digits
+  (`durationWords()`), dates as "16 Oct" (UTC); "So far in October" while the month runs. No
+  endpoints: "no sites were monitored for <client>" and no outage sentence; endpoints without
+  checks: "no uptime data yet"; an open outage: "ongoing … so far", or "still ongoing at the end of
+  the month"; more than `SUMMARY_MAX_OUTAGES` (5) outages: the first five by date, "and N more".
+
+## The report page
+
+`views/report-view.tsx`, the same for the owner, /demo and a share link:
+
+- **For the client, on top:** "Monthly report", the client and month, "Prepared by <name>", the
+  summary, four tiles (uptime, incidents, deploys, config issues fixed), then per project its uptime
+  per endpoint and its incidents (endpoint, opened, resolved, duration, "After a deploy": "Yes,
+  missing 2 settings", "Yes" or "—"). No variable names, alert messages or commits there.
+- **Technical details** (an `h2`, printed): per project its repository, the deploys table
+  (commit and branch as text, "New config issues", "Fixed", by kind and variable), the alerts as
+  sent, and the open findings with file:line.
+- **No commit links** on the report or the share link (clients often can't open the repository);
+  the signed-in project page keeps them. `test/report-view.test.ts` checks both halves.
