@@ -8,6 +8,8 @@ import { errorLabel } from './jobs';
  * - the check-endpoints heartbeat is older than WORKER_HEARTBEAT_MAX_AGE_SECONDS (uptime checks
  *   aren't running), then once more when it recovers;
  * - a queue's job failed FAILURES_BEFORE_ALERT times in a row, then once more when it succeeds;
+ * - check-endpoints left due endpoints unclaimed BACKLOG_RUNS_BEFORE_ALERT runs in a row (checks
+ *   are falling behind their intervals), then once more when a run leaves none;
  * - the backup service's 'backup' heartbeat is older than BACKUP_STALE_DAYS (at most once a day),
  *   then once more when it's fresh. Backups count as set up once that row exists (the first run
  *   writes it), so the worker needs no backup setting and never holds the R2 keys.
@@ -24,6 +26,8 @@ export const ALERT_REPEAT_MS = 60 * 60_000;
 export const MAX_ALERTS_PER_HOUR = 10;
 /** The stale-backup alert repeats at most once a day: the backup service runs daily. */
 export const BACKUP_ALERT_REPEAT_MS = 24 * 3_600_000;
+/** Consecutive check-endpoints runs that leave due endpoints unclaimed before an alert. */
+export const BACKLOG_RUNS_BEFORE_ALERT = 5;
 /** How often the heartbeat watch reads the heartbeat's age. */
 export const HEARTBEAT_WATCH_INTERVAL_MS = 60_000;
 
@@ -41,6 +45,8 @@ export interface OperatorAlerts {
   heartbeat(ageSeconds: number | null): Promise<void>;
   /** The backup heartbeat's age in seconds (null: backups aren't set up yet, so nothing to say). */
   backupHeartbeat(ageSeconds: number | null): Promise<void>;
+  /** After each check-endpoints run: enabled endpoints still due after its claim. */
+  checkBacklog(dueButUnclaimed: number): Promise<void>;
 }
 
 /** The webhook URL when it's a public http(s) URL, else null with one error line (alerts stay off). */
@@ -63,6 +69,8 @@ export function createOperatorAlerts(deps: OperatorAlertDeps): OperatorAlerts {
   const sentAt: number[] = [];
   let heartbeatStale = false;
   let backupStale = false;
+  let backlogRuns = 0;
+  let backlogAlerted = false;
 
   async function notify(kind: string, text: string, repeatMs = ALERT_REPEAT_MS): Promise<void> {
     const at = now();
@@ -123,6 +131,26 @@ export function createOperatorAlerts(deps: OperatorAlertDeps): OperatorAlerts {
         await notify('backup:ok', 'the backup service is succeeding again.');
       }
     },
+
+    async checkBacklog(dueButUnclaimed) {
+      if (dueButUnclaimed > 0) {
+        backlogRuns++;
+        if (backlogRuns >= BACKLOG_RUNS_BEFORE_ALERT) {
+          backlogAlerted = true;
+          await notify(
+            'backlog',
+            `check-endpoints left ${dueButUnclaimed} due endpoints unclaimed ${backlogRuns} runs in a row: checks are falling behind their intervals.`,
+          );
+        }
+        return;
+      }
+      backlogRuns = 0;
+      if (backlogAlerted) {
+        backlogAlerted = false;
+        lastSentAt.delete('backlog');
+        await notify('backlog:ok', 'check-endpoints is claiming every due endpoint again.');
+      }
+    },
   };
 }
 
@@ -132,6 +160,7 @@ export const NO_OPERATOR_ALERTS: OperatorAlerts = {
   jobSucceeded: async () => {},
   heartbeat: async () => {},
   backupHeartbeat: async () => {},
+  checkBacklog: async () => {},
 };
 
 /**

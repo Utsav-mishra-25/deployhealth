@@ -24,6 +24,8 @@ export { ALERT_WEBHOOK_QUEUE, PR_CHECK_QUEUE } from '@deployhealth/core';
 
 export interface CheckEndpointsDeps {
   claimDue: () => Promise<DueEndpoint[]>;
+  /** Enabled endpoints still due right after the claim (left for a later run). Optional. */
+  countDue?: () => Promise<number>;
   check: (target: CheckTarget) => Promise<CheckResult>;
   record: (endpointId: string, outcome: CheckOutcome) => Promise<RecordCheckResult>;
   notify: (webhookUrl: string, payload: { text: string }) => Promise<boolean>;
@@ -36,16 +38,38 @@ export interface CheckEndpointsDeps {
   concurrency?: number;
   /** Resolves at `until` (or at once if it has passed). Tests pass a fake clock. */
   sleepUntil?: (until: Date) => Promise<void>;
+  /** Monotonic milliseconds, for the run's duration. */
+  clock?: () => number;
 }
 
 const realSleepUntil = (until: Date) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, until.getTime() - Date.now())));
 
 export interface CheckEndpointsSummary {
+  /** Endpoints the claim handed this run. */
+  claimed: number;
   checked: number;
   failed: number;
   opened: number;
   resolved: number;
   errors: number;
+  /** Enabled endpoints still due after the claim; null when not counted (no countDue, or it failed). */
+  dueButUnclaimed: number | null;
+  /** The whole run: claim, checks, webhooks and heartbeat. */
+  runMs: number;
+}
+
+/**
+ * The run's log line: `[check] {"claimed":3,"checked":3,"failed":1,"opened":1,"resolved":0,"errors":0,"due_but_unclaimed":0,"run_ms":5120}`.
+ * Counts and a duration only.
+ */
+export function checkSummaryLine(s: CheckEndpointsSummary): string {
+  const { claimed, checked, failed, opened, resolved, errors } = s;
+  return `[check] ${JSON.stringify({ claimed, checked, failed, opened, resolved, errors, due_but_unclaimed: s.dueButUnclaimed, run_ms: s.runMs })}`;
+}
+
+/** Whether a run is worth a log line: it claimed something, hit an error, or left endpoints due. */
+export function checkSummaryWorthLogging(s: CheckEndpointsSummary): boolean {
+  return s.claimed > 0 || s.errors > 0 || (s.dueButUnclaimed ?? 0) > 0;
 }
 
 /**
@@ -60,9 +84,18 @@ export interface CheckEndpointsSummary {
  * delays a check; the run waits for them before it records the heartbeat /api/health/worker reads.
  */
 export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEndpointsSummary> {
+  const clock = deps.clock ?? (() => performance.now());
+  const started = clock();
   const due = await deps.claimDue();
-  const summary: CheckEndpointsSummary = { checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0 };
+  const summary: CheckEndpointsSummary = { claimed: due.length, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, runMs: 0 };
   const sleepUntil = deps.sleepUntil ?? realSleepUntil;
+  if (deps.countDue) {
+    try {
+      summary.dueButUnclaimed = await deps.countDue();
+    } catch (error) {
+      deps.log(`[check] due endpoints not counted: ${errorLabel(error)}`);
+    }
+  }
 
   const waves = new Map<number, DueEndpoint[]>();
   for (const endpoint of due) {
@@ -84,6 +117,7 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   } catch (error) {
     deps.log(`[check] heartbeat not recorded: ${(error as Error).name}`);
   }
+  summary.runMs = Math.max(0, Math.round(clock() - started));
   return summary;
 }
 

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { ALERT_REPEAT_MS, BACKUP_ALERT_REPEAT_MS, createOperatorAlerts, observeJob, FAILURES_BEFORE_ALERT, MAX_ALERTS_PER_HOUR, operatorWebhookUrl } from '../src/operator';
+import {
+  ALERT_REPEAT_MS,
+  BACKLOG_RUNS_BEFORE_ALERT,
+  BACKUP_ALERT_REPEAT_MS,
+  createOperatorAlerts,
+  observeJob,
+  FAILURES_BEFORE_ALERT,
+  MAX_ALERTS_PER_HOUR,
+  NO_OPERATOR_ALERTS,
+  operatorWebhookUrl,
+} from '../src/operator';
 
 const MINUTE = 60_000;
 
@@ -149,5 +159,49 @@ describe('operator alerts: the backup heartbeat', () => {
     expect(h.sent).toHaveLength(2);
     await h.alerts.backupHeartbeat(0.1 * DAY_S);
     expect(h.sent[2]).toBe('[deployhealth worker] the backup service is succeeding again.');
+  });
+});
+
+describe('operator alerts: check-endpoints falling behind', () => {
+  it(`alerts when due endpoints are left unclaimed ${BACKLOG_RUNS_BEFORE_ALERT} runs in a row, with counts only`, async () => {
+    expect(BACKLOG_RUNS_BEFORE_ALERT).toBe(5);
+    const { alerts, sent } = harness();
+    for (let run = 1; run < BACKLOG_RUNS_BEFORE_ALERT; run++) await alerts.checkBacklog(3);
+    expect(sent).toEqual([]);
+    await alerts.checkBacklog(12);
+    expect(sent).toEqual(['[deployhealth worker] check-endpoints left 12 due endpoints unclaimed 5 runs in a row: checks are falling behind their intervals.']);
+  });
+
+  it('a run that leaves none resets the count, silently when nothing was sent', async () => {
+    const { alerts, sent } = harness();
+    for (let run = 0; run < 4; run++) await alerts.checkBacklog(3);
+    await alerts.checkBacklog(0);
+    for (let run = 0; run < 4; run++) await alerts.checkBacklog(3);
+    expect(sent).toEqual([]);
+  });
+
+  it('repeats at most once an hour while it lasts, then says once when it recovers', async () => {
+    const { alerts, sent, advance } = harness();
+    for (let run = 0; run < 5; run++) {
+      await alerts.checkBacklog(2);
+      advance(MINUTE);
+    }
+    for (let run = 0; run < 30; run++) {
+      await alerts.checkBacklog(2);
+      advance(MINUTE);
+    }
+    expect(sent).toHaveLength(1);
+    advance(ALERT_REPEAT_MS);
+    await alerts.checkBacklog(2);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toBe('[deployhealth worker] check-endpoints left 2 due endpoints unclaimed 36 runs in a row: checks are falling behind their intervals.');
+
+    await alerts.checkBacklog(0);
+    await alerts.checkBacklog(0);
+    expect(sent.slice(2)).toEqual(['[deployhealth worker] check-endpoints is claiming every due endpoint again.']);
+  });
+
+  it('is a no-op without an operator webhook', async () => {
+    await expect(NO_OPERATOR_ALERTS.checkBacklog(9)).resolves.toBeUndefined();
   });
 });

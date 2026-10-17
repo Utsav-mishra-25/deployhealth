@@ -5,6 +5,7 @@ import {
   BUNDLED_MIGRATIONS,
   CHECK_HEARTBEAT,
   claimDueEndpoints,
+  countDueEndpoints,
   createDb,
   findPrCheckTarget,
   findPrCommentId,
@@ -34,6 +35,8 @@ import {
   ALERT_WEBHOOK_QUEUE,
   CHECK_QUEUE,
   checkEndpoints,
+  checkSummaryLine,
+  checkSummaryWorthLogging,
   errorLabel,
   PR_CHECK_QUEUE,
   prCheck,
@@ -92,6 +95,7 @@ async function main(): Promise<void> {
     observed(CHECK_QUEUE, async () => {
       const summary = await checkEndpoints({
         claimDue: () => claimDueEndpoints(db),
+        countDue: () => countDueEndpoints(db),
         check: (target) => runCheck(target),
         record: (endpointId, outcome) => recordCheck(db, endpointId, outcome),
         notify: (url, payload) => sendWebhook(url, payload, { log }),
@@ -99,7 +103,8 @@ async function main(): Promise<void> {
         log,
         report: (error) => reportError(error, { queue: CHECK_QUEUE }),
       });
-      if (summary.checked || summary.errors) log(`[check] ${JSON.stringify(summary)}`);
+      if (checkSummaryWorthLogging(summary)) log(checkSummaryLine(summary));
+      if (summary.dueButUnclaimed !== null) await operator.checkBacklog(summary.dueButUnclaimed);
     }),
   );
 

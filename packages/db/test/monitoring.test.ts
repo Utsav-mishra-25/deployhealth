@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   assignHostSlots,
   claimDueEndpoints,
+  countDueEndpoints,
   createEndpoint,
   getProjectMonitoring,
   listAlerts,
@@ -91,6 +92,20 @@ describe('claimDueEndpoints (scheduling query)', () => {
 });
 
 const seconds = (n: number) => new Date(T0.getTime() + n * 1000);
+
+describe('countDueEndpoints (what a claim left for next time)', () => {
+  it('counts enabled endpoints still due after the claim: one host past its 5 slots leaves the rest', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    for (let i = 0; i < 7; i++) await makeEndpoint(db, p.id, { url: `https://busy.example/${i}`, nextCheckAt: minutes(-1) });
+    await makeEndpoint(db, p.id, { nextCheckAt: minutes(-1), enabled: false });
+    await makeEndpoint(db, p.id, { nextCheckAt: minutes(5) });
+
+    expect(await countDueEndpoints(db, T0)).toBe(7);
+    expect(await claimDueEndpoints(db, { now: T0 })).toHaveLength(5);
+    expect(await countDueEndpoints(db, T0)).toBe(2);
+  });
+});
 
 describe('assignHostSlots (pure)', () => {
   const e = (id: string, hostname: string) => ({ id, hostname });
