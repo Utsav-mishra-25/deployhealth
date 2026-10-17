@@ -68,9 +68,10 @@ One file: `pnpm --filter @deployhealth/core exec vitest run test/scan.test.ts`.
 
 - **Env vars** are read only in each app's `env.ts`, by name, and listed in its `.env.example`.
   → development.md
-- **Every query is owner-scoped** (it takes the signed-in user's id); extend
-  `test/isolation.test.ts` with each new one. The one exception is `getClientReport` (share
-  links). → security.md
+- **Every query the web app calls is owner-scoped** (it takes the signed-in user's id; the one
+  exception is `getClientReport`, for share links); extend `test/isolation.test.ts` with each new
+  one. Worker-only queries take ids the worker already holds and are listed in worker.md.
+  → security.md, worker.md
 - **Every server action calls `requireWritableUser()` first.** → demo-and-seed.md
 - **All outbound HTTP goes through `apps/worker/src/guarded-http.ts`**, and saved URLs pass
   `assertPublicUrl()`; `no-unguarded-http.test.ts` enforces it. → security.md

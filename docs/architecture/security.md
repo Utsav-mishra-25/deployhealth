@@ -75,6 +75,9 @@ links, headers, anything that logs or reports errors, or those pages.
     owned by the client's own user. Owner routes must find the client with
     `getClientBySlug(db, userId, slug)` first. `test/reports.test.ts` checks client A's report never
     contains client B's data.
+  - Worker-only queries (`claimDueEndpoints`, `recordCheck`, `countDueEndpoints`,
+    `alertWebhookTarget`) take ids the worker already holds and are never called by the web app;
+    they're listed in [worker.md](worker.md) ("Worker-only queries").
   - Operator commands (`delete-user`, `stats` in packages/db) aren't owner-scoped either: they run
     only from a shell in the web container, aren't exported from the package and have no route.
     The account page's export and deletion are owner-scoped: `exportUserData(db, userId)`,

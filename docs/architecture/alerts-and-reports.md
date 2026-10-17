@@ -88,8 +88,10 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   form says so under Interval, and the timeout and redirects under URL; /security has the same
   sentence; all built from those constants (core `limits.ts`, `constants.ts`).
 - **Falling behind:** each check-endpoints run logs `claimed`, `due_but_unclaimed` (enabled
-  endpoints still due right after the claim, `countDueEndpoints()`) and `run_ms`; the operator
-  alert fires after 5 runs in a row leave endpoints due (worker.md).
+  endpoints still due right after the claim, `countDueEndpoints()`), `due_waiting_on_host` (those
+  on hostnames the claim left at the per-host cap) and `run_ms`. The operator alert fires after 5
+  runs in a row with `due_but_unclaimed - due_waiting_on_host > 0`, so 8 every-minute endpoints on
+  one host never trigger it (worker.md).
 
 ## Alert history
 

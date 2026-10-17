@@ -59,10 +59,13 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   by start time (never early), up to 10 checks at a time with `runCheck()`, stores each result
   with `recordCheck()`, and starts the webhook for an alert event after the transaction commits,
   outside the check slots (the run awaits every send before the heartbeat). Failures log the
-  endpoint's host and the error's name and code, never its URL or message. Right after the claim
-  it counts the enabled endpoints still due (`countDueEndpoints()`); a run that claimed something,
-  errored or left endpoints due logs one line, counts only:
-  `[check] {"claimed":3,"checked":3,"failed":1,"opened":1,"resolved":0,"errors":0,"due_but_unclaimed":0,"run_ms":5120}`. Every
+  endpoint's host and the error's name and code, never its URL or message. The claim also returns
+  `hostsAtCap`: hostnames whose due endpoints it couldn't all take because of per-host spacing
+  (more than `MAX_CHECKS_PER_HOST_PER_CLAIM` due, or the host's slots in the window ran out).
+  Right after the claim the job counts the enabled endpoints still due and, of those, the ones on
+  `hostsAtCap` (`countDueEndpoints()`); a run that claimed something, errored or left endpoints
+  due logs one line, counts only:
+  `[check] {"claimed":5,"checked":5,"failed":0,"opened":0,"resolved":0,"errors":0,"due_but_unclaimed":3,"due_waiting_on_host":3,"run_ms":41230}`. Every
   run ends with `recordHeartbeat()` (the `worker_heartbeats` row `check-endpoints`, `now()`), even
   with nothing due; a claim that throws skips it, a failed write is logged. The deep health check
   reads that row.
@@ -89,6 +92,20 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   [github-app.md](github-app.md). The nightly prune also deletes webhook delivery ids
   older than 24 h.
 
+## Worker-only queries
+
+The web app calls only owner-scoped queries (security.md, "Authorization"). These take ids the
+worker already holds (from a claim, a job's data or its own rows) and are called only here:
+
+- `claimDueEndpoints(db, { now, limit, perOwner })`: due endpoints across all owners, with their
+  start times and `hostsAtCap`.
+- `recordCheck(db, endpointId, outcome)`: stores a check and applies the alert rule.
+- `countDueEndpoints(db, { now, hostsAtCap })`: counts of endpoints still due, never ids or URLs.
+- `alertWebhookTarget(db, projectId)`: a project's name and webhook URL for a queued
+  `alert-webhook` job (web scoped the event to its owner when it queued it).
+
+The pr-check, prune, heartbeat and backup reads work the same way (github-app.md, database.md).
+
 ## Error reports and operator alerts
 
 - **Logs** are redacted for the whole process: `installConsoleRedaction()` runs at module load in
@@ -100,8 +117,10 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
 - **Operator alerts** (`OPERATOR_WEBHOOK_URL`, `operator.ts`, through `sendWebhook` and its SSRF
   guard, `{ text }` escaped like project alerts): `observeJob` counts each queue's consecutive
   failures and alerts on the 3rd (`FAILURES_BEFORE_ALERT`), then once when it succeeds again; when
-  check-endpoints leaves due endpoints unclaimed 5 runs in a row (`BACKLOG_RUNS_BEFORE_ALERT`:
-  "check-endpoints left 12 due endpoints unclaimed 5 runs in a row: checks are falling behind
+  check-endpoints leaves due endpoints unclaimed 5 runs in a row, counting only
+  `due_but_unclaimed - due_waiting_on_host` (`backlogBeyondSpacing()`; per-host spacing holds checks
+  back by design and never alerts) (`BACKLOG_RUNS_BEFORE_ALERT`: "check-endpoints left 12 due
+  endpoints unclaimed 5 runs in a row, not counting per-host spacing: checks are falling behind
   their intervals."), then once when a run leaves none ("check-endpoints is claiming every due
   endpoint again."); a
   timer outside pg-boss (`HEARTBEAT_WATCH_INTERVAL_MS`, 1 minute) reads `heartbeatAgeSeconds()` and
