@@ -15,6 +15,7 @@ import {
   deleteEndpoint,
   getProjectMonitoring,
   listEndpointsForOwner,
+  listAlerts,
   listOpenAlerts,
   updateEndpoint,
 } from '../src/monitoring';
@@ -132,6 +133,7 @@ describe("user A cannot read user B's data", () => {
     expect(await listEndpointsForOwner(db, a.id, bProject.id)).toEqual([]);
     expect(await getProjectMonitoring(db, a.id, bProject.id)).toEqual([]);
     expect(await listOpenAlerts(db, a.id, bProject.id)).toEqual([]);
+    expect(await listAlerts(db, a.id, bProject.id)).toEqual([]);
   });
 
   it('handoff exports', async () => {
@@ -259,6 +261,7 @@ describe("user A cannot modify user B's data", () => {
     expect(await getLatestScan(db, bProject.id, bDeploy.deployId)).not.toBeNull();
     expect(await listEndpointsForOwner(db, b.id, bProject.id)).toHaveLength(1);
     expect(await listOpenAlerts(db, b.id, bProject.id)).toHaveLength(1);
+    expect(await listAlerts(db, b.id, bProject.id)).toHaveLength(1);
     expect(await getGithubAppStatus(db, b.id, bProject.id)).not.toBeNull();
     expect(await listPrChecksForOwner(db, b.id, bProject.id)).toHaveLength(1);
   });

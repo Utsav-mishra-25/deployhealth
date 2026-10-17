@@ -75,7 +75,7 @@ describe('exportUserData', () => {
     expect(data!.endpoints).toEqual([
       expect.objectContaining({ id: endpoint.id, name: 'Acme API', url: 'https://api.acme.example/health?key=abc', dailyTotals: [{ day: '2026-10-01', checks: 1440, ok: 1438 }] }),
     ]);
-    expect(data!.alerts).toEqual([expect.objectContaining({ message: 'Acme API started failing', deployId, resolvedAt: null })]);
+    expect(data!.alerts).toEqual([expect.objectContaining({ message: 'Acme API started failing', deployId, resolvedAt: null, resolution: null })]);
     expect(data!.pullRequestChecks).toEqual([
       expect.objectContaining({
         number: 87,
