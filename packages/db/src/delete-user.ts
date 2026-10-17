@@ -95,14 +95,15 @@ export async function planUserDeletion(db: Db, selector: UserSelector): Promise<
  * them (their repo lists and pull request checks cascade), and record the deletion (GitHub id and
  * time only, in account_deletions) so a restore from backup re-applies it. Returns what was deleted.
  */
-export async function deleteUser(db: Db, selector: UserSelector): Promise<UserDeletion> {
+export async function deleteUser(db: Db, selector: UserSelector, options: { deletedAt?: Date } = {}): Promise<UserDeletion> {
   return db.transaction(async (tx) => {
     const user = await findUser(tx, selector);
     const counts = await countOwned(tx, user);
     const installationAccounts = await countAccounts(tx, user);
     await tx.delete(installations).where(ownedInstallation(user));
     await tx.delete(users).where(eq(users.id, user.id));
-    await tx.insert(accountDeletions).values({ githubId: user.githubId });
+    // A restore re-applying a deletion (backup.ts) keeps its original time; a new deletion is now().
+    await tx.insert(accountDeletions).values({ githubId: user.githubId, ...(options.deletedAt ? { deletedAt: options.deletedAt } : {}) });
     return { user, counts, installationAccounts };
   });
 }

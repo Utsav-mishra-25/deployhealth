@@ -13,3 +13,4 @@ export * from './heartbeat';
 export * from './migrations-status';
 export * from './account';
 export * from './export';
+export * from './retention';
