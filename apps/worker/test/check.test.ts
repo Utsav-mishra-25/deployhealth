@@ -90,6 +90,69 @@ describe('runCheck with a mocked fetch', () => {
     expect(request.calls.map((c) => c.method)).toEqual(['HEAD', 'HEAD', 'GET']);
   });
 
+  describe('HEAD fallback on 405', () => {
+    const head = { ...target, method: 'HEAD' as const };
+
+    it('HEAD 405 → GET 200 is ok, with the GET\'s status and latency', async () => {
+      const request = respond({ status: 405, location: null }, { status: 200, location: null });
+      const result = await runCheck(head, fakeDeps(request));
+      expect(result).toEqual({ checkedAt: NOW, statusCode: 200, latencyMs: 25, ok: true, error: null });
+      expect(request.calls).toEqual([
+        { url: 'https://api.acme.com/health', method: 'HEAD' },
+        { url: 'https://api.acme.com/health', method: 'GET' },
+      ]);
+    });
+
+    it('HEAD 405 → GET 503 fails with the GET status', async () => {
+      const result = await runCheck(head, fakeDeps(respond({ status: 405, location: null }, { status: 503, location: null })));
+      expect(result).toEqual({ checkedAt: NOW, statusCode: 503, latencyMs: 25, ok: false, error: 'Expected 200, got 503' });
+    });
+
+    it('sends the GET to the URL that answered 405, after redirects, and follows no redirect of its own', async () => {
+      const request = respond({ status: 301, location: '/v2/health' }, { status: 405, location: null }, { status: 302, location: '/elsewhere' });
+      const result = await runCheck(head, fakeDeps(request));
+      expect(result).toMatchObject({ ok: false, statusCode: 302, error: 'Expected 200, got 302' });
+      expect(request.calls).toEqual([
+        { url: 'https://api.acme.com/health', method: 'HEAD' },
+        { url: 'https://api.acme.com/v2/health', method: 'HEAD' },
+        { url: 'https://api.acme.com/v2/health', method: 'GET' },
+      ]);
+    });
+
+    it('shares the 10s budget: a GET that hangs reports the timeout', async () => {
+      let calls = 0;
+      const request: HttpRequester = (_url, method, signal) => {
+        calls++;
+        if (method === 'HEAD') return Promise.resolve({ status: 405, location: null });
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+        });
+      };
+      const result = await runCheck(head, { request, now: () => NOW, timeoutMs: 30 });
+      expect(result).toEqual({ checkedAt: NOW, statusCode: null, latencyMs: null, ok: false, error: 'Timed out after 0.03s' });
+      expect(calls).toBe(2);
+      expect(describeError(Object.assign(new Error('aborted'), { name: 'AbortError' }), true)).toBe('Timed out after 10s');
+    });
+
+    it('never sends a second request when HEAD succeeds or fails with any other status', async () => {
+      for (const status of [200, 404, 500, 503, 501]) {
+        const request = respond({ status, location: null }, { status: 200, location: null });
+        await runCheck(head, fakeDeps(request));
+        expect(request.calls).toHaveLength(1);
+      }
+    });
+
+    it('never falls back for GET checks, nor when 405 is the expected status', async () => {
+      const get = respond({ status: 405, location: null }, { status: 200, location: null });
+      expect(await runCheck(target, fakeDeps(get))).toMatchObject({ ok: false, statusCode: 405 });
+      expect(get.calls).toHaveLength(1);
+
+      const expected405 = respond({ status: 405, location: null }, { status: 200, location: null });
+      expect(await runCheck({ ...head, expectedStatus: 405 }, fakeDeps(expected405))).toMatchObject({ ok: true, statusCode: 405 });
+      expect(expected405.calls).toHaveLength(1);
+    });
+  });
+
   it('stops after 5 redirects', async () => {
     const request = respond({ status: 302, location: '/loop' });
     const result = await runCheck(target, fakeDeps(request));
