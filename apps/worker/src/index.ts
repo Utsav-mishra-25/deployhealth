@@ -2,6 +2,7 @@ import { escapeChatText, type PrCheckJobData } from '@deployhealth/core';
 import {
   BACKUP_HEARTBEAT,
   BUNDLED_MIGRATIONS,
+  CHECK_HEARTBEAT,
   claimDueEndpoints,
   createDb,
   findPrCheckTarget,
@@ -143,7 +144,8 @@ async function main(): Promise<void> {
   // (a separate Railway service; this process holds no R2 keys).
   const watch = operatorUrl
     ? setInterval(() => {
-        heartbeatAgeSeconds(db)
+        // Each by name: the backup row never stands in for check-endpoints', nor the reverse.
+        heartbeatAgeSeconds(db, CHECK_HEARTBEAT)
           .then((age) => operator.heartbeat(age))
           .then(() => heartbeatAgeSeconds(db, BACKUP_HEARTBEAT))
           .then((age) => operator.backupHeartbeat(age))

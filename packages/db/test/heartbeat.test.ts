@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { CHECK_HEARTBEAT, heartbeatAgeSeconds, recordHeartbeat, workerIsHealthy, WORKER_HEARTBEAT_MAX_AGE_SECONDS } from '../src/heartbeat';
+import { BACKUP_HEARTBEAT, CHECK_HEARTBEAT, heartbeatAgeSeconds, recordHeartbeat, workerIsHealthy, WORKER_HEARTBEAT_MAX_AGE_SECONDS } from '../src/heartbeat';
 import { workerHeartbeats } from '../src/schema';
 import { openTestDb, truncateAll } from './test-db';
 
@@ -56,5 +56,27 @@ describe('worker heartbeat', () => {
     expect(seconds).toBeGreaterThanOrEqual(200);
     expect(seconds).toBeLessThan(205);
     expect(await heartbeatAgeSeconds(db, 'another')).toBeNull();
+  });
+
+  it("the backup service's row never counts for check-endpoints, in the deep health check or the operator watch", async () => {
+    /** Move one named heartbeat back by `seconds`. */
+    const ageOf = (name: string, seconds: number) =>
+      db.execute(sql`update ${workerHeartbeats} set last_run_at = now() - make_interval(secs => ${seconds}) where name = ${name}`);
+
+    // The daily backup run just succeeded, but check-endpoints is 10 minutes stale: unhealthy.
+    await recordHeartbeat(db, CHECK_HEARTBEAT);
+    await ageOf(CHECK_HEARTBEAT, 600);
+    await recordHeartbeat(db, BACKUP_HEARTBEAT);
+    expect(await workerIsHealthy(db)).toBe(false);
+    expect(await heartbeatAgeSeconds(db, CHECK_HEARTBEAT)).toBeGreaterThanOrEqual(600);
+
+    // check-endpoints fresh, the backup a day old (as it is between daily runs): healthy, no stale worker.
+    await recordHeartbeat(db, CHECK_HEARTBEAT);
+    await ageOf(BACKUP_HEARTBEAT, 86_400);
+    expect(await workerIsHealthy(db)).toBe(true);
+    expect(await heartbeatAgeSeconds(db, CHECK_HEARTBEAT)).toBeLessThan(5);
+    expect(await heartbeatAgeSeconds(db, BACKUP_HEARTBEAT)).toBeGreaterThanOrEqual(86_400);
+    // The default name is check-endpoints'.
+    expect(await heartbeatAgeSeconds(db)).toBeLessThan(5);
   });
 });
