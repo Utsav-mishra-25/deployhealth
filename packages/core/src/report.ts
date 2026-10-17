@@ -1,5 +1,4 @@
-import { formatDuration } from './alerts';
-import { formatPercent, plural } from './format';
+import { formatPercent } from './format';
 import { FINDING_KINDS, type FindingKind, type FindingRow } from './types';
 
 // The monthly client report: every project of one client for one UTC month. Pure data shapes and
@@ -88,7 +87,14 @@ export interface ReportIncident {
   resolvedAt: Date | null;
   /** Open to resolve; one still open counts up to the month's end or now, whichever is first. */
   durationMs: number;
+  /** The alert's message (names variables and a short SHA): technical details only. */
   message: string;
+  /**
+   * The deploy the alert linked (the 30 minutes before the first failure) and how many settings
+   * it newly left undeclared (new MISSING plus new undeclared, as the alert counted them); null
+   * when the alert linked no deploy.
+   */
+  afterDeploy: { newConfigIssues: number } | null;
 }
 
 export interface ReportDeploy {
@@ -113,6 +119,8 @@ export interface ReportProject {
 
 export interface ReportData {
   client: { id: string; name: string; contactEmail: string | null };
+  /** The freelancer the report is from: their GitHub name, else their login. */
+  preparedBy: string;
   month: ReportMonth;
   generatedAt: Date;
   projects: ReportProject[];
@@ -146,18 +154,94 @@ export function reportTotals(data: ReportData): ReportTotals {
   };
 }
 
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** Outages named one by one in the summary before "and N more". */
+export const SUMMARY_MAX_OUTAGES = 5;
+
+/** "one setting", "two settings", "12 settings": counts up to nine in words. */
+function count(n: number, noun: string): string {
+  return `${n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : n} ${n === 1 ? noun : `${noun}s`}`;
+}
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** "30 minutes", "1 hour 5 minutes", "2 days 3 hours", "less than a minute": for clients, not "1h 5m". */
+export function durationWords(ms: number): string {
+  const unit = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+  const minutes = Math.floor(Math.max(0, ms) / 60_000);
+  if (minutes < 1) return 'less than a minute';
+  if (minutes < 60) return unit(minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 ? `${unit(hours, 'hour')} ${unit(minutes % 60, 'minute')}` : unit(hours, 'hour');
+  const days = Math.floor(hours / 24);
+  return hours % 24 ? `${unit(days, 'day')} ${unit(hours % 24, 'hour')}` : unit(days, 'day');
+}
+
+/** "16 Oct" (UTC). */
+function dayMonth(date: Date): string {
+  return `${date.getUTCDate()} ${MONTHS_SHORT[date.getUTCMonth()]}`;
+}
+
+/** "after a deploy that was missing two settings", "after a deploy", or nothing. */
+function afterDeployPhrase(incident: ReportIncident): string | null {
+  if (!incident.afterDeploy) return null;
+  const n = incident.afterDeploy.newConfigIssues;
+  return n === 0 ? 'after a deploy' : `after a deploy that was missing ${count(n, 'setting')}`;
+}
+
 /**
- * The plain-English line at the top of the report, computed from the numbers (no LLM):
- * "3 projects, 99.94% uptime, 1 incident (21m), 14 deploys, 2 config issues fixed".
+ * The paragraph at the top of the report, for the client: uptime, outages with date and duration,
+ * updates deployed and configuration issues fixed. Built from the numbers only (no LLM), and never
+ * names a variable, a file or a commit: those are under "Technical details". E.g. "In October,
+ * Acme's sites were up 99.81% of the time. There was one outage (30 minutes, 16 Oct) after a
+ * deploy that was missing two settings. 10 updates were deployed and seven configuration issues
+ * were fixed."
  */
-export function summaryLine(totals: ReportTotals): string {
-  const uptime = totals.uptime === null ? 'no uptime data' : `${formatPercent(totals.uptime)} uptime`;
-  const incidents =
-    totals.incidents === 0
-      ? 'no incidents'
-      : totals.incidents === 1
-        ? `1 incident (${formatDuration(totals.incidentMs)})`
-        : `${totals.incidents} incidents (${formatDuration(totals.incidentMs)} total)`;
-  const fixed = totals.fixed === 0 ? 'no config issues fixed' : `${plural(totals.fixed, 'config issue')} fixed`;
-  return [plural(totals.projects, 'project'), uptime, incidents, plural(totals.deploys, 'deploy'), fixed].join(', ');
+export function reportSummary(data: ReportData): string {
+  const totals = reportTotals(data);
+  const inProgress = data.generatedAt.getTime() < data.month.to.getTime();
+  const monthName = data.month.from.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  const when = inProgress ? `So far in ${monthName}` : `In ${monthName}`;
+  const owner = `${data.client.name}'${data.client.name.endsWith('s') ? '' : 's'}`;
+  const endpoints = data.projects.flatMap((p) => p.endpoints);
+  const sites = endpoints.length === 1 ? 'site was' : 'sites were';
+  const incidents = data.projects.flatMap((p) => p.incidents).sort((a, b) => a.openedAt.getTime() - b.openedAt.getTime());
+
+  const sentences: string[] = [];
+  if (endpoints.length === 0) sentences.push(`${when}, no sites were monitored for ${data.client.name}.`);
+  else if (totals.uptime === null) sentences.push(`${when}, there was no uptime data yet for ${owner} ${endpoints.length === 1 ? 'site' : 'sites'}.`);
+  else sentences.push(`${when}, ${owner} ${sites} up ${formatPercent(totals.uptime)} of the time.`);
+
+  // How long an outage lasted, or that it's still going.
+  const lasted = (i: ReportIncident) =>
+    i.resolvedAt ? durationWords(i.durationMs) : inProgress ? `ongoing, ${durationWords(i.durationMs)} so far` : 'still ongoing at the end of the month';
+  if (incidents.length === 1) {
+    const [only] = incidents as [ReportIncident];
+    const after = afterDeployPhrase(only);
+    const date = dayMonth(only.openedAt);
+    const outage = only.resolvedAt
+      ? `There was one outage (${durationWords(only.durationMs)}, ${date})`
+      : inProgress
+        ? `There is one ongoing outage (since ${date}, ${durationWords(only.durationMs)} so far)`
+        : `There was one outage (from ${date}, still ongoing at the end of the month)`;
+    sentences.push(`${outage}${after ? ` ${after}` : ''}.`);
+  } else if (incidents.length > 1) {
+    const named = incidents.slice(0, SUMMARY_MAX_OUTAGES).map((i) => {
+      const after = afterDeployPhrase(i);
+      return `${dayMonth(i.openedAt)} (${lasted(i)}${after ? `, ${after}` : ''})`;
+    });
+    const more = incidents.length - named.length;
+    const list = more > 0 ? `${named.join(', ')} and ${more} more` : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+    sentences.push(`There were ${count(incidents.length, 'outage')}, ${durationWords(totals.incidentMs)} in total: ${list}.`);
+  } else if (endpoints.length > 0) {
+    sentences.push('There were no outages.');
+  }
+
+  if (totals.deploys === 0) sentences.push('No updates were deployed.');
+  else {
+    const fixed = totals.fixed > 0 ? ` and ${count(totals.fixed, 'configuration issue')} ${totals.fixed === 1 ? 'was' : 'were'} fixed` : '';
+    sentences.push(`${capitalize(count(totals.deploys, 'update'))} ${totals.deploys === 1 ? 'was' : 'were'} deployed${fixed}.`);
+  }
+  return sentences.join(' ');
 }
