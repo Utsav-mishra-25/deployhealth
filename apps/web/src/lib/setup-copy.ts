@@ -14,6 +14,12 @@ export const DEPLOY_HISTORY_OPTION = {
   body: `Add the GitHub Action to the repository for deploy history and alerts that name the deploy. It reports each push with this project's token, saved as a repository secret named ${TOKEN_SECRET_NAME}.`,
 } as const;
 
+/** Under the Action's workflow: the same scan without the Action, for CI other than GitHub Actions. */
+export const OTHER_CI = {
+  title: 'From any other CI',
+  body: `The same scan without the Action: the CLI pinned to an exact npm version, here as a GitHub Actions workflow. Its npx command runs in any CI, with the token in the ${TOKEN_SECRET_NAME} environment variable.`,
+} as const;
+
 /** Where the secret goes, step by step, and the two places it must not go. */
 export const SECRET_STEPS = {
   path: ['Settings', 'Secrets and variables', 'Actions', 'Secrets tab', 'New repository secret'],

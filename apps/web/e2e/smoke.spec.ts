@@ -204,6 +204,8 @@ test('public URLs come from PUBLIC_ORIGIN, never a spoofed Host or X-Forwarded-H
   const settings = await settingsResponse.text();
   expect(settings).toMatch(/data-testid="current-user"[^>]*>dev</);
   expect(settings).toContain(`--url &quot;${origin}&quot;`);
+  // The Action's block names this instance too (its url input defaults to the hosted one).
+  expect(settings).toContain(`url: &quot;${origin}&quot;`);
   expect(settings).not.toContain('evil.example');
 });
 
@@ -422,6 +424,11 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   const token = await createToken(page, projectPath);
   await expect(page.getByTestId('pr-checks-option')).toContainText('No token, no secret, no variable.');
   await expect(page.getByTestId('deploy-history-steps')).toContainText('Secrets tab → New repository secret, named DEPLOYHEALTH_TOKEN');
+  // The reveal gives the Action's workflow first, then the pinned CLI workflow for any other CI.
+  const reveal = (await page.getByTestId('deploy-history-steps').textContent()) ?? '';
+  expect(reveal.indexOf('uses: Utsav-mishra-25/deployhealth-action@v1')).toBeGreaterThan(-1);
+  expect(reveal.indexOf('uses: Utsav-mishra-25/deployhealth-action@v1')).toBeLessThan(reveal.indexOf('From any other CI'));
+  expect(reveal.indexOf('From any other CI')).toBeLessThan(reveal.indexOf('npx --yes deployhealth-scan@'));
   await expect(page.getByText(token, { exact: true })).toHaveCount(1);
 
   // Report a scan with the new token, as the GitHub Action would, including the variable list.
@@ -470,7 +477,15 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
 
   // Deploy notes are untrusted Markdown: no raw HTML, no images in the handoff.
   await page.getByRole('link', { name: /Settings/ }).click();
-  await expect(page.locator('pre').filter({ hasText: 'npx --yes deployhealth-scan@' })).toHaveCount(2); // Action + local run
+  // The Action's workflow first, then the pinned CLI workflow under "From any other CI", then the local run.
+  const deployHistory = page.getByRole('region', { name: 'Optional: deploy history (GitHub Action)' });
+  await expect(deployHistory.locator('pre')).toHaveText([
+    /uses: Utsav-mishra-25\/deployhealth-action@v1[\s\S]*url: "http:\/\/localhost:\d+"/,
+    /npx --yes deployhealth-scan@\d+\.\d+\.\d+ \\\n\s+--url "http:\/\/localhost:\d+"/,
+    /^npx --yes deployhealth-scan@\d+\.\d+\.\d+ --dry-run$/,
+  ]);
+  await expect(deployHistory.locator('span.font-mono')).toHaveText(['.github/workflows/deployhealth.yml', '.github/workflows/deployhealth.yml', 'shell']);
+  await expect(deployHistory.getByRole('heading', { level: 4 })).toHaveText(['From any other CI']);
   // Setup order: pull request checks (the App), then the optional Action, then client and alerts.
   await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Pull request checks (GitHub App)', 'Optional: deploy history (GitHub Action)', 'Client, alerts & handoff']);
   await expect(page.getByTestId('secret-steps')).toContainText('In acme/smoke: Settings → Secrets and variables → Actions → Secrets tab');

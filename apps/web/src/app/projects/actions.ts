@@ -18,13 +18,14 @@ import { z } from 'zod';
 import { requireWritableUser } from '@/lib/guard';
 import { MAX_DEPLOY_NOTES } from '@/lib/validation';
 import { publicOrigin } from '@/lib/app-url';
+import { actionWorkflow } from '@/lib/docs-pages';
 import { getDb } from '@/lib/db';
 import { isUuid } from '@/lib/format';
 import { REPO_FULL_NAME_PATTERN } from '@/lib/github-app';
 import { CREATED_PARAM } from '@/lib/onboarding';
 
 /** Returned once, right after a token is created in settings. The plaintext token is never stored. */
-export type TokenReveal = { projectId: string; projectName: string; token: string; snippet: string };
+export type TokenReveal = { projectId: string; projectName: string; token: string; workflow: string; snippet: string };
 
 /** Success redirects to the project page (`?created=1`), so only errors come back. */
 export type CreateProjectState =
@@ -106,7 +107,8 @@ export async function regenerateTokenAction(projectId: string, _prev: Regenerate
   if (!ok) return { status: 'error', message: 'Project not found.' };
 
   revalidatePath(`/projects/${projectId}/settings`);
-  return { status: 'created', projectId, projectName: '', token, snippet: githubActionSnippet({ appUrl: await publicOrigin() }) };
+  const appUrl = await publicOrigin();
+  return { status: 'created', projectId, projectName: '', token, workflow: actionWorkflow({ appUrl }), snippet: githubActionSnippet({ appUrl }) };
 }
 
 export type SettingsState =

@@ -19,7 +19,7 @@ export function RegenerateToken({ projectId, repo, first }: { projectId: string;
             The old token stopped working. Update the <code>DEPLOYHEALTH_TOKEN</code> secret in GitHub:
           </p>
         )}
-        <TokenReveal token={state.token} snippet={state.snippet} repo={repo} />
+        <TokenReveal token={state.token} workflow={state.workflow} snippet={state.snippet} repo={repo} />
       </div>
     );
   }
