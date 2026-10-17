@@ -36,7 +36,7 @@ async function aliceWithEverything() {
   await db.insert(checks).values({ endpointId: endpoint.id, ok: false, statusCode: 503, latencyMs: 10, error: 'Expected 200, got 503' });
   await db.insert(endpointDailyStats).values({ endpointId: endpoint.id, day: '2026-10-01', checks: 1440, ok: 1438 });
   await db.insert(alerts).values({ projectId: project.id, endpointId: endpoint.id, kind: 'endpoint_down', message: 'Acme API started failing', relatedDeployId: deployId });
-  const installation = await upsertInstallation(db, { githubInstallationId: 7, accountLogin: 'acme-org', accountType: 'Organization', installerGithubId: user.githubId }, ['acme-org/acme-app']);
+  const installation = await upsertInstallation(db, { githubInstallationId: 7, accountLogin: 'acme-org', accountType: 'Organization', installerGithubId: user.githubId, repositorySelection: 'selected' }, ['acme-org/acme-app']);
   const pr = await upsertPrCheck(db, {
     projectId: project.id,
     installationId: installation.id,
@@ -86,7 +86,9 @@ describe('exportUserData', () => {
         conclusion: 'failure',
       }),
     ]);
-    expect(data!.githubAppInstallations).toEqual([expect.objectContaining({ account: 'acme-org', accountType: 'Organization', repositories: ['acme-org/acme-app'] })]);
+    expect(data!.githubAppInstallations).toEqual([
+      expect.objectContaining({ account: 'acme-org', accountType: 'Organization', repositorySelection: 'selected', repositories: ['acme-org/acme-app'] }),
+    ]);
   });
 
   it('never contains a token, its hash or hint, a webhook URL, raw checks or GitHub comment ids', async () => {
