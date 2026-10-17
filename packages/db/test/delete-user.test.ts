@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { formatCounts, parseCommand, UNINSTALL_REMINDER } from '../src/delete-user-cli';
 import { deleteOwnAccount, planOwnAccountDeletion, userExists } from '../src/account';
+import { BACKUP_RETENTION_WEEKS } from '../src/retention';
 import {
   ACCOUNT_DELETION_RECORD_DAYS,
   DELETION_TABLE_LABELS,
@@ -156,6 +157,12 @@ describe('the deletion record', () => {
     await db.insert(users).values({ githubId: DEMO_GITHUB_ID, login: 'demo' });
     await expect(deleteUser(db, { login: 'demo' })).rejects.toThrow(UserDeletionError);
     expect(await db.select().from(accountDeletions)).toEqual([]);
+  });
+
+  it('is kept past the oldest backup: (BACKUP_RETENTION_WEEKS + 1) weeks, 35 days', () => {
+    expect(BACKUP_RETENTION_WEEKS).toBe(4);
+    expect(ACCOUNT_DELETION_RECORD_DAYS).toBe((BACKUP_RETENTION_WEEKS + 1) * 7);
+    expect(ACCOUNT_DELETION_RECORD_DAYS).toBe(35);
   });
 
   it(`is pruned after ${ACCOUNT_DELETION_RECORD_DAYS} days`, async () => {

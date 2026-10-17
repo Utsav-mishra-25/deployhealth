@@ -121,7 +121,7 @@ links, headers, anything that logs or reports errors, or those pages.
   no raw checks and no GitHub comment ids (`test/export.test.ts`).
 - **Deletion record:** `deleteUser()` (both paths) inserts `account_deletions (github_id,
   deleted_at)` in its transaction, linked to nothing, pruned nightly after
-  `ACCOUNT_DELETION_RECORD_DAYS` (35: four weekly backups plus a week), so a restore can re-apply
+  `ACCOUNT_DELETION_RECORD_DAYS` (35: `(BACKUP_RETENTION_WEEKS + 1) × 7`, the four weekly backups plus a week; `packages/db/src/retention.ts`), so a restore can re-apply
   deletions newer than the dump.
 - **A session whose account is gone** (JWTs can't be revoked): `requireUser()` checks
   `userExists()` and redirects to `/account/signed-out`, which signs out only a session whose user

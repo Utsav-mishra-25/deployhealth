@@ -9,7 +9,7 @@ import TermsPage from '@/app/terms/page';
 import { resetServerEnvForTests } from '@/env';
 import { githubSignInReads } from '@/lib/auth-providers';
 import { CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, formatLegalDate, LEGAL_LAST_UPDATED, OPERATOR, SELF_SERVE_DATA_TEXT, SUBPROCESSORS } from '@/lib/legal';
-import { ACCOUNT_DELETION_RECORD_DAYS } from '@deployhealth/db';
+import { ACCOUNT_DELETION_RECORD_DAYS, BACKUP_RETENTION_WEEKS } from '@deployhealth/db';
 import { REDACTED } from '@deployhealth/db/redact';
 
 const saved = { ...process.env };
@@ -59,6 +59,7 @@ describe('/privacy and /security agree', () => {
     // True to the code: the scrubber's placeholder, the record's retention, Sentry as a subprocessor.
     expect(ERROR_REPORTS_TEXT).toContain(REDACTED);
     expect(DELETION_RECORD_TEXT).toContain(`${ACCOUNT_DELETION_RECORD_DAYS} days`);
+    expect(ACCOUNT_DELETION_RECORD_DAYS).toBe((BACKUP_RETENTION_WEEKS + 1) * 7);
     expect(SUBPROCESSORS.map((s) => s.name)).toContain('Sentry');
     expect(plain(privacy)).not.toContain('planned');
   });

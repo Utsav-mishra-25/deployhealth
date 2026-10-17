@@ -64,11 +64,7 @@ export const DELETION_TABLE_LABELS: Record<DeletionTable, string> = {
   pr_checks: 'pull request checks',
 };
 
-/**
- * How long an account_deletions row (GitHub id and date) is kept: past the oldest backup a restore
- * could use (4 weekly backups), plus a week. The nightly prune deletes older rows.
- */
-export const ACCOUNT_DELETION_RECORD_DAYS = 35;
+export { ACCOUNT_DELETION_RECORD_DAYS } from './retention';
 export type DeletionCounts = Record<DeletionTable, number>;
 
 export interface UserDeletion {

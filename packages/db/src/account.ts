@@ -7,7 +7,8 @@ import { users } from './schema';
 // GitHub id selectors stay with the operator's delete-user). Same deleteUser() as the operator's,
 // so exactly the same rows go, and the same refusals hold (the demo and dev users).
 
-export { ACCOUNT_DELETION_RECORD_DAYS, DELETION_TABLE_LABELS, DELETION_TABLES, pruneAccountDeletions, UserDeletionError } from './delete-user';
+export { ACCOUNT_DELETION_RECORD_DAYS, BACKUP_RETENTION_WEEKS } from './retention';
+export { DELETION_TABLE_LABELS, DELETION_TABLES, pruneAccountDeletions, UserDeletionError } from './delete-user';
 export type { DeletionCounts, DeletionTable, UserDeletion } from './delete-user';
 
 /** What deleting the signed-in user's account would remove, per table; changes nothing. */
