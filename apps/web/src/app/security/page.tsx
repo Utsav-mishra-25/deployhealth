@@ -1,6 +1,7 @@
 import {
   CHECK_TIMEOUT_MS,
   HOST_CHECK_SPACING_MS,
+  MAX_CHECKS_PER_HOST_PER_CLAIM,
   MAX_CLAIM_PER_OWNER,
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
@@ -107,6 +108,10 @@ export default function SecurityPage() {
             per project), with at most {MAX_CLAIM_PER_OWNER} checks started per minute. The spacing applies to the hostname
             in the saved URL: requests that follow a redirect (up to {MAX_REDIRECTS} per check) aren&apos;t counted toward
             the spacing of the host they land on.
+          </li>
+          <li className={li}>
+            Checks of one hostname start at least {HOST_CHECK_SPACING_MS / 1000} seconds apart, so more than{' '}
+            {MAX_CHECKS_PER_HOST_PER_CLAIM} endpoints on the same hostname are checked less often than every minute.
           </li>
         </ul>
       </Section>

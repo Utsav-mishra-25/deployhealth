@@ -11,6 +11,15 @@ export const MAX_ENDPOINTS_PER_USER = 500;
 /** No target hostname is checked more than once per this many milliseconds, across all users. */
 export const HOST_CHECK_SPACING_MS = 10_000;
 
+/** One claim (the check job runs every minute) hands out check start times up to this far ahead. */
+export const CLAIM_WINDOW_MS = 50_000;
+
+/**
+ * So one claim starts at most this many checks of one hostname (5): more endpoints on one host
+ * than this at "Every minute" are checked less often than every minute.
+ */
+export const MAX_CHECKS_PER_HOST_PER_CLAIM = Math.ceil(CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS);
+
 /**
  * Endpoints one owner can get in a single check-endpoints run (every minute). With 10 checks at a
  * time and at most 10 seconds each, one account holds the run's slots for at most 50 seconds;

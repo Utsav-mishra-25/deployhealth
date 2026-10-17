@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLAIM_WINDOW_MS,
   createFetchBudget,
   HOST_CHECK_SPACING_MS,
   LimitExceededError,
+  MAX_CHECKS_PER_HOST_PER_CLAIM,
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
   MAX_INGEST_BODY_BYTES,
@@ -22,6 +24,10 @@ describe('hard caps', () => {
       MAX_PR_CHECK_FILES: 2_000,
       MAX_PR_CHECK_BYTES: 20 * MB,
     });
+  });
+
+  it('start at most 5 checks of one hostname per claim (a 50-second window, 10 seconds apart)', () => {
+    expect({ CLAIM_WINDOW_MS, MAX_CHECKS_PER_HOST_PER_CLAIM }).toEqual({ CLAIM_WINDOW_MS: 50_000, MAX_CHECKS_PER_HOST_PER_CLAIM: 5 });
   });
 });
 

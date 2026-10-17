@@ -1,4 +1,4 @@
-import { HOST_CHECK_SPACING_MS, MAX_CLAIM_PER_OWNER, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
+import { HOST_CHECK_SPACING_MS, MAX_CHECKS_PER_HOST_PER_CLAIM, MAX_CLAIM_PER_OWNER, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
 import { CHECK_RETENTION_DAYS } from '@deployhealth/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -120,6 +120,16 @@ describe('/security states what the code does', () => {
     );
     expect(text).toContain('gets a neutral check run, even in strict mode, and GitHub counts a neutral check as passing.');
     expect(text).toContain('Strict mode blocks a merge only for what a check actually found.');
+  });
+
+  it('says more than 5 endpoints on one hostname are checked less often than every minute', () => {
+    const text = plain(render(SecurityPage)).replace(/\s+/g, ' ');
+    expect(text).toContain(
+      'Checks of one hostname start at least 10 seconds apart, so more than 5 endpoints on the same hostname are checked less often than every minute.',
+    );
+    expect(text).toContain(
+      `start at least ${HOST_CHECK_SPACING_MS / 1000} seconds apart, so more than ${MAX_CHECKS_PER_HOST_PER_CLAIM} endpoints on the same hostname`,
+    );
   });
 
   it('says spacing is per hostname, so different names for one server are spaced separately', () => {
