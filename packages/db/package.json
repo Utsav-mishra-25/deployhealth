@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./seed": "./src/seed.ts",
     "./redact": "./src/redact.ts",
-    "./sentry": "./src/sentry.ts"
+    "./sentry": "./src/sentry.ts",
+    "./backup": "./src/backup.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

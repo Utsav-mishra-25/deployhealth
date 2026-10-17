@@ -8,3 +8,12 @@ export const BACKUP_RETENTION_WEEKS = 4;
 
 /** Days an account_deletions row (GitHub id and time) is kept: the backups' span plus a week. */
 export const ACCOUNT_DELETION_RECORD_DAYS = (BACKUP_RETENTION_WEEKS + 1) * 7;
+
+/**
+ * The backup service runs every day and takes a dump only when the newest one in the bucket is
+ * older than this, so there's one a week, and a failed run is retried by the next day's.
+ */
+export const BACKUP_DUMP_INTERVAL_DAYS = 6.5;
+
+/** The worker's operator alert fires when the backup service hasn't succeeded for this long. */
+export const BACKUP_STALE_DAYS = 8;

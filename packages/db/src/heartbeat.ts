@@ -5,6 +5,9 @@ import { workerHeartbeats } from './schema';
 /** The heartbeat check-endpoints writes; the deep health check reads only this one. */
 export const CHECK_HEARTBEAT = 'check-endpoints';
 
+/** Written by the backup service after every successful run; the worker's stale-backup alert reads it. */
+export const BACKUP_HEARTBEAT = 'backup';
+
 /**
  * How recent the heartbeat must be for the worker to count as alive. check-endpoints runs every
  * minute and a run lasts at most about a minute (waves over 50 s, then a 10 s check budget), so
