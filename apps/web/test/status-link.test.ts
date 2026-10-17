@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetServerEnvForTests } from '@/env';
-import { parseStatusPageUrl, reportStatusPageUrlProblem, statusPageUrl } from '@/lib/site-nav';
+import { footerLinks, parseStatusPageUrl, reportStatusPageUrlProblem, statusPageUrl } from '@/lib/site-nav';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -41,5 +41,21 @@ describe("the footer's Status link", () => {
     reportStatusPageUrlProblem();
     expect(error).toHaveBeenCalledTimes(1);
     expect(String(error.mock.calls[0]![0])).toMatch(/^STATUS_PAGE_URL is not an https URL/);
+  });
+});
+
+describe('the footer', () => {
+  const labels = (share: boolean, status: string | null) => footerLinks({ share, status }).map((l) => l.label);
+
+  it('links Docs, Pricing, Security, Privacy, Terms, Status (when set) and the source', () => {
+    expect(labels(false, 'https://status.deployhealth.dev/')).toEqual(['Docs', 'Pricing', 'Security', 'Privacy', 'Terms', 'Status', 'Source on GitHub']);
+    expect(labels(false, null)).toEqual(['Docs', 'Pricing', 'Security', 'Privacy', 'Terms', 'Source on GitHub']);
+  });
+
+  it('on /share/* shows only Privacy and Terms', () => {
+    expect(footerLinks({ share: true, status: 'https://status.deployhealth.dev/' })).toEqual([
+      { href: '/privacy', label: 'Privacy' },
+      { href: '/terms', label: 'Terms' },
+    ]);
   });
 });

@@ -6,8 +6,7 @@ import { PublicNav } from '@/components/public-nav';
 import { publicOrigin } from '@/lib/app-url';
 import { SITE_DESCRIPTION } from '@/lib/brand';
 import { isDemoPublic } from '@/lib/demo';
-import { REPO_URL } from '@/lib/legal';
-import { HIDE_PUBLIC_NAV_HEADER, statusPageUrl } from '@/lib/site-nav';
+import { footerLinks, HIDE_PUBLIC_NAV_HEADER, statusPageUrl } from '@/lib/site-nav';
 import './globals.css';
 
 /**
@@ -29,7 +28,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await auth();
   // Signed out: the public nav, except on shared reports (middleware.ts), which a client opens.
   const showPublicNav = !session?.user && (await headers()).get(HIDE_PUBLIC_NAV_HEADER) !== '1';
-  const status = statusPageUrl();
+  // A shared report's footer: Privacy and Terms only, signed in or not.
+  const footer = footerLinks({ share: (await headers()).get(HIDE_PUBLIC_NAV_HEADER) === '1', status: statusPageUrl() });
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
@@ -62,29 +62,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
         <footer className="border-t border-gray-200 print:hidden">
           <nav aria-label="Footer" className="mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6 text-sm text-gray-500">
-            <Link href="/docs" className="hover:text-gray-900">
-              Docs
-            </Link>
-            <Link href="/pricing" className="hover:text-gray-900">
-              Pricing
-            </Link>
-            <Link href="/security" className="hover:text-gray-900">
-              Security
-            </Link>
-            <Link href="/privacy" className="hover:text-gray-900">
-              Privacy
-            </Link>
-            <Link href="/terms" className="hover:text-gray-900">
-              Terms
-            </Link>
-            {status && (
-              <a href={status} className="hover:text-gray-900">
-                Status
-              </a>
+            {footer.map((link) =>
+              link.external ? (
+                <a key={link.label} href={link.href} className="hover:text-gray-900">
+                  {link.label}
+                </a>
+              ) : (
+                <Link key={link.label} href={link.href} className="hover:text-gray-900">
+                  {link.label}
+                </Link>
+              ),
             )}
-            <a href={REPO_URL} className="hover:text-gray-900">
-              Source on GitHub
-            </a>
           </nav>
         </footer>
       </body>
