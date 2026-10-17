@@ -69,7 +69,18 @@ export interface UserExport {
     createdAt: string;
     dailyTotals: Array<{ day: string; checks: number; ok: number }>;
   }>;
-  alerts: Array<{ id: string; projectId: string; endpointId: string | null; kind: string; message: string; openedAt: string; resolvedAt: string | null; deployId: string | null }>;
+  alerts: Array<{
+    id: string;
+    projectId: string;
+    endpointId: string | null;
+    kind: string;
+    message: string;
+    openedAt: string;
+    resolvedAt: string | null;
+    /** null while open; alerts resolved before 0010 read as 'recovered'. */
+    resolution: 'recovered' | 'paused' | null;
+    deployId: string | null;
+  }>;
   pullRequestChecks: Array<{
     projectId: string;
     number: number;
@@ -201,6 +212,7 @@ export async function exportUserData(db: Db, userId: string, now: Date = new Dat
         message: a.message,
         openedAt: iso(a.createdAt),
         resolvedAt: isoOrNull(a.resolvedAt),
+        resolution: a.resolvedAt ? (a.resolution ?? 'recovered') : null,
         deployId: a.relatedDeployId,
       })),
       pullRequestChecks: prRows.map((c) => ({

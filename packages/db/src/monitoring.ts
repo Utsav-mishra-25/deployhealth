@@ -551,6 +551,8 @@ export interface EndpointMonitoring {
   /** Share of ok checks, 0–1; null when there were no checks in the window. */
   uptime24h: number | null;
   uptime7d: number | null;
+  /** Failed checks in the last 24 hours. */
+  failures24h: number;
   /** Hourly p50/p95 latency (ms) of ok checks over the last 24 hours. */
   latency: Array<{ hour: Date; p50: number; p95: number }>;
   /** Newest first. */
@@ -579,9 +581,10 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
 
   const [uptime, latency, recent, openAlerts, failing] = await Promise.all([
-    db.execute<{ total24: number; ok24: number; total7: number; ok7: number }>(sql`
+    db.execute<{ total24: number; ok24: number; failed24: number; total7: number; ok7: number }>(sql`
       select count(*) filter (where checked_at >= ${day}::timestamptz)::int as total24,
              count(*) filter (where checked_at >= ${day}::timestamptz and ok)::int as ok24,
+             count(*) filter (where checked_at >= ${day}::timestamptz and not ok)::int as failed24,
              count(*)::int as total7,
              count(*) filter (where ok)::int as ok7
       from ${checks} where endpoint_id = ${endpoint.id} and checked_at >= ${week}::timestamptz
@@ -621,6 +624,7 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
     status,
     uptime24h: u.total24 ? u.ok24 / u.total24 : null,
     uptime7d: u.total7 ? u.ok7 / u.total7 : null,
+    failures24h: Number(u.failed24),
     latency: latency.rows.map((r) => ({ hour: new Date(r.hour), p50: Math.round(Number(r.p50)), p95: Math.round(Number(r.p95)) })),
     recent,
     openAlert,
@@ -650,5 +654,51 @@ export async function listOpenAlerts(db: Db, ownerId: string, projectId: string)
     endpointUrl: r.endpointUrl,
     endpointName: r.endpointName,
     deploy: r.deployId && r.deploySha ? { id: r.deployId, sha: r.deploySha } : null,
+  }));
+}
+
+export interface AlertHistoryItem {
+  id: string;
+  kind: string;
+  /** The message as it was sent when the alert opened. */
+  message: string;
+  openedAt: Date;
+  resolvedAt: Date | null;
+  /** null while open; 'recovered' (ok checks; alerts resolved before 0010 too) or 'paused'. */
+  resolution: 'recovered' | 'paused' | null;
+  /** The endpoint's fields for endpointLabel(); null for project-level alerts. */
+  endpoint: { url: string; name: string | null } | null;
+  /** The deploy the alert linked; null when none (or deleted since). */
+  deploy: { id: string; sha: string } | null;
+}
+
+/** Most alerts listAlerts returns in one call. */
+export const MAX_ALERT_HISTORY = 200;
+
+/** One of the owner's projects' alerts, open and resolved, newest first. */
+export async function listAlerts(
+  db: Db,
+  ownerId: string,
+  projectId: string,
+  { limit = 50 }: { limit?: number } = {},
+): Promise<AlertHistoryItem[]> {
+  const rows = await db
+    .select({ alert: alerts, endpointUrl: endpoints.url, endpointName: endpoints.name, deployId: deploys.id, deploySha: deploys.sha })
+    .from(alerts)
+    .innerJoin(projects, eq(projects.id, alerts.projectId))
+    .leftJoin(endpoints, eq(endpoints.id, alerts.endpointId))
+    .leftJoin(deploys, eq(deploys.id, alerts.relatedDeployId))
+    .where(and(eq(alerts.projectId, projectId), eq(projects.ownerId, ownerId)))
+    .orderBy(desc(alerts.createdAt), desc(alerts.id))
+    .limit(Number.isFinite(limit) ? Math.min(Math.max(1, Math.floor(limit)), MAX_ALERT_HISTORY) : 50);
+  return rows.map(({ alert, endpointUrl, endpointName, deployId, deploySha }) => ({
+    id: alert.id,
+    kind: alert.kind,
+    message: alert.message,
+    openedAt: alert.createdAt,
+    resolvedAt: alert.resolvedAt,
+    resolution: alert.resolvedAt ? (alert.resolution ?? 'recovered') : null,
+    endpoint: endpointUrl ? { url: endpointUrl, name: endpointName } : null,
+    deploy: deployId && deploySha ? { id: deployId, sha: deploySha } : null,
   }));
 }

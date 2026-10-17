@@ -6,6 +6,7 @@ import {
   claimDueEndpoints,
   createEndpoint,
   getProjectMonitoring,
+  listAlerts,
   listOpenAlerts,
   pruneChecks,
   recordCheck,
@@ -552,6 +553,75 @@ describe('getProjectMonitoring', () => {
 
     expect(result.find((r) => r.endpoint.id === disabled.id)?.status).toBe('paused');
     expect(result.find((r) => r.endpoint.id === fresh.id)).toMatchObject({ status: 'pending', uptime24h: null, recent: [] });
+  });
+
+  it('counts failed checks in the last 24 hours (failures24h)', async () => {
+    const { user, project, endpoint } = await setup();
+    const quiet = await makeEndpoint(db, project.id);
+    await db.insert(checks).values([
+      { endpointId: endpoint.id, ...fail(minutes(-60 * 25)) }, // older than 24h
+      { endpointId: endpoint.id, ...fail(minutes(-60)) },
+      { endpointId: endpoint.id, ...fail(minutes(-30)) },
+      { endpointId: endpoint.id, ...fail(minutes(-2)) },
+      { endpointId: endpoint.id, ...ok(minutes(-1)) },
+      { endpointId: quiet.id, ...ok(minutes(-1)) },
+    ]);
+    const result = await getProjectMonitoring(db, user.id, project.id, minutes(0));
+    expect(result.find((r) => r.endpoint.id === endpoint.id)?.failures24h).toBe(3);
+    expect(result.find((r) => r.endpoint.id === quiet.id)?.failures24h).toBe(0);
+  });
+});
+
+describe('listAlerts (alert history)', () => {
+  it('lists open and resolved alerts newest first, with the endpoint, the linked deploy and the resolution', async () => {
+    const { user, project, endpoint } = await setup();
+    await db.update(endpoints).set({ name: 'Acme API' }).where(eq(endpoints.id, endpoint.id));
+    const deployed = await recordScan(db, { projectId: project.id, sha: 'b52952e8192c38c054e53b5447ea20de88f2e2e9', branch: 'main', deployedAt: minutes(-5), findings: [] });
+    // 1: recovered; 2: legacy resolved row (null resolution); 3: paused; 4: open, linked to the deploy.
+    await db.insert(alerts).values([
+      { projectId: project.id, endpointId: endpoint.id, kind: 'endpoint_down', message: 'one', createdAt: minutes(-400), resolvedAt: minutes(-390), resolution: 'recovered' },
+      { projectId: project.id, endpointId: endpoint.id, kind: 'endpoint_down', message: 'two', createdAt: minutes(-300), resolvedAt: minutes(-290) },
+      { projectId: project.id, endpointId: endpoint.id, kind: 'endpoint_down', message: 'three', createdAt: minutes(-200), resolvedAt: minutes(-188), resolution: 'paused' },
+      { projectId: project.id, endpointId: endpoint.id, kind: 'endpoint_down', message: 'four', createdAt: minutes(-1), relatedDeployId: deployed.deployId },
+    ]);
+
+    const list = await listAlerts(db, user.id, project.id);
+    expect(list.map((a) => [a.message, a.resolution])).toEqual([
+      ['four', null],
+      ['three', 'paused'],
+      ['two', 'recovered'],
+      ['one', 'recovered'],
+    ]);
+    expect(list[0]).toMatchObject({
+      kind: 'endpoint_down',
+      openedAt: minutes(-1),
+      resolvedAt: null,
+      endpoint: { url: 'https://api.acme.com/health', name: 'Acme API' },
+      deploy: { id: deployed.deployId, sha: 'b52952e8192c38c054e53b5447ea20de88f2e2e9' },
+    });
+    expect(list[1]).toMatchObject({ resolvedAt: minutes(-188), deploy: null });
+
+    expect((await listAlerts(db, user.id, project.id, { limit: 2 })).map((a) => a.message)).toEqual(['four', 'three']);
+    expect(await listAlerts(db, user.id, project.id, { limit: 0 })).toHaveLength(1);
+    expect(await listAlerts(db, user.id, project.id, { limit: 1_000 })).toHaveLength(4);
+  });
+
+  it('defaults to the 50 newest', async () => {
+    const { user, project, endpoint } = await setup();
+    await db.insert(alerts).values(
+      Array.from({ length: 55 }, (_, i) => ({
+        projectId: project.id,
+        endpointId: endpoint.id,
+        kind: 'endpoint_down',
+        message: `alert ${i}`,
+        createdAt: minutes(i),
+        resolvedAt: minutes(i),
+      })),
+    );
+    const list = await listAlerts(db, user.id, project.id);
+    expect(list).toHaveLength(50);
+    expect(list[0]?.message).toBe('alert 54');
+    expect(list.at(-1)?.message).toBe('alert 5');
   });
 });
 
