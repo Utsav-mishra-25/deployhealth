@@ -1,9 +1,9 @@
 import type { EndpointMonitoring } from '@deployhealth/db';
 import { deleteEndpointAction, saveEndpointAction } from '@/app/projects/[projectId]/endpoint-actions';
 import { EndpointForm } from '@/app/projects/[projectId]/endpoint-form';
-import { ChecksTable } from './checks-table';
 import { ConfirmButton } from './confirm-button';
 import { LatencyChart } from './latency-chart';
+import { RecentChecks } from './recent-checks';
 import { EndpointStatusBadge, FailingFor } from './status-badge';
 
 const EVERY: Record<number, string> = { 60: 'every minute', 300: 'every 5 min', 900: 'every 15 min' };
@@ -76,9 +76,7 @@ export function EndpointsSection({
               </div>
               <div className="min-w-0">
                 <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">Recent checks</h3>
-                <div className="overflow-x-auto">
-                  <ChecksTable checks={m.recent} />
-                </div>
+                <RecentChecks checks={m.recent} />
               </div>
             </div>
           )}
