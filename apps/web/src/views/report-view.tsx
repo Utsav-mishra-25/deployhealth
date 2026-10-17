@@ -4,6 +4,7 @@ import {
   formatDuration,
   formatPercent,
   formatUtc,
+  incidentDetailDuration,
   plural,
   reportSummary,
   reportTotals,
@@ -204,7 +205,10 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
                   <ul className="list-disc pl-5 text-sm break-words">
                     {project.incidents.map((i) => (
                       <li key={i.openedAt.toISOString() + i.endpoint}>
-                        <span className="whitespace-nowrap text-gray-500">{formatUtc(i.openedAt)}</span>: {i.message}
+                        <span className="whitespace-nowrap text-gray-500">
+                          {formatUtc(i.openedAt)} · {incidentDetailDuration(i)}
+                        </span>
+                        : {i.message}
                       </li>
                     ))}
                   </ul>

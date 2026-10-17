@@ -1,7 +1,7 @@
 import { parseMonth, reportSummary, type FindingRow } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { recordCheck } from '../src/monitoring';
+import { recordCheck, updateEndpoint } from '../src/monitoring';
 import { getClientReport } from '../src/reports';
 import { recordScan } from '../src/queries';
 import { alerts, checks, endpointDailyStats, projects, users } from '../src/schema';
@@ -135,6 +135,26 @@ describe('getClientReport', () => {
     expect((await getClientReport(db, client.id, SEPTEMBER, OCT_5))!.projects[0]!.incidents[0]?.afterDeploy).toBeNull();
   });
 
+  it("ends an incident resolved by pausing the endpoint at the pause, not at month end", async () => {
+    const user = await makeUser(db);
+    const client = await makeClient(db, user.id, 'Paused Co');
+    const project = await makeProject(db, user.id);
+    await assign(project.id, client.id);
+    const endpoint = await makeEndpoint(db, project.id);
+    const check = (iso: string, ok: boolean) => ({ checkedAt: at(iso), statusCode: ok ? 200 : 503, latencyMs: 20, ok, error: ok ? null : 'x' });
+    await recordCheck(db, endpoint.id, check('2026-09-12T09:00:00Z', true));
+    await recordCheck(db, endpoint.id, check('2026-09-12T10:00:00Z', false));
+    await recordCheck(db, endpoint.id, check('2026-09-12T10:01:00Z', false));
+    const input = { url: endpoint.url, method: 'GET' as const, intervalSeconds: 60 as const, expectedStatus: 200, enabled: false };
+    await updateEndpoint(db, user.id, endpoint.id, input, { now: at('2026-09-12T10:46:00Z') });
+
+    const report = await getClientReport(db, client.id, SEPTEMBER, OCT_5);
+    const [incident] = report!.projects[0]!.incidents;
+    expect(incident).toMatchObject({ resolvedAt: at('2026-09-12T10:46:00Z'), durationMs: 45 * 60_000, paused: true });
+    expect(reportSummary(report!)).toContain('There was one outage (45 minutes, 12 Sep).');
+    expect(reportSummary(report!)).not.toContain('paused');
+  });
+
   it('breaks the month down per project: endpoints, incidents, deploy diffs and open findings', async () => {
     const { acme } = await acmeSeptember();
     const report = await getClientReport(db, acme.id, SEPTEMBER, OCT_5);
@@ -150,6 +170,7 @@ describe('getClientReport', () => {
         openedAt: at('2026-09-12T10:00:00Z'),
         resolvedAt: at('2026-09-12T10:21:00Z'),
         durationMs: 21 * 60_000,
+        paused: false,
         message: 'Acme API started failing; no deploy in the 30 minutes before the first failure',
         afterDeploy: null,
       },
