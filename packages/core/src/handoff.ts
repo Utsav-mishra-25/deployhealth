@@ -122,6 +122,37 @@ export function describeFinding(f: FindingRow): string {
   return `defined at ${at}, absent from ${f.env_file ?? 'its counterpart'}`;
 }
 
+/**
+ * The env scope a path belongs to: the deepest scope directory containing it ('' is the root).
+ * Null when the scan didn't record its scopes (CLIs before 0.2.0).
+ */
+export function scopeOfPath(path: string, envScopes: readonly EnvScope[] | null): string | null {
+  if (!envScopes) return null;
+  let best: string | null = null;
+  for (const { scope } of envScopes) {
+    const contains = scope === '' || path.startsWith(`${scope}/`);
+    if (contains && (best === null || scope.length > best.length)) best = scope;
+  }
+  return best;
+}
+
+/**
+ * What to do about a finding, in one line (the project page's "What to do" column and the
+ * handoff's open findings). Names and paths only.
+ * - missing: declare it in its scope's .env.example, and set it where the app runs;
+ * - unused: remove it from the env file that defines it, or ignore it (the CLI's --ignore);
+ * - mismatch: add it to the env file it's absent from (usually .env.example).
+ */
+export function findingAction(f: FindingRow, envScopes: readonly EnvScope[] | null): string {
+  if (f.kind === 'missing') {
+    const scope = f.file ? scopeOfPath(f.file, envScopes) : null;
+    const example = scope === null ? 'the .env.example for its code' : scope === '' ? '.env.example' : `${scope}/.env.example`;
+    return `Declare it in ${example} and set it on your host`;
+  }
+  if (f.kind === 'unused') return `Remove it from ${f.env_file ?? f.file ?? 'its env file'}, or ignore it`;
+  return `Add it to ${f.env_file ?? '.env.example'}`;
+}
+
 /** How long an alert lasted, or has lasted so far. */
 export function alertDuration(alert: Pick<HandoffAlert, 'openedAt' | 'resolvedAt'>, now: Date): string {
   const end = alert.resolvedAt ?? now;
@@ -241,7 +272,7 @@ export function renderHandoffMarkdown(data: HandoffData): string {
       line();
       line(`_${section.blurb}_`);
       line();
-      for (const f of rows) line(`- \`${f.var_name}\`: ${describeFinding(f)}`);
+      for (const f of rows) line(`- \`${f.var_name}\`: ${describeFinding(f)}. ${findingAction(f, data.envScopes)}.`);
       line();
     }
   }

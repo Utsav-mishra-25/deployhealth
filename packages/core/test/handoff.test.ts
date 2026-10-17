@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatInterval, formatPercent, formatUtc, plural } from '../src/format';
-import { dotenvExample, groupVariablesByScope, parseHandoffVariables, renderHandoffMarkdown, variableStatus, type HandoffData } from '../src/handoff';
+import { dotenvExample, findingAction, groupVariablesByScope, parseHandoffVariables, renderHandoffMarkdown, variableStatus, type HandoffData } from '../src/handoff';
 import type { RequiredVariable } from '../src/types';
 
 const at = (iso: string) => new Date(iso);
@@ -99,6 +99,15 @@ describe('renderHandoffMarkdown', () => {
     expect(md).toContain('```yaml\n# .github/workflows/deployhealth.yml\nname: deployhealth\n```');
   });
 
+  it('says what to do about each open finding', () => {
+    expect(md).toContain(
+      '- `REDIS_URL`: referenced at apps/api/src/lib/cache.ts:6. Declare it in the .env.example for its code and set it on your host.',
+    );
+    expect(md).toContain('- `S3_REGION`: defined at apps/worker/.env.example:5, never referenced. Remove it from apps/worker/.env.example, or ignore it.');
+    const scoped = renderHandoffMarkdown(data({ envScopes: [{ scope: '', env_files: ['.env'] }, { scope: 'apps/api', env_files: ['.env.example'] }] }));
+    expect(scoped).toContain('Declare it in apps/api/.env.example and set it on your host.');
+  });
+
   it('round-trips the required-variables list through parseHandoffVariables', () => {
     const expected = groupVariablesByScope(VARIABLES).flatMap((g) => g.variables);
     expect(parseHandoffVariables(md)).toEqual(expected);
@@ -174,5 +183,34 @@ describe('the quieter scan in the handoff (CLI 0.2.0+)', () => {
     const older = renderHandoffMarkdown(data({ variables: [v('DEPLOY_KEY', '', [])], envScopes: null }));
     expect(older).toContain('| `DEPLOY_KEY` | — | **missing** |');
     expect(older).not.toContain('```dotenv');
+  });
+});
+
+describe('findingAction', () => {
+  const scopes = [
+    { scope: '', env_files: ['.env.example' as const] },
+    { scope: 'apps/api', env_files: ['.env.example' as const, '.env' as const] },
+    { scope: 'apps/api-gateway', env_files: ['.env' as const] },
+  ];
+
+  it('MISSING: declare it in its scope\'s .env.example (the deepest scope containing the file)', () => {
+    const missing = (file: string) => ({ kind: 'missing' as const, var_name: 'REDIS_URL', file, line: 6, env_file: null });
+    expect(findingAction(missing('apps/api/src/cache.ts'), scopes)).toBe('Declare it in apps/api/.env.example and set it on your host');
+    expect(findingAction(missing('apps/api-gateway/main.ts'), scopes)).toBe('Declare it in apps/api-gateway/.env.example and set it on your host');
+    expect(findingAction(missing('scripts/seed.ts'), scopes)).toBe('Declare it in .env.example and set it on your host');
+    // A scan from a CLI before 0.2.0 has no scopes.
+    expect(findingAction(missing('apps/api/src/cache.ts'), null)).toBe('Declare it in the .env.example for its code and set it on your host');
+  });
+
+  it('UNUSED: remove it from its env file, or ignore it', () => {
+    expect(findingAction({ kind: 'unused', var_name: 'OLD', file: 'apps/api/.env', line: 3, env_file: 'apps/api/.env' }, scopes)).toBe(
+      'Remove it from apps/api/.env, or ignore it',
+    );
+  });
+
+  it('MISMATCH: add it to the env file it is absent from', () => {
+    const mismatch = (file: string, absent: string) => ({ kind: 'mismatch' as const, var_name: 'X', file, line: 1, env_file: absent });
+    expect(findingAction(mismatch('apps/api/.env', 'apps/api/.env.example'), scopes)).toBe('Add it to apps/api/.env.example');
+    expect(findingAction(mismatch('.env.example', '.env'), scopes)).toBe('Add it to .env');
   });
 });
