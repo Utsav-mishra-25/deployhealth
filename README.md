@@ -80,9 +80,10 @@ above, whatever the language, with the usual comment and conclusion (strict mode
 
 ### Uptime, alerts, and the deploy that caused them
 
-Endpoints get a status, "Down for 22m", 24-hour and 7-day uptime, a p50/p95 latency chart and
-the last 20 checks. Alerts open after two failed checks in a row, link the deploy that preceded
-them, and can post to Slack or Discord.
+Endpoints get a status, "Down for 22m", 24-hour and 7-day uptime (and "31 failures in 24h" when
+there were any), a p50/p95 latency chart and the last 20 checks. Alerts open after two failed
+checks in a row, resolve after two ok checks in a row, link the deploy that preceded them, and can
+post to Slack or Discord.
 
 ![A project: the open alert linked to its deploy, the latest scan's counts, findings with what to do about each, and the deploy the outage followed](docs/screenshots/project.png)
 
@@ -388,11 +389,22 @@ After every check, the worker applies one rule in the same transaction that reco
 - **Open** an alert when an endpoint has failed **2 checks in a row** and has **at least one ok
   check in its history**. A URL that has never worked doesn't alert. There's at most one open
   alert per endpoint (enforced by a unique index).
-- **Resolve** it on the endpoint's next ok check.
+- **Resolve** it after **2 ok checks in a row**, so a flapping host (fail, fail, ok, fail, fail, …)
+  stays one incident and one pair of webhooks instead of dozens. The resolved message counts from
+  the alert's open to the resolving check: `Acme API is back up (alert open for 21m)`.
+- **Pausing** an endpoint (unticking Enabled) resolves its open alert at that moment, so the monthly
+  report doesn't count a paused endpoint as down until month end; the webhook says
+  `[resolved] Acme Storefront: Acme API paused (alert open for 12m)`. Re-enabling starts fresh.
 
 Endpoints are named in alerts by their **name** ("Acme API") when you give one, otherwise by their
-host. While an endpoint is failing, its card and its project's row on /clients say for how long
-("Acme API down for 21m"), counted from the first failed check of the current run.
+host. While an endpoint is down or failing, its card and its project's row on /clients say for how
+long ("Acme API down for 21m"): counted from the alert's open while one is open (also through the
+first ok check, before it resolves), else from the first failed check of the current run.
+
+A HEAD check that gets **405 Method Not Allowed** is sent once more as GET, to the same URL and
+within the same 10-second budget; the GET's status is the result. Checks of one hostname start at
+least 10 seconds apart, so more than 5 endpoints on one hostname are checked less often than every
+minute; the endpoint form says so.
 
 When an alert opens, deployhealth finds the project's **most recent deploy in the 30 minutes
 before the first failed check**. It then compares that deploy's latest scan with the previous
@@ -411,8 +423,8 @@ missing env vars: A, B, C, D, E and 35 more`), so a first deploy with no previou
 variable is new, doesn't produce a wall of names. The counts are always exact.
 
 If the project has an **alert webhook URL** (Slack incoming webhook, or Discord's with `/slack`
-appended), deployhealth POSTs `{"text": "…"}` when the alert opens and again when it resolves. A
-failed delivery is logged and retried at most once.
+appended), deployhealth POSTs `{"text": "…"}` when the alert opens and again when it resolves (or
+is paused). A failed delivery is logged and retried at most once.
 
 ### Handoff export
 

@@ -33,7 +33,11 @@ repository, a project page that says what will appear, no token at creation) and
 (production readiness: redacted logs, Sentry error reports, operator alerts, self-serve export and
 deletion on /account with a deletion record, a status page link, incident and maintenance
 runbooks) and part 2 (daily backups to Cloudflare R2 from a separate backup service on Postgres
-18's client, a restore command that re-applies account deletions, a stale-backup alert) are built.
+18's client, a restore command that re-applies account deletions, a stale-backup alert) and
+Phase 10 (alert trust: an alert resolves after 2 ok checks in a row, pausing an endpoint resolves
+its alert, HEAD checks fall back to GET on 405, the endpoint form and /security state per-host
+spacing, "which changed no config", a falling-behind operator alert, the alert history read model)
+are built.
 
 ## Repository files
 
