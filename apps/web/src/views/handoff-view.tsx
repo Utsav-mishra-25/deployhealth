@@ -3,6 +3,7 @@ import {
   describeFinding,
   dotenvExample,
   FINDING_SECTIONS,
+  findingAction,
   formatInterval,
   formatPercent,
   formatUtc,
@@ -210,7 +211,10 @@ export function HandoffView({ data, backHref, markdownHref }: { data: HandoffDat
                 <ul className="list-disc space-y-0.5 pl-5 text-sm break-words">
                   {rows.map((f, i) => (
                     <li key={`${f.var_name}-${i}`}>
-                      <code className="font-mono break-all">{f.var_name}</code>: {describeFinding(f)}
+                      <code className="font-mono break-all">{f.var_name}</code>: {describeFinding(f)}.{' '}
+                      <span className="text-gray-700" data-testid="finding-action">
+                        {findingAction(f, data.envScopes)}.
+                      </span>
                     </li>
                   ))}
                 </ul>
