@@ -1,6 +1,13 @@
 'use client';
 
-import { ENDPOINT_INTERVALS, ENDPOINT_METHODS } from '@deployhealth/core/browser';
+import {
+  CHECK_TIMEOUT_MS,
+  ENDPOINT_INTERVALS,
+  ENDPOINT_METHODS,
+  HOST_CHECK_SPACING_MS,
+  MAX_CHECKS_PER_HOST_PER_CLAIM,
+  MAX_REDIRECTS,
+} from '@deployhealth/core/browser';
 import { useActionState, useEffect, useRef } from 'react';
 import type { EndpointFormState, EndpointFormValues } from './endpoint-actions';
 
@@ -8,6 +15,16 @@ const input =
   'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500';
 
 const INTERVAL_LABELS: Record<number, string> = { 60: 'Every minute', 300: 'Every 5 minutes', 900: 'Every 15 minutes' };
+
+const hint = 'mt-1 block text-xs text-gray-500';
+
+/** Under URL: what one check does (worker check.ts). */
+export const URL_HINT = `${CHECK_TIMEOUT_MS / 1000}-second timeout; up to ${MAX_REDIRECTS} redirects; the final status must equal the expected status.`;
+
+/** Under Interval: per-host spacing means a busy host isn't checked as often as asked. */
+export const INTERVAL_HINT =
+  `Checks of one host are spaced ${HOST_CHECK_SPACING_MS / 1000} seconds apart, so more than ${MAX_CHECKS_PER_HOST_PER_CLAIM} ` +
+  'endpoints on the same host at this interval are checked less often.';
 
 export function EndpointForm({
   action,
@@ -40,6 +57,9 @@ export function EndpointForm({
         <span className="text-sm font-medium">URL</span>
         <input name="url" type="url" required defaultValue={values.url} placeholder="https://api.example.com/health" className={input} />
         {fields.url && <span className="mt-1 block text-sm text-red-600">{fields.url}</span>}
+        <span className={hint} data-testid="url-hint">
+          {URL_HINT}
+        </span>
       </label>
       <label className="block sm:col-span-1">
         <span className="text-sm font-medium">Method</span>
@@ -58,6 +78,9 @@ export function EndpointForm({
             </option>
           ))}
         </select>
+        <span className={hint} data-testid="interval-hint">
+          {INTERVAL_HINT}
+        </span>
       </label>
       <label className="block sm:col-span-2">
         <span className="text-sm font-medium">Expected status</span>

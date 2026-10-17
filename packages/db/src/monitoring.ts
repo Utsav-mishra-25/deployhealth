@@ -2,10 +2,12 @@ import {
   alertOpenedMessage,
   alertPausedMessage,
   alertResolvedMessage,
+  CLAIM_WINDOW_MS,
   decideAlert,
   DEPLOY_LINK_WINDOW_MINUTES,
   HOST_CHECK_SPACING_MS,
   LimitExceededError,
+  MAX_CHECKS_PER_HOST_PER_CLAIM,
   MAX_CLAIM_PER_OWNER,
   MAX_ENDPOINTS_PER_PROJECT,
   MAX_ENDPOINTS_PER_USER,
@@ -177,8 +179,9 @@ export interface DueEndpoint {
   runAt: Date;
 }
 
-/** One claim hands out check start times up to this far after `now` (the job runs every minute). */
-export const CLAIM_WINDOW_MS = 50_000;
+// One claim hands out check start times up to CLAIM_WINDOW_MS after `now` (in core, so the endpoint
+// form and /security can state it); re-exported for existing imports.
+export { CLAIM_WINDOW_MS };
 
 /** pg_advisory_xact_lock key: one claimer at a time, so host slots are read and saved as a unit. */
 const CLAIM_LOCK_KEY = 4_815_162_342;
@@ -221,7 +224,7 @@ export function assignHostSlots<T extends { hostname: string }>(
 /**
  * Claim due endpoints (enabled, next_check_at passed), give each a start time with
  * `assignHostSlots`, and move each claimed endpoint's next_check_at one interval past its start.
- * At most CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS endpoints per hostname are considered per claim,
+ * At most MAX_CHECKS_PER_HOST_PER_CLAIM (CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS) endpoints per hostname are considered per claim,
  * so one busy host can't crowd out the others, and at most MAX_CLAIM_PER_OWNER per owner, so one
  * account can't fill a run. Owners take turns: each owner's oldest due endpoint, then each
  * owner's second, and so on (oldest first within a turn). Claims run one at a time (advisory
@@ -232,7 +235,7 @@ export async function claimDueEndpoints(
   db: Db,
   { now = new Date(), limit = 500, perOwner = MAX_CLAIM_PER_OWNER }: { now?: Date; limit?: number; perOwner?: number } = {},
 ): Promise<DueEndpoint[]> {
-  const perHost = Math.ceil(CLAIM_WINDOW_MS / HOST_CHECK_SPACING_MS);
+  const perHost = MAX_CHECKS_PER_HOST_PER_CLAIM;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${CLAIM_LOCK_KEY})`);
     const due = await tx.execute<{

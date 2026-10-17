@@ -1,3 +1,4 @@
+import { plural } from '@deployhealth/core';
 import type { EndpointMonitoring } from '@deployhealth/db';
 import { deleteEndpointAction, saveEndpointAction } from '@/app/projects/[projectId]/endpoint-actions';
 import { EndpointForm } from '@/app/projects/[projectId]/endpoint-form';
@@ -61,6 +62,11 @@ export function EndpointsSection({
               <span>
                 <span className="text-gray-500">7d</span> <strong className="tabular-nums">{percent(m.uptime7d)}</strong>
               </span>
+              {m.failures24h > 0 && (
+                <span className="text-red-700" data-testid="failures-24h">
+                  {plural(m.failures24h, 'failure')} in 24h
+                </span>
+              )}
             </div>
           </header>
 
