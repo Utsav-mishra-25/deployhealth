@@ -67,6 +67,15 @@ async function twoUsers() {
 }
 
 describe("user A cannot read user B's data", () => {
+  it("pausing: A can't pause B's endpoint or resolve its open alert", async () => {
+    const { a, bEndpoint } = await twoUsers();
+    const [open] = await db.select().from(alerts).where(eq(alerts.endpointId, bEndpoint.id));
+    expect(open?.resolvedAt).toBeNull();
+    expect(await updateEndpoint(db, a.id, bEndpoint.id, { ...endpointInput, enabled: false })).toBeNull();
+    expect((await db.select().from(endpoints).where(eq(endpoints.id, bEndpoint.id)))[0]?.enabled).toBe(true);
+    expect((await db.select().from(alerts).where(eq(alerts.id, open!.id)))[0]).toMatchObject({ resolvedAt: null, resolution: null });
+  });
+
   it('clients', async () => {
     const { a, bClient } = await twoUsers();
     expect(await getClientForOwner(db, a.id, bClient.id)).toBeNull();
@@ -266,7 +275,7 @@ describe("user A cannot modify user B's data", () => {
 
   it('while the owner can do all of it', async () => {
     const { b, bClient, bProject, bEndpoint } = await twoUsers();
-    expect(await updateEndpoint(db, b.id, bEndpoint.id, { ...endpointInput, url: 'https://bob.example/v2' })).toMatchObject({
+    expect((await updateEndpoint(db, b.id, bEndpoint.id, { ...endpointInput, url: 'https://bob.example/v2' }))?.endpoint).toMatchObject({
       url: 'https://bob.example/v2',
     });
     expect(await updateProjectSettings(db, b.id, bProject.id, { clientId: null, alertWebhookUrl: 'https://hooks.example/x' })).toBe(true);
