@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   extensionOf,
+  LANGUAGES_DOC_URL,
   LANGUAGES_SENTENCE,
   listLabels,
   NO_SOURCE_FILES_LINE,
@@ -9,6 +10,7 @@ import {
   SUPPORTED_LANGUAGES_AND,
   SUPPORTED_LANGUAGES_OR,
   supportedLanguageOf,
+  UNREAD_LANGUAGES_TEXT,
   UNREAD_SOURCE_EXTENSIONS,
   unreadExtensionOf,
 } from '../src/languages';
@@ -66,6 +68,16 @@ describe('the supported languages constant', () => {
     expect(unreadExtensionOf('src/main.rs')).toBe('.rs');
     expect(unreadExtensionOf('src/main/resources/application.properties')).toBeNull();
     expect(unreadExtensionOf('pom.xml')).toBeNull();
+  });
+});
+
+describe('how messages name the languages not read', () => {
+  it('says "other languages", next to the supported list, and links the docs index', () => {
+    expect(UNREAD_LANGUAGES_TEXT).toBe('other languages');
+    expect(LANGUAGES_SENTENCE).toBe(
+      `Reads ${SUPPORTED_LANGUAGES_AND}. Other languages aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.`,
+    );
+    expect(LANGUAGES_DOC_URL).toBe('https://deployhealth.dev/docs');
   });
 });
 

@@ -344,9 +344,9 @@ describe('what the check read: repos it can\'t read, pull requests that change n
       expect(runs(mock)).toEqual([expect.objectContaining({ conclusion: 'neutral', title: CANT_CHECK_TITLE })]);
       expect(CANT_CHECK_TITLE).toBe("deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files found");
       const summary = runs(mock)[0]!.summary;
-      expect(summary).toContain('deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren\'t read yet');
+      expect(summary).toContain('deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Other languages aren\'t read yet');
       expect(summary).toContain('It holds 4 .rs, 1 .cs, 1 .sh files that deployhealth doesn\'t read.');
-      expect(summary).toContain('https://github.com/Utsav-mishra-25/deployhealth#known-limitations');
+      expect(summary).toContain('Which languages are read: https://deployhealth.dev/docs');
       expect(summary).not.toContain('src/main'); // counts only, never paths
       expect(mock.state.comments.size).toBe(0);
       expect(blobs(mock)).toEqual([]);
@@ -380,7 +380,7 @@ describe('what the check read: repos it can\'t read, pull requests that change n
     });
     const comment = [...mock.state.comments.values()][0]!.body;
     expect(comment).toContain('#### Committed env files');
-    expect(comment).toContain("deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin; Rust, C# and others aren't read yet");
+    expect(comment).toContain("deployhealth reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin; other languages aren't read yet ([which languages](https://deployhealth.dev/docs))");
     expect(blobs(mock)).toEqual([]);
   });
 

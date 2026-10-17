@@ -3,7 +3,7 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Other languages aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
 
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 

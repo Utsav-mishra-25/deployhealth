@@ -57,15 +57,15 @@ export const UNREAD_SOURCE_EXTENSIONS: readonly string[] = [
   '.r',
 ];
 
-/** The languages people ask about first that aren't read yet, for messages. */
-export const UNREAD_LANGUAGES_TEXT = 'Rust, C# and others';
+/** The languages that aren't read, for messages; every message names the supported ones next to it. */
+export const UNREAD_LANGUAGES_TEXT = 'other languages';
 
-/** The README section that says which languages are read (its "Languages" bullet comes first). */
-export const LANGUAGES_DOC_URL = 'https://github.com/Utsav-mishra-25/deployhealth#known-limitations';
+/** The docs index, which names the languages read under its headline (LANGUAGES_SENTENCE). */
+export const LANGUAGES_DOC_URL = 'https://deployhealth.dev/docs';
 
-/** One line for the README's opening, the npm README and the landing page. */
+/** One line for the README's Known limitations, the npm README and the docs index. */
 export const LANGUAGES_SENTENCE =
-  `Reads ${SUPPORTED_LANGUAGES_AND}. ${UNREAD_LANGUAGES_TEXT} aren't read yet: on a repo in those, the pull request ` +
+  `Reads ${SUPPORTED_LANGUAGES_AND}. ${UNREAD_LANGUAGES_TEXT.charAt(0).toUpperCase()}${UNREAD_LANGUAGES_TEXT.slice(1)} aren't read yet: on a repo in those, the pull request ` +
   `check and the CLI say they can't check it instead of passing it.`;
 
 /** What the CLI prints when a directory holds no source file it reads. */
