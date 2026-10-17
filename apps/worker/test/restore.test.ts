@@ -42,7 +42,12 @@ function setup(options: { manifest?: string | null; empty?: boolean; live?: Arra
       return { considered: deletions.length, deleted: 1, notInDump: 0 };
     },
     rowCounts: async () => ({ 'public.users': 3 }),
-    readFile: async (path) => (path.endsWith('deletions.json') ? manifest(new Date('2026-10-17T03:41:00Z'), [{ githubId: 9, deletedAt: '2026-10-18T04:00:00.000Z' }]) : ''),
+    readFile: async (path) =>
+      path.endsWith('live-deletions.json')
+        ? manifest(new Date('2026-10-18T16:30:00Z'), [{ githubId: 10, deletedAt: '2026-10-18T15:00:00.000Z' }])
+        : path.endsWith('deletions.json')
+          ? manifest(new Date('2026-10-17T03:41:00Z'), [{ githubId: 9, deletedAt: '2026-10-18T04:00:00.000Z' }])
+          : '',
     writeFile: async (path) => void events.push(`write ${path}`),
     tmpDir: '/tmp/x',
     now: () => NOW,
@@ -60,7 +65,8 @@ const args = (argv: string[]) => {
 describe('parseRestoreArgs', () => {
   it('takes one source and --into', () => {
     expect(parseRestoreArgs(['--list'])).toMatchObject({ mode: 'list' });
-    expect(parseRestoreArgs(['--latest', '--into', SCRATCH])).toEqual({ mode: 'restore', source: { latest: true }, into: SCRATCH, liveDeletions: false, skipDeletions: false });
+    expect(parseRestoreArgs(['--latest', '--into', SCRATCH])).toEqual({ mode: 'restore', source: { latest: true }, into: SCRATCH, deletionsFiles: [], liveDeletions: false, skipDeletions: false });
+    expect(parseRestoreArgs(['--latest', '--into', SCRATCH, '--deletions-file', 'a.json', '--deletions-file', 'b.json'])).toMatchObject({ deletionsFiles: ['a.json', 'b.json'] });
     expect(parseRestoreArgs(['--latest'])).toHaveProperty('error');
     expect(parseRestoreArgs(['--latest', '--key', 'k', '--into', SCRATCH])).toHaveProperty('error');
     expect(parseRestoreArgs(['--latest', '--into', SCRATCH, '--live-deletions', '--skip-deletions'])).toHaveProperty('error');
@@ -131,9 +137,29 @@ describe('two steps: --download, then --file with --deletions-file', () => {
     const { deps, events, logs } = setup();
     await downloadBackup(parsed as never, deps);
     expect(events).toEqual([`download ${dumpKey(DUMPED)}`, 'write /restore/deletions.json']);
-    expect(logs.at(-1)).toMatch(/written 13 hours ago\). Both hold production data: delete them/);
+    expect(logs.at(-1)).toBe('[restore] These files hold production data (emails, webhook URLs, token hashes): delete them (rm -rf /restore) once the restore is done.');
     expect(parseRestoreArgs(['--file', 'x.dump', '--download', '/restore'])).toHaveProperty('error');
     expect(parseRestoreArgs(['--latest', '--download', '/restore', '--into', SCRATCH])).toHaveProperty('error');
+  });
+
+  it('with --live-deletions, also saves the live database\'s deletions as of now', async () => {
+    const parsed = parseRestoreArgs(['--latest', '--download', '/restore', '--live-deletions']);
+    const { deps, events, logs } = setup({ live: [{ githubId: 10, deletedAt: new Date('2026-10-18T15:00:00Z') }] });
+    await downloadBackup(parsed as never, deps);
+    expect(events).toEqual([`download ${dumpKey(DUMPED)}`, 'write /restore/deletions.json', 'write /restore/live-deletions.json']);
+    expect(logs).toContain('[restore] live-deletions.json saved: 1 deletions from the live database, as of now.');
+    await expect(downloadBackup(parsed as never, setup().deps)).rejects.toThrow(/set DATABASE_URL/);
+  });
+
+  it('re-applies both saved files, each with its age, and no longer warns about a day-old manifest', async () => {
+    const { deps, logs, reapplied } = setup({ manifest: null });
+    await restoreBackup(
+      args(['--file', '/restore/2026-10-18T03-41-00.000Z.dump', '--deletions-file', '/restore/deletions.json', '--deletions-file', '/restore/live-deletions.json', '--into', SCRATCH]),
+      deps,
+    );
+    expect((reapplied()!.deletions as Array<{ githubId: number }>).map((d) => d.githubId)).toEqual([9, 10]);
+    expect(logs).toContain('[restore] account deletions from live-deletions.json (saved by --download), written 0 hours ago (2026-10-18T16:30:00.000Z; 1 deletions)');
+    expect(logs.some((l) => /aren't in it/.test(l))).toBe(false);
   });
 
   it('re-applies the saved deletions.json, saying how old it is', async () => {

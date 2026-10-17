@@ -48,7 +48,13 @@ async function main(): Promise<number> {
       return 0;
     }
     if (args.mode === 'download') {
-      await downloadBackup(args as typeof args & { mode: 'download' }, { bucket, now: () => new Date(), log, writeFile: (path, text) => writeFile(path, text) });
+      await downloadBackup(args as typeof args & { mode: 'download' }, {
+        bucket,
+        liveDeletions: live ? () => listAccountDeletions(live.db) : null,
+        now: () => new Date(),
+        log,
+        writeFile: (path, text) => writeFile(path, text),
+      });
       return 0;
     }
     await restoreBackup(args as typeof args & { mode: 'restore' }, {
