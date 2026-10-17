@@ -15,8 +15,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
     src/readiness.ts  waitForMigrations(): poll every 5 s, up to 10 minutes, then throw (exit 1)
     src/schedules.ts  every queue's options and cron (registerQueues: create, re-apply options, schedule)
     src/jobs.ts       job logic with injected deps (claim → check → record → webhook; rollup → prune; reseed;
-                      prCheck)
-    src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies
+                      prCheck; sendAlertWebhook)
+    src/check.ts      runCheck(): 10s budget, ≤5 redirects, no bodies; a HEAD answered 405 retries once as GET
     src/webhook.ts    POST {text}, 5s timeout, at most one retry, SSRF-guarded
     src/operator.ts   operator alerts (OPERATOR_WEBHOOK_URL): heartbeat watch, repeated job failures,
                       rate limits; observeJob() (report + count every job's failures)
@@ -38,8 +38,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
 
 - **Worker jobs** live in `apps/worker/src/jobs.ts` as plain functions with injected dependencies,
   so they're unit-tested without pg-boss. `index.ts` only wires queues, schedules and real deps.
-  Every queue uses the `singleton` policy except `pr-check`, which is `stately` (see
-  [github-app.md](github-app.md)). Checks are scheduled per endpoint via `next_check_at`,
+  Every scheduled queue uses the `singleton` policy; `pr-check` is `stately` (see
+  [github-app.md](github-app.md)) and `alert-webhook` is `standard`. Checks are scheduled per endpoint via `next_check_at`,
   never with a cron per endpoint.
 
 ## Worker jobs
@@ -59,7 +59,10 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   by start time (never early), up to 10 checks at a time with `runCheck()`, stores each result
   with `recordCheck()`, and starts the webhook for an alert event after the transaction commits,
   outside the check slots (the run awaits every send before the heartbeat). Failures log the
-  endpoint's host and the error's name and code, never its URL or message. Every
+  endpoint's host and the error's name and code, never its URL or message. Right after the claim
+  it counts the enabled endpoints still due (`countDueEndpoints()`); a run that claimed something,
+  errored or left endpoints due logs one line, counts only:
+  `[check] {"claimed":3,"checked":3,"failed":1,"opened":1,"resolved":0,"errors":0,"due_but_unclaimed":0,"run_ms":5120}`. Every
   run ends with `recordHeartbeat()` (the `worker_heartbeats` row `check-endpoints`, `now()`), even
   with nothing due; a claim that throws skips it, a failed write is logged. The deep health check
   reads that row.
@@ -71,6 +74,12 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   (`RESEED_CRON`) and once on start, runs the seed so production needs no manual seed step and the
   incident stays recent. About a second; logs its duration, never the token. Retries up to 5 times,
   1 → 16 minutes apart, so a start before web has applied a new migration heals itself.
+- **alert-webhook** (queued by the web app when pausing an endpoint resolves its alert; web makes
+  no outbound HTTP): `{ projectId, type, message }`, never the URL. `sendAlertWebhook()` reads the
+  project's current name and webhook URL (`alertWebhookTarget()`), logs the event like
+  check-endpoints does, and sends through `sendWebhook` (its own one retry). The queue is
+  `standard`, `retryLimit: 0`, expiring after 60 s: a late webhook is noise. A job queued before
+  the worker has created the queue (the minutes of a first deploy) is refused and logged by web.
 - **Queue options** live in `schedules.ts` (`QUEUES`). pg-boss's `createQueue` ignores an existing
   queue, so `registerQueues()` re-applies every option with `updateQueue` (all but the policy, which
   can't change) on each start.
@@ -90,7 +99,11 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   (`deps.report`). A start failure is reported and flushed before the process exits.
 - **Operator alerts** (`OPERATOR_WEBHOOK_URL`, `operator.ts`, through `sendWebhook` and its SSRF
   guard, `{ text }` escaped like project alerts): `observeJob` counts each queue's consecutive
-  failures and alerts on the 3rd (`FAILURES_BEFORE_ALERT`), then once when it succeeds again; a
+  failures and alerts on the 3rd (`FAILURES_BEFORE_ALERT`), then once when it succeeds again; when
+  check-endpoints leaves due endpoints unclaimed 5 runs in a row (`BACKLOG_RUNS_BEFORE_ALERT`:
+  "check-endpoints left 12 due endpoints unclaimed 5 runs in a row: checks are falling behind
+  their intervals."), then once when a run leaves none ("check-endpoints is claiming every due
+  endpoint again."); a
   timer outside pg-boss (`HEARTBEAT_WATCH_INTERVAL_MS`, 1 minute) reads `heartbeatAgeSeconds()` and
   alerts when it's over `WORKER_HEARTBEAT_MAX_AGE_SECONDS`, after giving a new process that long to
   write its first, then once when it's fresh again. One alert per kind per hour, 10 per hour in

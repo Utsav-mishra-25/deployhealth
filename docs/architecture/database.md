@@ -16,8 +16,10 @@ query (authorization rules for queries are in [security.md](security.md)).
     src/deploy-history.ts  listDeployHistory(): each deploy's changes vs the previous scanned deploy
                       (findingsDiff) and the outage that started after it (owner-scoped)
     src/clients.ts    clients CRUD, /clients overview, project settings (client, webhook, deploy notes)
-    src/monitoring.ts endpoints CRUD, claimDueEndpoints(), recordCheck() (+ alert lifecycle), stats,
-                      uptimeBetween() (rollups + raw), rollupChecks(), prune
+    src/monitoring.ts endpoints CRUD (updateEndpoint resolves an open alert on pause), claimDueEndpoints(),
+                      countDueEndpoints(), recordCheck() (+ alert lifecycle), alertWebhookTarget(), stats
+                      (+ failures24h), listAlerts() (alert history), uptimeBetween() (rollups + raw),
+                      rollupChecks(), prune
     src/handoff.ts    getHandoffData() (owner-scoped)
     src/reports.ts    getClientReport() (by client id; see Authorization in security.md)
     src/github.ts     installations, installation repos, webhook deliveries, pr_checks (worker upserts;
@@ -51,6 +53,12 @@ query (authorization rules for queries are in [security.md](security.md)).
 - **Schema changes:** edit `packages/db/src/schema.ts`, then `pnpm db:generate` and commit the new SQL in
   `packages/db/drizzle/`. Never edit a migration that has been applied. Only web's pre-deploy step
   applies migrations; the worker bundles the journal and waits for them (Worker jobs in [worker.md](worker.md)).
+- **Latest: 0010** (`0010_alert_trust`): `endpoints.consecutive_ok` (int, not null, default 0; the
+  recovery threshold's counter, next to `consecutive_failures`) and `alerts.resolution` (text, null;
+  'recovered' or 'paused', CHECK `alerts_resolution_check`; null while open and on rows resolved
+  before 0010, which read as recovered). Both are additive with defaults, so the old worker runs
+  against the new schema during a deploy. **The next migration is 0011** (`pnpm db:generate --
+  --name <name>`).
 
 ## Deleting a user
 

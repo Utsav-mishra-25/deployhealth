@@ -10,7 +10,9 @@ Java/Kotlin with Spring (CLI 0.5.0), docs pages, the Action and a security pass,
 with what to do per finding, a monthly report written for clients), Phase 8.1 (first-run onboarding: setup
 checklist, App coverage, no token at creation) and Phase 9 part 1 (redacted logs, Sentry, operator
 alerts, /account export and deletion, status link, runbooks) and part 2 (daily backups to R2 from a
-separate backup service, restore that re-applies deletions) (list: development.md).
+separate backup service, restore that re-applies deletions) and Phase 10 (alert trust: recovery after
+2 ok checks, pausing resolves, HEAD → GET on 405, honest intervals, alert history read model)
+(list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for
 an area before changing it (index at the end). Each app and package has a short CLAUDE.md naming
