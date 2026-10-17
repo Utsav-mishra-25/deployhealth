@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALERT_REPEAT_MS, createOperatorAlerts, observeJob, FAILURES_BEFORE_ALERT, MAX_ALERTS_PER_HOUR, operatorWebhookUrl } from '../src/operator';
+import { ALERT_REPEAT_MS, BACKUP_ALERT_REPEAT_MS, createOperatorAlerts, observeJob, FAILURES_BEFORE_ALERT, MAX_ALERTS_PER_HOUR, operatorWebhookUrl } from '../src/operator';
 
 const MINUTE = 60_000;
 
@@ -123,5 +123,31 @@ describe('observeJob', () => {
     expect(h.sent).toHaveLength(1);
     expect(await observeJob('prune-checks', async () => 'done', deps)).toBe('done');
     expect(h.sent[1]).toContain('prune-checks is succeeding again');
+  });
+});
+
+describe('operator alerts: the backup heartbeat', () => {
+  const DAY_S = 86_400;
+  it('says nothing while backups are not set up (no row yet)', async () => {
+    const h = harness();
+    h.advance(30 * 24 * 3_600_000);
+    await h.alerts.backupHeartbeat(null);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('alerts after 8 days without a successful run, at most once a day, and once when it succeeds again', async () => {
+    const h = harness();
+    await h.alerts.backupHeartbeat(7.9 * DAY_S);
+    expect(h.sent).toEqual([]);
+    await h.alerts.backupHeartbeat(8.2 * DAY_S);
+    expect(h.sent).toEqual(["[deployhealth worker] the backup service hasn't succeeded for 8 days (the limit is 8): check its cron runs on Railway."]);
+    h.advance(ALERT_REPEAT_MS);
+    await h.alerts.backupHeartbeat(8.3 * DAY_S);
+    expect(h.sent).toHaveLength(1);
+    h.advance(BACKUP_ALERT_REPEAT_MS);
+    await h.alerts.backupHeartbeat(9.3 * DAY_S);
+    expect(h.sent).toHaveLength(2);
+    await h.alerts.backupHeartbeat(0.1 * DAY_S);
+    expect(h.sent[2]).toBe('[deployhealth worker] the backup service is succeeding again.');
   });
 });

@@ -1,5 +1,5 @@
 import { BlockedUrlError, parsePublicHttpUrl } from '@deployhealth/core';
-import { WORKER_HEARTBEAT_MAX_AGE_SECONDS } from '@deployhealth/db';
+import { BACKUP_STALE_DAYS, WORKER_HEARTBEAT_MAX_AGE_SECONDS } from '@deployhealth/db';
 import { errorLabel } from './jobs';
 
 /**
@@ -7,7 +7,10 @@ import { errorLabel } from './jobs';
  * /slack appended; `{ text }` like project alerts, through the guarded webhook sender):
  * - the check-endpoints heartbeat is older than WORKER_HEARTBEAT_MAX_AGE_SECONDS (uptime checks
  *   aren't running), then once more when it recovers;
- * - a queue's job failed FAILURES_BEFORE_ALERT times in a row, then once more when it succeeds.
+ * - a queue's job failed FAILURES_BEFORE_ALERT times in a row, then once more when it succeeds;
+ * - the backup service's 'backup' heartbeat is older than BACKUP_STALE_DAYS (at most once a day),
+ *   then once more when it's fresh. Backups count as set up once that row exists (the first run
+ *   writes it), so the worker needs no backup setting and never holds the R2 keys.
  * Messages name queues, counts and an error's name and code, never a message, URL or value.
  * A dead worker process can't post about itself: the external monitor on /api/health/worker
  * covers that (docs/deploy-railway.md, step 9).
@@ -19,6 +22,8 @@ export const FAILURES_BEFORE_ALERT = 3;
 export const ALERT_REPEAT_MS = 60 * 60_000;
 /** At most this many alerts per rolling hour, whatever their kinds. */
 export const MAX_ALERTS_PER_HOUR = 10;
+/** The stale-backup alert repeats at most once a day: the backup service runs daily. */
+export const BACKUP_ALERT_REPEAT_MS = 24 * 3_600_000;
 /** How often the heartbeat watch reads the heartbeat's age. */
 export const HEARTBEAT_WATCH_INTERVAL_MS = 60_000;
 
@@ -34,6 +39,8 @@ export interface OperatorAlerts {
   jobSucceeded(queue: string): Promise<void>;
   /** The heartbeat's age in seconds (null: never written). */
   heartbeat(ageSeconds: number | null): Promise<void>;
+  /** The backup heartbeat's age in seconds (null: backups aren't set up yet, so nothing to say). */
+  backupHeartbeat(ageSeconds: number | null): Promise<void>;
 }
 
 /** The webhook URL when it's a public http(s) URL, else null with one error line (alerts stay off). */
@@ -55,11 +62,12 @@ export function createOperatorAlerts(deps: OperatorAlertDeps): OperatorAlerts {
   const lastSentAt = new Map<string, number>();
   const sentAt: number[] = [];
   let heartbeatStale = false;
+  let backupStale = false;
 
-  async function notify(kind: string, text: string): Promise<void> {
+  async function notify(kind: string, text: string, repeatMs = ALERT_REPEAT_MS): Promise<void> {
     const at = now();
     const last = lastSentAt.get(kind);
-    if (last !== undefined && at - last < ALERT_REPEAT_MS) return;
+    if (last !== undefined && at - last < repeatMs) return;
     while (sentAt.length > 0 && at - sentAt[0]! >= 60 * 60_000) sentAt.shift();
     if (sentAt.length >= MAX_ALERTS_PER_HOUR) {
       deps.log(`[operator] alert not sent (more than ${MAX_ALERTS_PER_HOUR} this hour): ${text}`);
@@ -102,6 +110,19 @@ export function createOperatorAlerts(deps: OperatorAlertDeps): OperatorAlerts {
         await notify('heartbeat:ok', 'the check-endpoints heartbeat is fresh again: uptime checks are running.');
       }
     },
+
+    async backupHeartbeat(ageSeconds) {
+      if (ageSeconds === null) return;
+      const days = ageSeconds / 86_400;
+      if (days > BACKUP_STALE_DAYS) {
+        backupStale = true;
+        await notify('backup', `the backup service hasn't succeeded for ${Math.floor(days)} days (the limit is ${BACKUP_STALE_DAYS}): check its cron runs on Railway.`, BACKUP_ALERT_REPEAT_MS);
+      } else if (backupStale) {
+        backupStale = false;
+        lastSentAt.delete('backup');
+        await notify('backup:ok', 'the backup service is succeeding again.');
+      }
+    },
   };
 }
 
@@ -110,6 +131,7 @@ export const NO_OPERATOR_ALERTS: OperatorAlerts = {
   jobFailed: async () => {},
   jobSucceeded: async () => {},
   heartbeat: async () => {},
+  backupHeartbeat: async () => {},
 };
 
 /**

@@ -1,5 +1,6 @@
 import { escapeChatText, type PrCheckJobData } from '@deployhealth/core';
 import {
+  BACKUP_HEARTBEAT,
   BUNDLED_MIGRATIONS,
   claimDueEndpoints,
   createDb,
@@ -138,11 +139,14 @@ async function main(): Promise<void> {
   );
 
   // The heartbeat watch runs on its own timer, not as a pg-boss job, so it still fires when the
-  // queues are stuck. Only with operator alerts on.
+  // queues are stuck. Only with operator alerts on. It also reads the backup service's heartbeat
+  // (a separate Railway service; this process holds no R2 keys).
   const watch = operatorUrl
     ? setInterval(() => {
         heartbeatAgeSeconds(db)
           .then((age) => operator.heartbeat(age))
+          .then(() => heartbeatAgeSeconds(db, BACKUP_HEARTBEAT))
+          .then((age) => operator.backupHeartbeat(age))
           .catch((error: unknown) => log(`[operator] heartbeat not read: ${errorLabel(error)}`));
       }, HEARTBEAT_WATCH_INTERVAL_MS)
     : null;
