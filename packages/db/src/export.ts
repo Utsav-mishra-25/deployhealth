@@ -89,7 +89,15 @@ export interface UserExport {
     createdAt: string;
     updatedAt: string;
   }>;
-  githubAppInstallations: Array<{ account: string; accountType: string; suspendedAt: string | null; createdAt: string; repositories: string[] }>;
+  githubAppInstallations: Array<{
+    account: string;
+    accountType: string;
+    /** 'all' (every repository of the account) or 'selected'; null until GitHub has said. */
+    repositorySelection: string | null;
+    suspendedAt: string | null;
+    createdAt: string;
+    repositories: string[];
+  }>;
 }
 
 const iso = (date: Date) => date.toISOString();
@@ -217,6 +225,7 @@ export async function exportUserData(db: Db, userId: string, now: Date = new Dat
       githubAppInstallations: installationRows.map((i) => ({
         account: i.accountLogin,
         accountType: i.accountType,
+        repositorySelection: i.repositorySelection,
         suspendedAt: isoOrNull(i.suspendedAt),
         createdAt: iso(i.createdAt),
         repositories: (reposByInstallation.get(i.id) ?? []).map((r) => r.repoFullName),
