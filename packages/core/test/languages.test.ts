@@ -85,9 +85,10 @@ describe("the README's language line", () => {
   const readme = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
   const flat = (text: string) => text.replace(/\s+/g, ' ');
 
-  it('opens the README, before the first screenshot, as the constant', () => {
-    const opening = readme.slice(0, readme.indexOf('!['));
-    expect(opening.split('\n')).toContain(LANGUAGES_SENTENCE);
+  it('opens Known limitations, before its first bullet, as the constant (and not the README itself)', () => {
+    const limitations = readme.slice(readme.indexOf('## Known limitations'));
+    expect(limitations.slice(0, limitations.indexOf('\n- ')).split('\n')).toContain(LANGUAGES_SENTENCE);
+    expect(readme.slice(0, readme.indexOf('![')).split('\n')).not.toContain(LANGUAGES_SENTENCE);
   });
 
   it('is the first known limitation, with the CLI\'s own line', () => {

@@ -132,7 +132,8 @@ And in core, for client components:
   change the scanner and a page that no longer matches fails. Unknown stacks 404
   (`dynamicParams = false`).
   Under the headline, one line names the languages the scanner reads: `LANGUAGES_SENTENCE` (core
-  `languages.ts`), the same line as the README's opening and the npm README's (tests pin all three).
+  `languages.ts`), the same line as the one opening the README's Known limitations and the npm
+  README's (tests pin all three).
 - **Setup copy** is worded once in `lib/setup-copy.ts` (browser-safe: `TokenReveal` is rendered by
   a client form), in the landing page's order: **Pull request checks (GitHub App)** (the App plus a
   project for the exact owner/repo; no token, no secret, no variable), then **Optional: deploy
