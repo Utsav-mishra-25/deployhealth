@@ -1,4 +1,4 @@
-import type { FindingKind, FindingRow } from '@deployhealth/core';
+import { findingAction, type EnvScope, type FindingKind, type FindingRow } from '@deployhealth/core';
 import { KIND_STYLES } from './counts';
 
 const DESCRIPTIONS: Record<FindingKind, string> = {
@@ -17,8 +17,8 @@ function detail(f: FindingRow): string {
   return 'not defined';
 }
 
-/** One table per kind, with file:line for every finding. */
-export function FindingsByKind({ findings }: { findings: FindingRow[] }) {
+/** One table per kind, with file:line and what to do for every finding. */
+export function FindingsByKind({ findings, envScopes }: { findings: FindingRow[]; envScopes: EnvScope[] | null }) {
   return (
     <div className="space-y-6">
       {(['missing', 'unused', 'mismatch'] as const).map((kind) => {
@@ -42,6 +42,7 @@ export function FindingsByKind({ findings }: { findings: FindingRow[] }) {
                       <th className="px-3 py-2 font-medium">Variable</th>
                       <th className="px-3 py-2 font-medium">Location</th>
                       <th className="px-3 py-2 font-medium">Detail</th>
+                      <th className="px-3 py-2 font-medium">What to do</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -50,6 +51,9 @@ export function FindingsByKind({ findings }: { findings: FindingRow[] }) {
                         <td className="px-3 py-2 font-mono font-medium">{f.var_name}</td>
                         <td className="px-3 py-2 font-mono text-gray-700">{location(f)}</td>
                         <td className="px-3 py-2 text-gray-500">{detail(f)}</td>
+                        <td className="min-w-64 px-3 py-2 break-all whitespace-normal text-gray-700" data-testid="finding-action">
+                          {findingAction(f, envScopes)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

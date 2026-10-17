@@ -181,7 +181,7 @@ export async function ProjectView({
             <div className="space-y-6">
               <NoReferencesNotice show={detail.noEnvVarReferences} />
               <NoEnvFileNotices scopes={detail.scopesWithoutEnvFiles} handoffHref={paths.handoff(project.id)} />
-              <FindingsByKind findings={detail.findings} />
+              <FindingsByKind findings={detail.findings} envScopes={detail.scan.envScopes} />
             </div>
           </section>
 
