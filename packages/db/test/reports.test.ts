@@ -1,9 +1,10 @@
-import { parseMonth, reportTotals, summaryLine, type FindingRow } from '@deployhealth/core';
+import { parseMonth, reportSummary, type FindingRow } from '@deployhealth/core';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { recordCheck } from '../src/monitoring';
 import { getClientReport } from '../src/reports';
 import { recordScan } from '../src/queries';
-import { alerts, checks, endpointDailyStats, projects } from '../src/schema';
+import { alerts, checks, endpointDailyStats, projects, users } from '../src/schema';
 import { makeClient, makeEndpoint, makeProject, makeUser, openTestDb, truncateAll } from './test-db';
 
 const handle = openTestDb();
@@ -45,7 +46,8 @@ async function septemberStats(endpointId: string, days: number, checksPerDay: nu
  * - api: one endpoint at 99.88% (12 failures in 10,000 checks) with one 21-minute incident, and
  *   four deploys.
  * - docs: no endpoints, no deploys.
- * So: "3 projects, 99.94% uptime, 1 incident (21m), 14 deploys, 2 config issues fixed".
+ * So: "In September, Acme Corp's sites were up 99.94% of the time. There was one outage (21 minutes,
+ * 12 Sep). 14 updates were deployed and two configuration issues were fixed."
  */
 async function acmeSeptember() {
   const user = await makeUser(db);
@@ -81,10 +83,55 @@ async function acmeSeptember() {
 }
 
 describe('getClientReport', () => {
-  it('produces the exact summary line for a fixture month', async () => {
+  it('produces the exact summary for a fixture month', async () => {
     const { acme } = await acmeSeptember();
     const report = await getClientReport(db, acme.id, SEPTEMBER, OCT_5);
-    expect(summaryLine(reportTotals(report!))).toBe('3 projects, 99.94% uptime, 1 incident (21m), 14 deploys, 2 config issues fixed');
+    expect(reportSummary(report!)).toBe(
+      "In September, Acme Corp's sites were up 99.94% of the time. There was one outage (21 minutes, 12 Sep). " +
+        '14 updates were deployed and two configuration issues were fixed.',
+    );
+  });
+
+  it("names who prepared it: the owner's GitHub name, else their login", async () => {
+    const { user, acme } = await acmeSeptember();
+    expect((await getClientReport(db, acme.id, SEPTEMBER, OCT_5))?.preparedBy).toBe(user.login);
+    await db.update(users).set({ name: '  ' }).where(eq(users.id, user.id));
+    expect((await getClientReport(db, acme.id, SEPTEMBER, OCT_5))?.preparedBy).toBe(user.login);
+    await db.update(users).set({ name: 'Utsav Mishra' }).where(eq(users.id, user.id));
+    expect((await getClientReport(db, acme.id, SEPTEMBER, OCT_5))?.preparedBy).toBe('Utsav Mishra');
+  });
+
+  it("counts an incident's new missing settings as its alert did, within the project only", async () => {
+    const user = await makeUser(db);
+    const client = await makeClient(db, user.id, 'Linked Co');
+    const project = await makeProject(db, user.id);
+    await assign(project.id, client.id);
+    const endpoint = await makeEndpoint(db, project.id);
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: at('2026-09-10T09:00:00Z'), findings: [missing('OLD_ONE')] });
+    await recordScan(db, {
+      projectId: project.id,
+      sha: 'bbbbbbb',
+      branch: 'main',
+      deployedAt: at('2026-09-10T11:56:00Z'),
+      findings: [missing('OLD_ONE'), missing('REDIS_URL'), missing('STRIPE_KEY')],
+    });
+    const check = (iso: string, ok: boolean) => ({ checkedAt: at(iso), statusCode: ok ? 200 : 503, latencyMs: 20, ok, error: ok ? null : 'x' });
+    await recordCheck(db, endpoint.id, check('2026-09-10T11:50:00Z', true));
+    await recordCheck(db, endpoint.id, check('2026-09-10T12:00:00Z', false));
+    await recordCheck(db, endpoint.id, check('2026-09-10T12:01:00Z', false));
+    await recordCheck(db, endpoint.id, check('2026-09-10T12:31:00Z', true));
+
+    const report = await getClientReport(db, client.id, SEPTEMBER, OCT_5);
+    const [incident] = report!.projects[0]!.incidents;
+    expect(incident?.message).toContain('which introduced 2 missing env vars: REDIS_URL, STRIPE_KEY');
+    expect(incident?.afterDeploy).toEqual({ newConfigIssues: 2 });
+    expect(reportSummary(report!)).toContain('There was one outage (30 minutes, 10 Sep) after a deploy that was missing two settings.');
+
+    // A related deploy that isn't this project's is never read.
+    const stranger = await makeProject(db, (await makeUser(db)).id);
+    const foreign = await recordScan(db, { projectId: stranger.id, sha: 'ccccccc', branch: 'main', deployedAt: at('2026-09-10T11:00:00Z'), findings: [missing('X')] });
+    await db.update(alerts).set({ relatedDeployId: foreign.deployId });
+    expect((await getClientReport(db, client.id, SEPTEMBER, OCT_5))!.projects[0]!.incidents[0]?.afterDeploy).toBeNull();
   });
 
   it('breaks the month down per project: endpoints, incidents, deploy diffs and open findings', async () => {
@@ -103,6 +150,7 @@ describe('getClientReport', () => {
         resolvedAt: at('2026-09-12T10:21:00Z'),
         durationMs: 21 * 60_000,
         message: 'Acme API started failing; no deploy in the 30 minutes before the first failure',
+        afterDeploy: null,
       },
     ]);
     expect(api?.deploys).toHaveLength(4);
@@ -137,7 +185,9 @@ describe('getClientReport', () => {
     const report = await getClientReport(db, client.id, SEPTEMBER, at('2026-09-28T12:00:00Z'));
     expect(report?.projects[0]?.endpoints[0]).toMatchObject({ checks: 2, ok: 1, uptime: 0.5 });
     expect(report?.projects[0]?.incidents[0]).toMatchObject({ resolvedAt: null, durationMs: 30 * 60_000 });
-    expect(summaryLine(reportTotals(report!))).toBe('1 project, 50.00% uptime, 1 incident (30m), 0 deploys, no config issues fixed');
+    expect(reportSummary(report!)).toBe(
+      "So far in September, Now Co's site was up 50.00% of the time. There is one ongoing outage (since 28 Sep, 30 minutes so far). No updates were deployed.",
+    );
   });
 
   it('returns null for an unknown client', async () => {

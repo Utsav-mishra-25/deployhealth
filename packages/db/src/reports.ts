@@ -1,8 +1,9 @@
 import { endpointLabel, findingsDiff, type FindingRow, type ReportData, type ReportMonth, type ReportProject } from '@deployhealth/core';
 import { and, asc, desc, eq, gte, lt } from 'drizzle-orm';
 import type { Db } from './client';
+import { deployConfigChange } from './deploy-config';
 import { uptimeBetween, uptimeRatio } from './monitoring';
-import { alerts, clients, deploys, endpoints, findings, projects, scans, type Project } from './schema';
+import { alerts, clients, deploys, endpoints, findings, projects, scans, users, type Project } from './schema';
 
 /**
  * The monthly report for one client: every project assigned to it, for one UTC month.
@@ -13,8 +14,13 @@ import { alerts, clients, deploys, endpoints, findings, projects, scans, type Pr
  * Returns null for an unknown client.
  */
 export async function getClientReport(db: Db, clientId: string, month: ReportMonth, now = new Date()): Promise<ReportData | null> {
-  const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
-  if (!client) return null;
+  const [row] = await db
+    .select({ client: clients, name: users.name, login: users.login })
+    .from(clients)
+    .innerJoin(users, eq(users.id, clients.userId))
+    .where(eq(clients.id, clientId));
+  if (!row) return null;
+  const { client } = row;
 
   const projectRows = await db
     .select()
@@ -24,6 +30,8 @@ export async function getClientReport(db: Db, clientId: string, month: ReportMon
 
   return {
     client: { id: client.id, name: client.name, contactEmail: client.contactEmail },
+    // "Prepared by": the owner's GitHub name, else their login. Nothing else about them.
+    preparedBy: row.name?.trim() || row.login,
     month,
     generatedAt: now,
     projects: await Promise.all(projectRows.map((project) => projectReport(db, project, month, now))),
@@ -65,13 +73,16 @@ async function projectReport(db: Db, project: Project, month: ReportMonth, now: 
   );
 
   const incidentEnd = end.getTime();
-  const incidents = alertRows.map((r) => ({
-    endpoint: r.url ? endpointLabel({ url: r.url, name: r.name }) : 'project',
-    openedAt: r.alert.createdAt,
-    resolvedAt: r.alert.resolvedAt,
-    durationMs: Math.max(0, (r.alert.resolvedAt?.getTime() ?? incidentEnd) - r.alert.createdAt.getTime()),
-    message: r.alert.message,
-  }));
+  const incidents = await Promise.all(
+    alertRows.map(async (r) => ({
+      endpoint: r.url ? endpointLabel({ url: r.url, name: r.name }) : 'project',
+      openedAt: r.alert.createdAt,
+      resolvedAt: r.alert.resolvedAt,
+      durationMs: Math.max(0, (r.alert.resolvedAt?.getTime() ?? incidentEnd) - r.alert.createdAt.getTime()),
+      message: r.alert.message,
+      afterDeploy: await afterDeploy(db, project.id, r.alert.relatedDeployId),
+    })),
+  );
 
   let previous = before ? await latestScanFindings(db, before.id) : null;
   const reportDeploys = [];
@@ -90,6 +101,22 @@ async function projectReport(db: Db, project: Project, month: ReportMonth, now: 
     deploys: reportDeploys,
     openFindings: latest ? ((await latestScanFindings(db, latest.id)) ?? []) : [],
   };
+}
+
+/**
+ * The deploy an alert linked, and how many settings it newly left undeclared (counted as the
+ * alert's message counts them); null without a linked deploy (none, or deleted since). Read
+ * within the project, so a share link reaches nothing outside the client's projects.
+ */
+async function afterDeploy(db: Db, projectId: string, deployId: string | null): Promise<{ newConfigIssues: number } | null> {
+  if (!deployId) return null;
+  const [deploy] = await db
+    .select({ id: deploys.id, deployedAt: deploys.deployedAt })
+    .from(deploys)
+    .where(and(eq(deploys.id, deployId), eq(deploys.projectId, projectId)));
+  if (!deploy) return null;
+  const change = await deployConfigChange(db, projectId, deploy);
+  return { newConfigIssues: change.newMissing.length + change.newUndeclared.length };
 }
 
 /** The findings of a deploy's latest scan; null when it has no scan. */
