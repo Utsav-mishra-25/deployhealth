@@ -1,7 +1,7 @@
 # Local Postgres for development and tests: `docker compose up -d`
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: deployhealth
       POSTGRES_PASSWORD: deployhealth
@@ -9,7 +9,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18 keeps its data under /var/lib/postgresql/18/docker: mount the parent. A new volume
+      # name, because 18 can't read the data directory the old postgres:16 volume holds.
+      - pgdata18:/var/lib/postgresql
       - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U deployhealth"]
@@ -18,4 +20,4 @@ services:
       retries: 20
 
 volumes:
-  pgdata:
+  pgdata18:
