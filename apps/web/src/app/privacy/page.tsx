@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { li, ProsePage, Section } from '@/components/prose-page';
 import { githubSignInReads } from '@/lib/auth-providers';
 import {
+  BACKUPS_TEXT,
   CHECK_RETENTION_TEXT,
   DELETION_RECORD_TEXT,
   DELETION_REQUEST_DAYS,
@@ -106,6 +107,10 @@ export default function PrivacyPage() {
 
       <Section title="Error reports and logs">
         <p data-testid="error-reports">{ERROR_REPORTS_TEXT}</p>
+      </Section>
+
+      <Section title="Backups">
+        <p data-testid="backups">{BACKUPS_TEXT}</p>
       </Section>
 
       <Section title="Where it is stored, and who processes it">
