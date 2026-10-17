@@ -137,6 +137,7 @@ describe('getHandoffData', () => {
     await recordCheck(db, api.id, fail(daysAgo(35)));
     await recordCheck(db, api.id, fail(new Date(daysAgo(35).getTime() + 60_000)));
     await recordCheck(db, api.id, ok(new Date(daysAgo(35).getTime() + 120_000)));
+    await recordCheck(db, api.id, ok(new Date(daysAgo(35).getTime() + 180_000)));
     // Recent: 3 ok, then a failing run that opens an alert and stays open.
     for (const m of [300, 200, 100]) await recordCheck(db, api.id, ok(minutesAgo(m)));
     await recordCheck(db, api.id, fail(minutesAgo(2)));

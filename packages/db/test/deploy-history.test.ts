@@ -93,9 +93,11 @@ describe('listDeployHistory: the outage after a deploy', () => {
     expect(history[0]!.outage).toEqual({ startedAt: minutes(74), resolvedAt: null, endpoint: 'Shop API', more: 0 });
     expect(history[1]!.outage).toBeNull();
 
+    // The first ok isn't recovery yet; the second resolves it.
     await recordCheck(db, endpoint.id, ok(minutes(95)));
+    await recordCheck(db, endpoint.id, ok(minutes(96)));
     history = await listDeployHistory(db, owner.id, project.id);
-    expect(history[0]!.outage).toEqual({ startedAt: minutes(74), resolvedAt: minutes(95), endpoint: 'Shop API', more: 0 });
+    expect(history[0]!.outage).toEqual({ startedAt: minutes(74), resolvedAt: minutes(96), endpoint: 'Shop API', more: 0 });
   });
 
   it('puts an outage under the deploy it followed, not the next one, and counts further outages in the window', async () => {

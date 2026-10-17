@@ -1,4 +1,4 @@
-import { ALERT_FAILURE_THRESHOLD, DEPLOY_LINK_WINDOW_MINUTES } from './constants';
+import { ALERT_FAILURE_THRESHOLD, ALERT_RECOVERY_THRESHOLD, DEPLOY_LINK_WINDOW_MINUTES } from './constants';
 
 // Pure alerting logic shared by the worker (decisions, messages) and the web app (status badges).
 
@@ -9,6 +9,8 @@ export interface AlertInputs {
   ok: boolean;
   /** Failed checks in a row, including this one (0 when `ok`). */
   consecutiveFailures: number;
+  /** Ok checks in a row, including this one (0 when failed). */
+  consecutiveOk: number;
   /** Whether the endpoint has ever recorded an ok check (including this one). */
   hasOkHistory: boolean;
   hasOpenAlert: boolean;
@@ -16,13 +18,13 @@ export interface AlertInputs {
 
 /**
  * The alert state machine, evaluated after every check:
- * - ok check with an open alert → resolve it
+ * - ok check with an open alert, and at least ALERT_RECOVERY_THRESHOLD ok checks in a row → resolve it
  * - failed check, no open alert, at least ALERT_FAILURE_THRESHOLD failures in a row, and the
  *   endpoint has worked at least once → open one
  * - anything else → nothing (an endpoint that has never been up never alerts)
  */
 export function decideAlert(input: AlertInputs): AlertAction {
-  if (input.ok) return input.hasOpenAlert ? 'resolve' : 'none';
+  if (input.ok) return input.hasOpenAlert && input.consecutiveOk >= ALERT_RECOVERY_THRESHOLD ? 'resolve' : 'none';
   if (input.hasOpenAlert || !input.hasOkHistory) return 'none';
   return input.consecutiveFailures >= ALERT_FAILURE_THRESHOLD ? 'open' : 'none';
 }
@@ -130,6 +132,22 @@ export function alertResolvedMessage({
   resolvedAt: Date;
 }): string {
   return `${endpointLabel(endpoint)} is back up (alert open for ${formatDuration(resolvedAt.getTime() - openedAt.getTime())})`;
+}
+
+/**
+ * The resolved message when the endpoint was paused (disabled) while its alert was open: the
+ * alert ends at the pause, so a paused endpoint isn't counted as down until month end.
+ */
+export function alertPausedMessage({
+  endpoint,
+  openedAt,
+  pausedAt,
+}: {
+  endpoint: EndpointRef;
+  openedAt: Date;
+  pausedAt: Date;
+}): string {
+  return `${endpointLabel(endpoint)} paused (alert open for ${formatDuration(pausedAt.getTime() - openedAt.getTime())})`;
 }
 
 /** Body of the Slack/Discord-compatible webhook: plain `{ text }`. */

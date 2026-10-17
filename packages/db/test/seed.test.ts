@@ -15,6 +15,8 @@ const handle = openTestDb();
 const { db } = handle;
 const NOW = new Date('2026-09-28T12:00:00Z');
 const FIRST_FAILURE = new Date(NOW.getTime() - (SCENARIO.deployMinutesAgo - SCENARIO.failureAfterDeployMinutes) * 60_000);
+/** The second failed check (a minute later) opens the alert; "Down for" counts from there. */
+const ALERT_OPENED = new Date(FIRST_FAILURE.getTime() + 60_000);
 
 beforeEach(async () => {
   await truncateAll(db);
@@ -96,7 +98,7 @@ describe('seed', () => {
     const homepage = monitoring.find((m) => m.endpoint.url === 'https://example.com/')!;
 
     expect(api.status).toBe('down');
-    expect(api.failingSince).toEqual(FIRST_FAILURE);
+    expect(api.failingSince).toEqual(ALERT_OPENED);
     expect(api.endpoint.consecutiveFailures).toBe(SCENARIO.deployMinutesAgo - SCENARIO.failureAfterDeployMinutes);
     expect(api.recent[0]).toMatchObject({ ok: false, statusCode: 503 });
     expect(api.uptime7d).toBeGreaterThan(0.99);
@@ -121,7 +123,7 @@ describe('seed', () => {
       'northwind-site': 'up',
       portfolio: 'up',
     });
-    expect(all.find((p) => p.name === 'acme-storefront')?.failingSince).toEqual(FIRST_FAILURE);
+    expect(all.find((p) => p.name === 'acme-storefront')?.failingSince).toEqual(ALERT_OPENED);
   });
 
   it('prints a token that authenticates the storefront project', async () => {

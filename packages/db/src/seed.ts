@@ -302,12 +302,15 @@ async function replayChecks(db: Db, endpointId: string, outcomes: CheckOutcome[]
 }
 
 async function finishEndpoint(db: Db, endpointId: string, outcomes: CheckOutcome[], intervalSeconds: number): Promise<void> {
-  let trailing = 0;
-  for (let i = outcomes.length - 1; i >= 0 && !outcomes[i]!.ok; i--) trailing++;
+  const trailing = (ok: boolean) => {
+    let n = 0;
+    for (let i = outcomes.length - 1; i >= 0 && outcomes[i]!.ok === ok; i--) n++;
+    return n;
+  };
   const last = outcomes[outcomes.length - 1]!.checkedAt;
   await db
     .update(endpoints)
-    .set({ consecutiveFailures: trailing, nextCheckAt: new Date(last.getTime() + intervalSeconds * 1000) })
+    .set({ consecutiveFailures: trailing(false), consecutiveOk: trailing(true), nextCheckAt: new Date(last.getTime() + intervalSeconds * 1000) })
     .where(eq(endpoints.id, endpointId));
 }
 
@@ -422,12 +425,13 @@ async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResul
   // A past incident on northwind, ~3 days ago, with no deploy nearby: opened and resolved.
   const bakeryChecks = history({ now, intervalSeconds: 300, baseLatencyMs: 210, seed: 3 });
   const incidentStart = bakeryChecks.findIndex((c) => c.checkedAt.getTime() >= now.getTime() - 3 * 86_400_000);
-  const incident = bakeryChecks.slice(incidentStart, incidentStart + 4).map((c, i) =>
+  // Three timeouts, then the two ok checks in a row that resolve it (ALERT_RECOVERY_THRESHOLD).
+  const incident = bakeryChecks.slice(incidentStart, incidentStart + 5).map((c, i) =>
     i < 3 ? { ...c, statusCode: null, latencyMs: null, ok: false, error: 'Timed out after 10s' } : c,
   );
   await insertChecks(db, bakery!.id, bakeryChecks.slice(0, incidentStart));
   await replayChecks(db, bakery!.id, incident);
-  await insertChecks(db, bakery!.id, bakeryChecks.slice(incidentStart + 4));
+  await insertChecks(db, bakery!.id, bakeryChecks.slice(incidentStart + 5));
   await finishEndpoint(db, bakery!.id, bakeryChecks, 300);
 
   const folioChecks = history({ now, intervalSeconds: 900, baseLatencyMs: 60, seed: 4 });

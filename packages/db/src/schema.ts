@@ -189,6 +189,8 @@ export const endpoints = pgTable(
     nextCheckAt: ts('next_check_at').notNull().defaultNow(),
     /** Failed checks since the last ok one; drives the alert threshold. */
     consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    /** Ok checks since the last failed one; drives the recovery threshold. */
+    consecutiveOk: integer('consecutive_ok').notNull().default(0),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -399,6 +401,8 @@ export const alerts = pgTable(
     message: text('message').notNull(),
     createdAt: ts('created_at').notNull().defaultNow(),
     resolvedAt: ts('resolved_at'),
+    /** How it resolved: 'recovered' (ok checks) or 'paused' (endpoint disabled); null while open, and on rows before 0010 (recovered). */
+    resolution: text('resolution', { enum: ['recovered', 'paused'] }),
     relatedDeployId: uuid('related_deploy_id').references(() => deploys.id, { onDelete: 'set null' }),
   },
   (t) => [
@@ -409,6 +413,7 @@ export const alerts = pgTable(
     uniqueIndex('alerts_one_open_per_endpoint')
       .on(t.endpointId)
       .where(sql`${t.resolvedAt} is null`),
+    check('alerts_resolution_check', sql`${t.resolution} is null or ${t.resolution} in ('recovered', 'paused')`),
   ],
 );
 

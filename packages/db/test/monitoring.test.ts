@@ -266,7 +266,7 @@ describe('createEndpoint: hard caps', () => {
 });
 
 describe('recordCheck and the alert lifecycle', () => {
-  it('opens on the second consecutive failure after an ok check and resolves on the next ok', async () => {
+  it('opens on the second consecutive failure after an ok check and resolves on the second ok in a row', async () => {
     const { endpoint, project } = await setup();
 
     expect((await recordCheck(db, endpoint.id, ok(minutes(0)))).event).toBeNull();
@@ -286,14 +286,71 @@ describe('recordCheck and the alert lifecycle', () => {
     expect(await recordCheck(db, endpoint.id, fail(minutes(3)))).toEqual({ consecutiveFailures: 3, event: null });
     expect(await db.select().from(alerts)).toHaveLength(1);
 
-    const resolved = await recordCheck(db, endpoint.id, ok(minutes(4)));
+    // One ok check isn't recovery yet.
+    expect(await recordCheck(db, endpoint.id, ok(minutes(4)))).toEqual({ consecutiveFailures: 0, event: null });
+    expect((await db.select().from(alerts))[0]?.resolvedAt).toBeNull();
+
+    const resolved = await recordCheck(db, endpoint.id, ok(minutes(5)));
     expect(resolved).toMatchObject({
       consecutiveFailures: 0,
-      event: { type: 'resolved', alertId: opened.event!.alertId, message: 'api.acme.com is back up (alert open for 2m)' },
+      event: { type: 'resolved', alertId: opened.event!.alertId, message: 'api.acme.com is back up (alert open for 3m)' },
     });
     const [alert] = await db.select().from(alerts);
-    expect(alert).toMatchObject({ endpointId: endpoint.id, kind: 'endpoint_down', createdAt: minutes(2), resolvedAt: minutes(4) });
-    expect(await db.select().from(checks)).toHaveLength(5);
+    expect(alert).toMatchObject({
+      endpointId: endpoint.id,
+      kind: 'endpoint_down',
+      createdAt: minutes(2),
+      resolvedAt: minutes(5),
+      resolution: 'recovered',
+    });
+    expect(await db.select().from(checks)).toHaveLength(6);
+  });
+
+  it('keeps both counters in the one update across a sequence', async () => {
+    const { endpoint } = await setup();
+    const counters = async () => {
+      const [row] = await db
+        .select({ failures: endpoints.consecutiveFailures, oks: endpoints.consecutiveOk })
+        .from(endpoints)
+        .where(eq(endpoints.id, endpoint.id));
+      return row;
+    };
+    const seen = [];
+    for (const [i, result] of [true, true, false, false, false, true, false, true, true, true].entries()) {
+      await recordCheck(db, endpoint.id, (result ? ok : fail)(minutes(i)));
+      seen.push(await counters());
+    }
+    expect(seen).toEqual([
+      { failures: 0, oks: 1 },
+      { failures: 0, oks: 2 },
+      { failures: 1, oks: 0 },
+      { failures: 2, oks: 0 },
+      { failures: 3, oks: 0 },
+      { failures: 0, oks: 1 },
+      { failures: 1, oks: 0 },
+      { failures: 0, oks: 1 },
+      { failures: 0, oks: 2 },
+      { failures: 0, oks: 3 },
+    ]);
+  });
+
+  it('a flapping host (fail, fail, ok, fail, fail at 1-minute intervals) is one open alert, never resolved', async () => {
+    const { endpoint } = await setup();
+    await recordCheck(db, endpoint.id, ok(minutes(0)));
+    const events = [];
+    for (let i = 1; i <= 30; i++) {
+      const outcome = i % 3 === 0 ? ok(minutes(i)) : fail(minutes(i));
+      const { event } = await recordCheck(db, endpoint.id, outcome);
+      if (event) events.push(event.type);
+    }
+    expect(events).toEqual(['opened']);
+    const rows = await db.select().from(alerts);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ createdAt: minutes(2), resolvedAt: null, resolution: null });
+    // The one-open-alert index still holds.
+    await expect(
+      db.insert(alerts).values({ projectId: endpoint.projectId, endpointId: endpoint.id, kind: 'endpoint_down', message: 'x' }),
+    ).rejects.toThrow();
   });
 
   it('never alerts for an endpoint that has never been ok', async () => {
@@ -507,12 +564,19 @@ describe('failingSince (the "Down for 21m" duration)', () => {
 
   it('starts at the first failed check of the current run, not an earlier one', async () => {
     const { user, project, endpoint } = await setup();
-    await record(endpoint.id, [fail(minutes(-60)), ok(minutes(-50)), ok(minutes(-40)), fail(minutes(-21)), fail(minutes(-20)), fail(minutes(-10))]);
+    await record(endpoint.id, [fail(minutes(-60)), ok(minutes(-50)), ok(minutes(-40)), fail(minutes(-22)), fail(minutes(-21)), fail(minutes(-10))]);
+    expect(await monitoringOf(user.id, project.id, endpoint.id)).toMatchObject({ status: 'down', failingSince: minutes(-21) });
+  });
 
+  it('while an alert is open, counts from its created_at, so the note stays through the first ok check', async () => {
+    const { user, project, endpoint } = await setup();
+    // fail, fail (opens at -21), ok: still down, and the note is still there.
+    await record(endpoint.id, [ok(minutes(-40)), fail(minutes(-22)), fail(minutes(-21)), ok(minutes(-2))]);
     const down = await monitoringOf(user.id, project.id, endpoint.id);
     expect(down).toMatchObject({ status: 'down', failingSince: minutes(-21) });
     expect(failingFor('down', down.failingSince!, T0)).toBe('Down for 21m');
 
+    // The second ok resolves it.
     await record(endpoint.id, [ok(minutes(-1))]);
     expect(await monitoringOf(user.id, project.id, endpoint.id)).toMatchObject({ status: 'up', failingSince: null });
   });
@@ -534,8 +598,8 @@ describe('failingSince (the "Down for 21m" duration)', () => {
 
   it('gives each project row the failure behind its badge', async () => {
     const { user, project: shop, endpoint: api } = await setup();
-    // shop: api is down (alert open) since -21; a second endpoint has never worked, since -300.
-    await record(api.id, [ok(minutes(-40)), fail(minutes(-21)), fail(minutes(-20))]);
+    // shop: api is down (alert open at -20, still open after one ok); a second endpoint has never worked, since -300.
+    await record(api.id, [ok(minutes(-40)), fail(minutes(-21)), fail(minutes(-20)), ok(minutes(-1))]);
     const legacy = await makeEndpoint(db, shop.id);
     await record(legacy.id, [fail(minutes(-300)), fail(minutes(-200))]);
     // blog: one failing endpoint, no alert yet.
@@ -546,7 +610,7 @@ describe('failingSince (the "Down for 21m" duration)', () => {
     await record((await makeEndpoint(db, docs.id)).id, [fail(minutes(-9)), ok(minutes(-8))]);
 
     const rows = Object.fromEntries((await listProjectsForOwner(db, user.id)).map((p) => [p.name, p]));
-    expect(rows.shop).toMatchObject({ uptime: 'down', failingSince: minutes(-21) });
+    expect(rows.shop).toMatchObject({ uptime: 'down', failingSince: minutes(-20), failingEndpoints: ['api.acme.com'] });
     expect(rows.blog).toMatchObject({ uptime: 'degraded', failingSince: minutes(-4) });
     expect(rows.docs).toMatchObject({ uptime: 'up', failingSince: null });
   });
@@ -574,10 +638,11 @@ describe('endpoint names', () => {
     expect(await listOpenAlerts(db, user.id, project.id)).toMatchObject([
       { endpointUrl: 'https://api.acme.com/health', endpointName: 'Acme API' },
     ]);
+    await recordCheck(db, endpoint.id, ok(minutes(22)));
     expect((await recordCheck(db, endpoint.id, ok(minutes(23)))).event?.message).toBe('Acme API is back up (alert open for 21m)');
   });
 
-  it('label the endpoints behind a project badge, longest-failing first, falling back to the host', async () => {
+  it('label the endpoints behind a project badge, longest-down first, falling back to the host', async () => {
     const { user, project, endpoint } = await setup();
     await db.update(endpoints).set({ name: 'Acme API' }).where(eq(endpoints.id, endpoint.id));
     const cdn = await makeEndpoint(db, project.id, { url: 'https://cdn.acme.com/' });
@@ -590,8 +655,9 @@ describe('endpoint names', () => {
     await recordCheck(db, healthy.id, ok(minutes(-1)));
 
     const [row] = await listProjectsForOwner(db, user.id);
-    expect(row).toMatchObject({ uptime: 'down', failingSince: minutes(-30), failingEndpoints: ['cdn.acme.com', 'Acme API'] });
+    expect(row).toMatchObject({ uptime: 'down', failingSince: minutes(-29), failingEndpoints: ['cdn.acme.com', 'Acme API'] });
 
+    await recordCheck(db, cdn.id, ok(minutes(-2)));
     await recordCheck(db, cdn.id, ok(minutes(-1)));
     expect((await listProjectsForOwner(db, user.id))[0]?.failingEndpoints).toEqual(['Acme API']);
   });

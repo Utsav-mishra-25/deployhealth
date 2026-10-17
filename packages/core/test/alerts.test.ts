@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   alertOpenedMessage,
+  alertPausedMessage,
   alertResolvedMessage,
   decideAlert,
   endpointLabel,
@@ -16,12 +17,14 @@ import { newMissingVars } from '../src/findings';
 /** Feed a sequence of check results through the state machine, tracking state like the worker does. */
 function run(results: boolean[]): AlertAction[] {
   let failures = 0;
+  let oks = 0;
   let hasOk = false;
   let open = false;
   return results.map((ok) => {
     failures = ok ? 0 : failures + 1;
+    oks = ok ? oks + 1 : 0;
     hasOk ||= ok;
-    const action = decideAlert({ ok, consecutiveFailures: failures, hasOkHistory: hasOk, hasOpenAlert: open });
+    const action = decideAlert({ ok, consecutiveFailures: failures, consecutiveOk: oks, hasOkHistory: hasOk, hasOpenAlert: open });
     if (action === 'open') open = true;
     if (action === 'resolve') open = false;
     return action;
@@ -29,8 +32,19 @@ function run(results: boolean[]): AlertAction[] {
 }
 
 describe('decideAlert', () => {
-  it('opens on the second consecutive failure after an ok check, and resolves on the next ok', () => {
-    expect(run([true, false, false, false, true])).toEqual(['none', 'none', 'open', 'none', 'resolve']);
+  it('opens on the second consecutive failure after an ok check, and resolves on the second ok in a row', () => {
+    expect(run([true, false, false, false, true, true])).toEqual(['none', 'none', 'open', 'none', 'none', 'resolve']);
+  });
+
+  it('fail, fail, ok, ok resolves on the second ok', () => {
+    expect(run([true, false, false, true, true])).toEqual(['none', 'none', 'open', 'none', 'resolve']);
+  });
+
+  it('a flapping host (fail, fail, ok, fail, fail, …) opens once and never resolves', () => {
+    const flapping = [true, ...Array.from({ length: 20 }, () => [false, false, true]).flat(), false, false];
+    const actions = run(flapping);
+    expect(actions.filter((a) => a === 'open')).toHaveLength(1);
+    expect(actions).not.toContain('resolve');
   });
 
   it('ignores a single failure', () => {
@@ -46,10 +60,11 @@ describe('decideAlert', () => {
   });
 
   it('keeps one alert open through a long outage and can open again after recovery', () => {
-    expect(run([true, false, false, false, false, true, false, false])).toEqual([
+    expect(run([true, false, false, false, false, true, true, false, false])).toEqual([
       'none',
       'none',
       'open',
+      'none',
       'none',
       'none',
       'resolve',
@@ -59,7 +74,15 @@ describe('decideAlert', () => {
   });
 
   it('never opens a second alert while one is open', () => {
-    expect(decideAlert({ ok: false, consecutiveFailures: 9, hasOkHistory: true, hasOpenAlert: true })).toBe('none');
+    expect(decideAlert({ ok: false, consecutiveFailures: 9, consecutiveOk: 0, hasOkHistory: true, hasOpenAlert: true })).toBe('none');
+  });
+
+  it('resolves only at the recovery threshold with an alert open', () => {
+    const ok = { ok: true, consecutiveFailures: 0, hasOkHistory: true };
+    expect(decideAlert({ ...ok, consecutiveOk: 1, hasOpenAlert: true })).toBe('none');
+    expect(decideAlert({ ...ok, consecutiveOk: 2, hasOpenAlert: true })).toBe('resolve');
+    expect(decideAlert({ ...ok, consecutiveOk: 5, hasOpenAlert: true })).toBe('resolve');
+    expect(decideAlert({ ...ok, consecutiveOk: 2, hasOpenAlert: false })).toBe('none');
   });
 });
 
@@ -161,6 +184,24 @@ describe('alert messages', () => {
     );
     expect(webhookPayload('opened', 'shop', 'x.dev started failing')).toEqual({ text: '[down] shop: x.dev started failing' });
     expect(webhookPayload('resolved', 'shop', 'x.dev is back up')).toEqual({ text: '[resolved] shop: x.dev is back up' });
+  });
+
+  it('the resolved message runs from the open to the resolving check', () => {
+    // fail at 0, fail at 1 (opens), ok at 2, ok at 3 (resolves): open for 2m.
+    expect(alertResolvedMessage({ endpoint: { url: 'https://api.acme.com/health', name: 'Acme API' }, openedAt: at(1), resolvedAt: at(3) })).toBe(
+      'Acme API is back up (alert open for 2m)',
+    );
+  });
+
+  it('describes a pause that resolved an open alert', () => {
+    const endpoint = { url: 'https://api.acme.com/health', name: 'Acme API' };
+    const message = alertPausedMessage({ endpoint, openedAt: at(0), pausedAt: at(12) });
+    expect(message).toBe('Acme API paused (alert open for 12m)');
+    expect(webhookPayload('resolved', 'Acme Storefront', message).text).toBe('[resolved] Acme Storefront: Acme API paused (alert open for 12m)');
+    expect(alertPausedMessage({ endpoint: { url: 'https://x.dev' }, openedAt: at(0), pausedAt: at(75) })).toBe('x.dev paused (alert open for 1h 15m)');
+    expect(webhookPayload('resolved', '<!here> shop', alertPausedMessage({ endpoint: { url: 'https://x.dev', name: '@everyone' }, openedAt: at(0), pausedAt: at(1) })).text).toBe(
+      '[resolved] &lt;!here&gt; shop: @\u200beveryone paused (alert open for 1m)',
+    );
   });
 
   it('escapes chat markup and mass mentions in webhook text', () => {
