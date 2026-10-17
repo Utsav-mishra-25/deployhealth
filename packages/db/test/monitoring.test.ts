@@ -596,3 +596,43 @@ describe('endpoint names', () => {
     expect((await listProjectsForOwner(db, user.id))[0]?.failingEndpoints).toEqual(['Acme API']);
   });
 });
+
+describe('the alert message after splitting the deploy diff out of linkDeploy (deployConfigChange)', () => {
+  // Captured from recordCheck before the split (main at 3a88269), byte for byte: both kinds, more
+  // names than the list shows, an optional and an already-missing variable left out.
+  const BEFORE_SPLIT =
+    'api.acme.com started failing 4m after deploy b52952e, which introduced 7 missing env vars: A_KEY, B_KEY, C_KEY, D_KEY, E_KEY and 2 more, ' +
+    'plus 2 new env vars no env file declares: ROOT_ONE, ROOT_TWO';
+
+  it('is byte-identical for a linked deploy', async () => {
+    const { endpoint, project } = await setup();
+    const scopes = [{ scope: '', env_files: [] }, { scope: 'apps/api', env_files: ['.env.example' as const] }];
+    const root = (var_name: string, optional = false) => ({ var_name, scope: '', defined_in: [], ...(optional ? { optional: true as const } : {}) });
+    await recordScan(db, {
+      projectId: project.id,
+      sha: 'aaaaaaa',
+      branch: 'main',
+      deployedAt: minutes(-60),
+      findings: [missing('OLD_ONE')],
+      variables: [root('ROOT_OLD')],
+      envScopes: scopes,
+    });
+    const names = ['G_KEY', 'A_KEY', 'F_KEY', 'B_KEY', 'E_KEY', 'C_KEY', 'D_KEY'];
+    const linked = await recordScan(db, {
+      projectId: project.id,
+      sha: 'b52952e8192c38c054e53b5447ea20de88f2e2e9',
+      branch: 'main',
+      deployedAt: minutes(-4),
+      findings: [missing('OLD_ONE'), ...names.map(missing)],
+      variables: [root('ROOT_OLD'), root('ROOT_TWO'), root('ROOT_ONE'), root('ROOT_OPTIONAL', true)],
+      envScopes: scopes,
+    });
+    await recordCheck(db, endpoint.id, ok(minutes(-10)));
+    await recordCheck(db, endpoint.id, fail(minutes(0)));
+    const { event } = await recordCheck(db, endpoint.id, fail(minutes(1)));
+    expect(event?.message).toBe(BEFORE_SPLIT);
+    const [alert] = await db.select().from(alerts);
+    expect(alert?.message).toBe(BEFORE_SPLIT);
+    expect(alert?.relatedDeployId).toBe(linked.deployId);
+  });
+});
