@@ -497,10 +497,12 @@ API token can reach that one bucket only.
 
    Paste the token's values straight into Railway, never into a file or a chat, then close the
    Cloudflare page. **Deploy**.
-5. **The first run.** Railway runs a cron service only on its schedule. Set **Cron Schedule** to a
-   time a few minutes ahead in UTC (at 14:20 UTC, `25 14 * * *`), wait for that run, then set it
-   back to `41 3 * * *`. Its log should end with `[backup] done: dumped deployhealth/<time>.dump`,
-   after `deletions.json uploaded` and `… uploaded (N MB) in Ns`. A second run within 6.5 days logs
+5. **The first run.** Don't wait for the schedule: on the **backup** service's latest deployment,
+   use **Run now**. Its log should end with `[backup] done: dumped [redacted].123Z.dump`, after
+   `deletions.json uploaded` and `[backup] [redacted].123Z.dump uploaded (N MB) in Ns`: the logs'
+   redaction hides the key's `deployhealth/` prefix and the dump's date and time, leaving only the
+   milliseconds (`.123Z` here). For when it was taken, `restore.js --list`
+   ([maintenance.md](maintenance.md)) gives each dump's age. A second run within 6.5 days logs
    `newest dump is N days old` and only refreshes `deletions.json` and the heartbeat.
 6. **Check the heartbeat**: Railway → **Postgres** → **Data** → `worker_heartbeats` has a `backup`
    row. Without it the worker's stale-backup alert never starts, so nothing would tell you backups
