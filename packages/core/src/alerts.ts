@@ -118,7 +118,8 @@ export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissin
     const noun = newUndeclared.length === 1 ? 'new env var' : 'new env vars';
     parts.push(`${newUndeclared.length} ${noun} no env file declares: ${listNames(newUndeclared)}`);
   }
-  if (parts.length === 0) return `${lead}, which had no new config findings`;
+  // The deploy's config diff is empty: say so plainly, so the reader looks elsewhere.
+  if (parts.length === 0) return `${lead}, which changed no config`;
   return `${lead}, which introduced ${parts.join(', plus ')}`;
 }
 
