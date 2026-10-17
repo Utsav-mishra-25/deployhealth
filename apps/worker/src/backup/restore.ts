@@ -1,7 +1,7 @@
 import { basename, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { Db } from '@deployhealth/db';
-import { BackupError, parseDeletionsManifest, type AccountDeletionRecord, type ReapplyResult } from '@deployhealth/db/backup';
+import { BackupError, deletionsManifest, parseDeletionsManifest, type AccountDeletionRecord, type ReapplyResult } from '@deployhealth/db/backup';
 import type { R2Bucket } from './r2';
 import { DUMP_PREFIX, dumpsNewestFirst, dumpTimeOf, MANIFEST_KEY } from './run';
 
@@ -19,17 +19,17 @@ export interface RestoreArgs {
   into?: string;
   /** --download: the directory the dump and deletions.json are saved to. */
   downloadDir?: string;
-  /** deletions.json saved by --download, instead of the bucket's. */
-  deletionsFile?: string;
+  /** deletions.json (and live-deletions.json) saved by --download, instead of the bucket's. */
+  deletionsFiles: string[];
   liveDeletions: boolean;
   skipDeletions: boolean;
 }
 
 export const RESTORE_USAGE = `Usage:
   node apps/worker/dist/restore.js --list
-  node apps/worker/dist/restore.js (--latest | --key <key>) --download <dir>
+  node apps/worker/dist/restore.js (--latest | --key <key>) --download <dir> [--live-deletions]
   node apps/worker/dist/restore.js (--latest | --key <key> | --file <path>) --into <postgres URL of an empty database>
-                                   [--deletions-file <path>] [--live-deletions] [--skip-deletions]`;
+                                   [--deletions-file <path>]... [--live-deletions] [--skip-deletions]`;
 
 export function parseRestoreArgs(argv: readonly string[]): RestoreArgs | { error: string } {
   let values;
@@ -43,7 +43,7 @@ export function parseRestoreArgs(argv: readonly string[]): RestoreArgs | { error
         file: { type: 'string' },
         into: { type: 'string' },
         download: { type: 'string' },
-        'deletions-file': { type: 'string' },
+        'deletions-file': { type: 'string', multiple: true },
         'live-deletions': { type: 'boolean', default: false },
         'skip-deletions': { type: 'boolean', default: false },
       },
@@ -52,17 +52,19 @@ export function parseRestoreArgs(argv: readonly string[]): RestoreArgs | { error
     return { error: `${(error as Error).message}\n${RESTORE_USAGE}` };
   }
   const flags = { liveDeletions: values['live-deletions'] === true, skipDeletions: values['skip-deletions'] === true };
-  if (values.list) return { mode: 'list', ...flags };
+  if (values.list) return { mode: 'list', deletionsFiles: [], ...flags };
   const sources = [values.latest ? { latest: true as const } : null, values.key ? { key: values.key } : null, values.file ? { file: values.file } : null].filter((s) => s !== null);
   if (sources.length !== 1) return { error: `Give exactly one of --latest, --key or --file.\n${RESTORE_USAGE}` };
   if (values.download !== undefined) {
     if ('file' in sources[0]!) return { error: '--download takes --latest or --key, not --file.' };
     if (values.into) return { error: '--download saves files; it restores nothing (no --into).' };
-    return { mode: 'download', source: sources[0]!, downloadDir: values.download, ...flags };
+    if (flags.skipDeletions || values['deletions-file']) return { error: '--download takes --live-deletions only (to save the live database\'s deletions too).' };
+    return { mode: 'download', source: sources[0]!, downloadDir: values.download, deletionsFiles: [], ...flags };
   }
   if (!values.into) return { error: `--into <postgres URL of an empty database> is required.\n${RESTORE_USAGE}` };
-  if (flags.skipDeletions && (flags.liveDeletions || values['deletions-file'])) return { error: '--skip-deletions contradicts --live-deletions and --deletions-file.' };
-  return { mode: 'restore', source: sources[0]!, into: values.into, deletionsFile: values['deletions-file'], ...flags };
+  const deletionsFiles = values['deletions-file'] ?? [];
+  if (flags.skipDeletions && (flags.liveDeletions || deletionsFiles.length > 0)) return { error: '--skip-deletions contradicts --live-deletions and --deletions-file.' };
+  return { mode: 'restore', source: sources[0]!, into: values.into, deletionsFiles, ...flags };
 }
 
 /** "13 hours", "2.5 days". */
@@ -109,11 +111,17 @@ async function chooseDump(bucket: R2Bucket, source: { latest: true } | { key: st
   return chosen;
 }
 
+/** The live database's deletions, saved by --download --live-deletions. */
+export const LIVE_DELETIONS_FILE = 'live-deletions.json';
+
 /**
  * --download: save a dump (under its bucket name, which holds its time) and deletions.json into a
- * directory, for a restore run where the bucket's keys aren't available (docs/maintenance.md).
+ * directory, for a restore run where the bucket's keys aren't available (docs/maintenance.md); with
+ * --live-deletions, also the live database's account_deletions (DATABASE_URL), as of now, in
+ * live-deletions.json: deletions.json can be a day behind.
  */
-export async function downloadBackup(args: RestoreArgs & { mode: 'download' }, deps: Pick<RestoreDeps, 'bucket' | 'now' | 'log' | 'writeFile'>): Promise<void> {
+export async function downloadBackup(args: RestoreArgs & { mode: 'download' }, deps: Pick<RestoreDeps, 'bucket' | 'liveDeletions' | 'now' | 'log' | 'writeFile'>): Promise<void> {
+  if (args.liveDeletions && !deps.liveDeletions) throw new BackupError('--live-deletions reads the live database: set DATABASE_URL to it.');
   if (!deps.bucket) throw new BackupError('Set the BACKUP_R2_* variables to download from the bucket.');
   const chosen = await chooseDump(deps.bucket, args.source as { latest: true } | { key: string });
   const file = join(args.downloadDir!, chosen.key.slice(DUMP_PREFIX.length));
@@ -123,7 +131,13 @@ export async function downloadBackup(args: RestoreArgs & { mode: 'download' }, d
   if (!manifest) throw new BackupError(`${MANIFEST_KEY} isn't in the bucket: the dump was saved, but there's no record of deletions to re-apply with it.`);
   const parsed = parseDeletionsManifest(manifest);
   await deps.writeFile(join(args.downloadDir!, MANIFEST_KEY), manifest);
-  deps.log(`[restore] ${MANIFEST_KEY} saved too (written ${age(deps.now().getTime() - parsed.generatedAt.getTime())} ago). Both hold production data: delete them when you're done.`);
+  deps.log(`[restore] ${MANIFEST_KEY} saved too (written ${age(deps.now().getTime() - parsed.generatedAt.getTime())} ago).`);
+  if (args.liveDeletions) {
+    const live = await deps.liveDeletions!();
+    await deps.writeFile(join(args.downloadDir!, LIVE_DELETIONS_FILE), `${JSON.stringify(deletionsManifest(live, deps.now()))}\n`);
+    deps.log(`[restore] ${LIVE_DELETIONS_FILE} saved: ${live.length} deletions from the live database, as of now.`);
+  }
+  deps.log(`[restore] These files hold production data (emails, webhook URLs, token hashes): delete them (rm -rf ${args.downloadDir}) once the restore is done.`);
 }
 
 /** Restore one dump into an empty database and re-apply the deletions made since. */
@@ -135,11 +149,15 @@ export async function restoreBackup(args: RestoreArgs & { mode: 'restore' }, dep
   const deletions: AccountDeletionRecord[] = [];
   const sources: string[] = [];
   if (!args.skipDeletions) {
-    const manifestText = args.deletionsFile ? await deps.readFile(args.deletionsFile) : deps.bucket ? await deps.bucket.getText(MANIFEST_KEY) : null;
-    if (manifestText) {
-      const manifest = parseDeletionsManifest(manifestText);
+    const manifests: Array<{ where: string; text: string }> = [];
+    for (const path of args.deletionsFiles) manifests.push({ where: `${basename(path)} (saved by --download)`, text: await deps.readFile(path) });
+    if (args.deletionsFiles.length === 0 && deps.bucket) {
+      const text = await deps.bucket.getText(MANIFEST_KEY);
+      if (text) manifests.push({ where: `${MANIFEST_KEY} from the bucket`, text });
+    }
+    for (const { where, text } of manifests) {
+      const manifest = parseDeletionsManifest(text);
       deletions.push(...manifest.deletions);
-      const where = args.deletionsFile ? `${basename(args.deletionsFile)} (saved by --download)` : `${MANIFEST_KEY} from the bucket`;
       sources.push(`${where}, written ${age(deps.now().getTime() - manifest.generatedAt.getTime())} ago (${manifest.generatedAt.toISOString()}; ${manifest.deletions.length} deletions)`);
     }
     if (args.liveDeletions) {
@@ -153,7 +171,8 @@ export async function restoreBackup(args: RestoreArgs & { mode: 'restore' }, dep
         `No record of account deletions to re-apply: ${MANIFEST_KEY} isn't in the bucket${deps.bucket ? '' : ' (BACKUP_R2_* aren\'t set)'} and --live-deletions wasn't given. Re-run with one, or with --skip-deletions to restore without re-applying any (only for a scratch check).`,
       );
     }
-    if (!args.liveDeletions) deps.log(`[restore] Deletions made after ${MANIFEST_KEY} was written aren't in it; add --live-deletions while the live database is reachable.`);
+    const live = args.liveDeletions || args.deletionsFiles.some((path) => basename(path) === LIVE_DELETIONS_FILE);
+    if (!live) deps.log(`[restore] Deletions made after ${MANIFEST_KEY} was written aren't in it; add --live-deletions while the live database is reachable.`);
   } else {
     deps.log('[restore] --skip-deletions: no account deletions will be re-applied. Never switch production to this database.');
   }
