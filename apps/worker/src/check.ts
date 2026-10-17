@@ -5,6 +5,8 @@ export { USER_AGENT, type HttpRequester, type ResponseHead } from './guarded-htt
 
 export { CHECK_TIMEOUT_MS, MAX_REDIRECTS } from '@deployhealth/core';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+/** Method Not Allowed: a HEAD that gets it is retried once as GET. */
+const HEAD_NOT_ALLOWED = 405;
 export interface CheckTarget {
   url: string;
   method: EndpointMethod;
@@ -32,8 +34,10 @@ export interface CheckDeps {
 
 /**
  * Run one uptime check: follow up to 5 redirects within a 10s budget; ok when the final status
- * equals the expected status. Every failure mode (DNS, timeout, TLS, refused, blocked by the
- * SSRF guard, wrong status) becomes ok=false with a short error, never an exception.
+ * equals the expected status. Some servers answer HEAD with 405: then one GET goes to the URL that
+ * answered, in the same budget, without following redirects, and its status and latency are the
+ * result. Every failure mode (DNS, timeout, TLS, refused, blocked by the SSRF guard, wrong
+ * status) becomes ok=false with a short error, never an exception.
  */
 export async function runCheck(target: CheckTarget, deps: CheckDeps = {}): Promise<CheckResult> {
   const request = deps.request ?? guardedRequest;
@@ -67,13 +71,19 @@ export async function runCheck(target: CheckTarget, deps: CheckDeps = {}): Promi
         if (head.status === 303) method = 'GET';
         continue;
       }
-      const ok = head.status === target.expectedStatus;
+      let status = head.status;
+      let from = started;
+      if (method === 'HEAD' && status === HEAD_NOT_ALLOWED && target.expectedStatus !== HEAD_NOT_ALLOWED) {
+        from = clock();
+        status = (await request(url, 'GET', controller.signal)).status;
+      }
+      const ok = status === target.expectedStatus;
       return {
         checkedAt,
-        statusCode: head.status,
-        latencyMs: Math.max(0, Math.round(clock() - started)),
+        statusCode: status,
+        latencyMs: Math.max(0, Math.round(clock() - from)),
         ok,
-        error: ok ? null : `Expected ${target.expectedStatus}, got ${head.status}`,
+        error: ok ? null : `Expected ${target.expectedStatus}, got ${status}`,
       };
     }
   } catch (error) {
