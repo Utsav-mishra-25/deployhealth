@@ -388,14 +388,14 @@ describe('recordCheck and the alert lifecycle', () => {
     expect(banner).toMatchObject([{ endpointUrl: 'https://api.acme.com/health', deploy: { id: linked.deployId } }]);
   });
 
-  it('says the linked deploy had no new findings when nothing new is missing', async () => {
+  it('says the linked deploy changed no config when nothing new is missing', async () => {
     const { endpoint, project } = await setup();
     await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [missing('A')] });
     await recordScan(db, { projectId: project.id, sha: 'bbbbbbb', branch: 'main', deployedAt: minutes(-15), findings: [missing('A')] });
     await recordCheck(db, endpoint.id, ok(minutes(-20)));
     await recordCheck(db, endpoint.id, fail(minutes(0)));
     const { event } = await recordCheck(db, endpoint.id, fail(minutes(1)));
-    expect(event?.message).toBe('api.acme.com started failing 15m after deploy bbbbbbb, which had no new config findings');
+    expect(event?.message).toBe('api.acme.com started failing 15m after deploy bbbbbbb, which changed no config');
   });
 
   it('ignores deploys older than 30 minutes or after the first failure', async () => {
@@ -468,7 +468,7 @@ describe('deploy correlation for scopes with no env file (CLI 0.2.0+)', () => {
     await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [], variables: [] });
     // A variable list with nothing defined but no env scopes: nothing to call "undeclared".
     await recordScan(db, { projectId: project.id, sha: 'bbbbbbb', branch: 'main', deployedAt: minutes(-4), findings: [], variables: [bare('NEW_ONE')] });
-    expect((await openAlert(endpoint.id))?.message).toBe('api.acme.com started failing 4m after deploy bbbbbbb, which had no new config findings');
+    expect((await openAlert(endpoint.id))?.message).toBe('api.acme.com started failing 4m after deploy bbbbbbb, which changed no config');
   });
 });
 
@@ -828,6 +828,29 @@ describe('the alert message after splitting the deploy diff out of linkDeploy (d
     expect(event?.message).toBe(BEFORE_SPLIT);
     const [alert] = await db.select().from(alerts);
     expect(alert?.message).toBe(BEFORE_SPLIT);
+    expect(alert?.relatedDeployId).toBe(linked.deployId);
+  });
+
+  // Phase 10: a linked deploy whose config diff is empty now reads "which changed no config"
+  // (was "which had no new config findings"); the non-empty case above is unchanged.
+  const EMPTY_DIFF = 'api.acme.com started failing 12m after deploy abc1234, which changed no config';
+
+  it('is byte-identical for a linked deploy that changed no config', async () => {
+    const { endpoint, project } = await setup();
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [missing('OLD_ONE')] });
+    const linked = await recordScan(db, {
+      projectId: project.id,
+      sha: 'abc1234def5678abc1234def5678abc1234def56',
+      branch: 'main',
+      deployedAt: minutes(-12),
+      findings: [missing('OLD_ONE')],
+    });
+    await recordCheck(db, endpoint.id, ok(minutes(-20)));
+    await recordCheck(db, endpoint.id, fail(minutes(0)));
+    const { event } = await recordCheck(db, endpoint.id, fail(minutes(1)));
+    expect(event?.message).toBe(EMPTY_DIFF);
+    const [alert] = await db.select().from(alerts);
+    expect(alert?.message).toBe(EMPTY_DIFF);
     expect(alert?.relatedDeployId).toBe(linked.deployId);
   });
 });

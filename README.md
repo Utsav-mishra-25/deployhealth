@@ -403,7 +403,7 @@ deploy:
 - `Acme API started failing 4m after deploy b52952e, which introduced 2 new env vars no env file declares: REDIS_URL, STRIPE_KEY`
   (a scope with no env file has no MISSING rows, so there the new list is the variables that deploy
   newly references; scans from CLIs before 0.2.0 don't report scopes and correlate as before)
-- `Acme API started failing 4m after deploy b52952e, which had no new config findings`
+- `Acme API started failing 4m after deploy b52952e, which changed no config`
 - `Acme API started failing; no deploy in the 30 minutes before the first failure`
 
 A message names up to 6 variables of each kind; above that it names 5 and "and N more" (`40

@@ -35,8 +35,8 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   all (its variables plus its findings' names; no previous scan: all of them). The message is built
   by `alertOpenedMessage()`: "…started failing 4m after deploy b52952e, which introduced 2 missing
   env vars: …", "…which introduced 2 new env vars no env file declares: …" (both kinds joined by
-  ", plus"), "…which had no new config findings", or "…no deploy in the 30 minutes before the
-  first failure". Each kind lists every name up to 6, else 5 and "and N more"
+  ", plus"), "…which changed no config" (the deploy's config diff is empty), or "…no deploy in the
+  30 minutes before the first failure". Each kind lists every name up to 6, else 5 and "and N more"
   (`listNames()`, `MAX_ALERT_NAMES`); counts stay exact. Webhooks reuse the message.
 - **Webhook:** if `projects.alert_webhook_url` is set, POST `{text}` on open and on resolve. Log
   and continue on failure; at most one retry. `webhookPayload()` escapes the text for chat

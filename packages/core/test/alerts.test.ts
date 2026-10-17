@@ -166,10 +166,14 @@ describe('alert messages', () => {
     });
   });
 
-  it('says so when the linked deploy had no new findings', () => {
+  it('says the linked deploy changed no config when its config diff is empty', () => {
     expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
-      'x.dev started failing under a minute after deploy b52952e, which had no new config findings',
+      'x.dev started failing under a minute after deploy b52952e, which changed no config',
     );
+    const abc = { sha: 'abc1234def5678abc1234def5678abc1234def56', deployedAt: at(0) };
+    const message = alertOpenedMessage({ endpoint: { url: 'https://api.acme.com/health', name: 'Acme API' }, firstFailureAt: at(12), deploy: abc, newMissing: [], newUndeclared: [] });
+    expect(message).toBe('Acme API started failing 12m after deploy abc1234, which changed no config');
+    expect(webhookPayload('opened', 'Acme Storefront', message).text).toBe('[down] Acme Storefront: Acme API started failing 12m after deploy abc1234, which changed no config');
   });
 
   it('says so when there was no deploy in the window', () => {
