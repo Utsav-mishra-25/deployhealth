@@ -1,7 +1,8 @@
 // Restore a backup into an EMPTY scratch database (dist/restore.js; docs/maintenance.md, "Restore
 // from backup"). Run where pg_restore 18 is installed, with the BACKUP_R2_* variables (railway run
-// --service backup -- …) or a downloaded --file; --live-deletions also reads DATABASE_URL, read only.
-import { mkdtemp, rm } from 'node:fs/promises';
+// --service backup -- …), or with the files --download saved (--file and --deletions-file);
+// --live-deletions also reads DATABASE_URL, read only.
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -9,7 +10,7 @@ import { createDb } from '@deployhealth/db';
 import { assertToolCanReach, isEmptyDatabase, listAccountDeletions, pgEnv, reapplyDeletions, restoreDump, rowCounts } from '@deployhealth/db/backup';
 import { installConsoleRedaction } from '@deployhealth/db/redact';
 import { r2Bucket } from './backup/r2';
-import { listBackups, parseRestoreArgs, restoreBackup } from './backup/restore';
+import { downloadBackup, listBackups, parseRestoreArgs, restoreBackup } from './backup/restore';
 import { describeBackupError } from './backup/run';
 import { restoreEnv } from './env';
 
@@ -46,6 +47,10 @@ async function main(): Promise<number> {
       await listBackups({ bucket, now: () => new Date(), log });
       return 0;
     }
+    if (args.mode === 'download') {
+      await downloadBackup(args as typeof args & { mode: 'download' }, { bucket, now: () => new Date(), log, writeFile: (path, text) => writeFile(path, text) });
+      return 0;
+    }
     await restoreBackup(args as typeof args & { mode: 'restore' }, {
       bucket,
       liveDeletions: live ? () => listAccountDeletions(live.db) : null,
@@ -59,6 +64,8 @@ async function main(): Promise<number> {
       restore: restoreDump,
       reapply: reapplyDeletions,
       rowCounts,
+      readFile: (path) => readFile(path, 'utf8'),
+      writeFile: (path, text) => writeFile(path, text),
       tmpDir,
       now: () => new Date(),
       log,

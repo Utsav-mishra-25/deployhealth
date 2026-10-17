@@ -14,17 +14,22 @@ import { DUMP_PREFIX, dumpsNewestFirst, dumpTimeOf, MANIFEST_KEY } from './run';
  */
 
 export interface RestoreArgs {
-  mode: 'list' | 'restore';
+  mode: 'list' | 'download' | 'restore';
   source?: { latest: true } | { key: string } | { file: string };
   into?: string;
+  /** --download: the directory the dump and deletions.json are saved to. */
+  downloadDir?: string;
+  /** deletions.json saved by --download, instead of the bucket's. */
+  deletionsFile?: string;
   liveDeletions: boolean;
   skipDeletions: boolean;
 }
 
 export const RESTORE_USAGE = `Usage:
   node apps/worker/dist/restore.js --list
+  node apps/worker/dist/restore.js (--latest | --key <key>) --download <dir>
   node apps/worker/dist/restore.js (--latest | --key <key> | --file <path>) --into <postgres URL of an empty database>
-                                   [--live-deletions] [--skip-deletions]`;
+                                   [--deletions-file <path>] [--live-deletions] [--skip-deletions]`;
 
 export function parseRestoreArgs(argv: readonly string[]): RestoreArgs | { error: string } {
   let values;
@@ -37,6 +42,8 @@ export function parseRestoreArgs(argv: readonly string[]): RestoreArgs | { error
         key: { type: 'string' },
         file: { type: 'string' },
         into: { type: 'string' },
+        download: { type: 'string' },
+        'deletions-file': { type: 'string' },
         'live-deletions': { type: 'boolean', default: false },
         'skip-deletions': { type: 'boolean', default: false },
       },
@@ -48,9 +55,14 @@ export function parseRestoreArgs(argv: readonly string[]): RestoreArgs | { error
   if (values.list) return { mode: 'list', ...flags };
   const sources = [values.latest ? { latest: true as const } : null, values.key ? { key: values.key } : null, values.file ? { file: values.file } : null].filter((s) => s !== null);
   if (sources.length !== 1) return { error: `Give exactly one of --latest, --key or --file.\n${RESTORE_USAGE}` };
+  if (values.download !== undefined) {
+    if ('file' in sources[0]!) return { error: '--download takes --latest or --key, not --file.' };
+    if (values.into) return { error: '--download saves files; it restores nothing (no --into).' };
+    return { mode: 'download', source: sources[0]!, downloadDir: values.download, ...flags };
+  }
   if (!values.into) return { error: `--into <postgres URL of an empty database> is required.\n${RESTORE_USAGE}` };
-  if (flags.liveDeletions && flags.skipDeletions) return { error: '--live-deletions and --skip-deletions contradict each other.' };
-  return { mode: 'restore', source: sources[0]!, into: values.into, ...flags };
+  if (flags.skipDeletions && (flags.liveDeletions || values['deletions-file'])) return { error: '--skip-deletions contradicts --live-deletions and --deletions-file.' };
+  return { mode: 'restore', source: sources[0]!, into: values.into, deletionsFile: values['deletions-file'], ...flags };
 }
 
 /** "13 hours", "2.5 days". */
@@ -72,6 +84,8 @@ export interface RestoreDeps {
   restore: (file: string, url: string) => Promise<void>;
   reapply: (db: Db, deletions: AccountDeletionRecord[], dumpedAt: Date) => Promise<ReapplyResult>;
   rowCounts: (db: Db) => Promise<Record<string, number>>;
+  readFile: (path: string) => Promise<string>;
+  writeFile: (path: string, text: string) => Promise<void>;
   tmpDir: string;
   now: () => Date;
   log: (message: string) => void;
@@ -88,6 +102,30 @@ export async function listBackups(deps: Pick<RestoreDeps, 'bucket' | 'now' | 'lo
   deps.log(manifest ? `${MANIFEST_KEY}  written ${age(now - parseDeletionsManifest(manifest).generatedAt.getTime())} ago` : `${MANIFEST_KEY}  missing`);
 }
 
+async function chooseDump(bucket: R2Bucket, source: { latest: true } | { key: string }) {
+  const dumps = dumpsNewestFirst(await bucket.list(DUMP_PREFIX));
+  const chosen = 'latest' in source ? dumps[0] : dumps.find((d) => d.key === source.key);
+  if (!chosen) throw new BackupError('latest' in source ? 'No dumps in the bucket.' : `No dump ${source.key} in the bucket (--list shows them).`);
+  return chosen;
+}
+
+/**
+ * --download: save a dump (under its bucket name, which holds its time) and deletions.json into a
+ * directory, for a restore run where the bucket's keys aren't available (docs/maintenance.md).
+ */
+export async function downloadBackup(args: RestoreArgs & { mode: 'download' }, deps: Pick<RestoreDeps, 'bucket' | 'now' | 'log' | 'writeFile'>): Promise<void> {
+  if (!deps.bucket) throw new BackupError('Set the BACKUP_R2_* variables to download from the bucket.');
+  const chosen = await chooseDump(deps.bucket, args.source as { latest: true } | { key: string });
+  const file = join(args.downloadDir!, chosen.key.slice(DUMP_PREFIX.length));
+  deps.log(`[restore] downloading ${chosen.key} (${(chosen.size / 1024 / 1024).toFixed(1)} MB, ${age(deps.now().getTime() - chosen.at.getTime())} old) to ${file}`);
+  await deps.bucket.getToFile(chosen.key, file);
+  const manifest = await deps.bucket.getText(MANIFEST_KEY);
+  if (!manifest) throw new BackupError(`${MANIFEST_KEY} isn't in the bucket: the dump was saved, but there's no record of deletions to re-apply with it.`);
+  const parsed = parseDeletionsManifest(manifest);
+  await deps.writeFile(join(args.downloadDir!, MANIFEST_KEY), manifest);
+  deps.log(`[restore] ${MANIFEST_KEY} saved too (written ${age(deps.now().getTime() - parsed.generatedAt.getTime())} ago). Both hold production data: delete them when you're done.`);
+}
+
 /** Restore one dump into an empty database and re-apply the deletions made since. */
 export async function restoreBackup(args: RestoreArgs & { mode: 'restore' }, deps: RestoreDeps): Promise<void> {
   const into = args.into!;
@@ -97,11 +135,12 @@ export async function restoreBackup(args: RestoreArgs & { mode: 'restore' }, dep
   const deletions: AccountDeletionRecord[] = [];
   const sources: string[] = [];
   if (!args.skipDeletions) {
-    const manifestText = deps.bucket ? await deps.bucket.getText(MANIFEST_KEY) : null;
+    const manifestText = args.deletionsFile ? await deps.readFile(args.deletionsFile) : deps.bucket ? await deps.bucket.getText(MANIFEST_KEY) : null;
     if (manifestText) {
       const manifest = parseDeletionsManifest(manifestText);
       deletions.push(...manifest.deletions);
-      sources.push(`${MANIFEST_KEY} from the bucket, written ${age(deps.now().getTime() - manifest.generatedAt.getTime())} ago (${manifest.generatedAt.toISOString()}; ${manifest.deletions.length} deletions)`);
+      const where = args.deletionsFile ? `${basename(args.deletionsFile)} (saved by --download)` : `${MANIFEST_KEY} from the bucket`;
+      sources.push(`${where}, written ${age(deps.now().getTime() - manifest.generatedAt.getTime())} ago (${manifest.generatedAt.toISOString()}; ${manifest.deletions.length} deletions)`);
     }
     if (args.liveDeletions) {
       if (!deps.liveDeletions) throw new BackupError('--live-deletions reads the live database: set DATABASE_URL to it.');
@@ -136,9 +175,7 @@ export async function restoreBackup(args: RestoreArgs & { mode: 'restore' }, dep
       if (!dumpedAt) throw new BackupError(`Can't tell when ${basename(file)} was taken: keep the name it had in the bucket (2026-10-18T03-41-00.123Z.dump).`);
     } else {
       if (!deps.bucket) throw new BackupError('Set the BACKUP_R2_* variables to restore from the bucket, or use --file.');
-      const dumps = dumpsNewestFirst(await deps.bucket.list(DUMP_PREFIX));
-      const chosen = 'latest' in source ? dumps[0] : dumps.find((d) => d.key === source.key);
-      if (!chosen) throw new BackupError('latest' in source ? 'No dumps in the bucket.' : `No dump ${source.key} in the bucket (--list shows them).`);
+      const chosen = await chooseDump(deps.bucket, source);
       file = join(deps.tmpDir, chosen.key.slice(DUMP_PREFIX.length));
       deps.log(`[restore] downloading ${chosen.key} (${(chosen.size / 1024 / 1024).toFixed(1)} MB, ${age(deps.now().getTime() - chosen.at.getTime())} old)`);
       await deps.bucket.getToFile(chosen.key, file);

@@ -1,7 +1,7 @@
 import type { Db } from '@deployhealth/db';
 import { describe, expect, it } from 'vitest';
 import type { R2Bucket } from '../src/backup/r2';
-import { age, parseRestoreArgs, restoreBackup, type RestoreDeps } from '../src/backup/restore';
+import { age, downloadBackup, parseRestoreArgs, restoreBackup, type RestoreDeps } from '../src/backup/restore';
 import { dumpKey, MANIFEST_KEY } from '../src/backup/run';
 import { sameDatabase } from '../src/restore-cli';
 
@@ -42,6 +42,8 @@ function setup(options: { manifest?: string | null; empty?: boolean; live?: Arra
       return { considered: deletions.length, deleted: 1, notInDump: 0 };
     },
     rowCounts: async () => ({ 'public.users': 3 }),
+    readFile: async (path) => (path.endsWith('deletions.json') ? manifest(new Date('2026-10-17T03:41:00Z'), [{ githubId: 9, deletedAt: '2026-10-18T04:00:00.000Z' }]) : ''),
+    writeFile: async (path) => void events.push(`write ${path}`),
     tmpDir: '/tmp/x',
     now: () => NOW,
     log: (m) => logs.push(m),
@@ -119,6 +121,26 @@ describe('restoreBackup', () => {
 
   it('a key that is not in the bucket says so', async () => {
     await expect(restoreBackup(args(['--key', 'deployhealth/nope.dump', '--into', SCRATCH]), setup().deps)).rejects.toThrow(/No dump deployhealth\/nope\.dump/);
+  });
+});
+
+describe('two steps: --download, then --file with --deletions-file', () => {
+  it('saves the dump under its bucket name and deletions.json, restoring nothing', async () => {
+    const parsed = parseRestoreArgs(['--latest', '--download', '/restore']);
+    expect(parsed).toMatchObject({ mode: 'download', downloadDir: '/restore' });
+    const { deps, events, logs } = setup();
+    await downloadBackup(parsed as never, deps);
+    expect(events).toEqual([`download ${dumpKey(DUMPED)}`, 'write /restore/deletions.json']);
+    expect(logs.at(-1)).toMatch(/written 13 hours ago\). Both hold production data: delete them/);
+    expect(parseRestoreArgs(['--file', 'x.dump', '--download', '/restore'])).toHaveProperty('error');
+    expect(parseRestoreArgs(['--latest', '--download', '/restore', '--into', SCRATCH])).toHaveProperty('error');
+  });
+
+  it('re-applies the saved deletions.json, saying how old it is', async () => {
+    const { deps, logs, reapplied } = setup({ manifest: null });
+    await restoreBackup(args(['--file', '/restore/2026-10-18T03-41-00.000Z.dump', '--deletions-file', '/restore/deletions.json', '--into', SCRATCH]), deps);
+    expect(reapplied()).toEqual({ deletions: [{ githubId: 9, deletedAt: new Date('2026-10-18T04:00:00Z') }], dumpedAt: DUMPED });
+    expect(logs).toContain('[restore] account deletions from deletions.json (saved by --download), written 37 hours ago (2026-10-17T03:41:00.000Z; 1 deletions)');
   });
 });
 
