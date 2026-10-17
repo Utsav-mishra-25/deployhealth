@@ -502,7 +502,10 @@ API token can reach that one bucket only.
    back to `41 3 * * *`. Its log should end with `[backup] done: dumped deployhealth/<time>.dump`,
    after `deletions.json uploaded` and `… uploaded (N MB) in Ns`. A second run within 6.5 days logs
    `newest dump is N days old` and only refreshes `deletions.json` and the heartbeat.
-6. **A test restore** into a scratch database: [maintenance.md](maintenance.md), "Restore from
+6. **Check the heartbeat**: Railway → **Postgres** → **Data** → `worker_heartbeats` has a `backup`
+   row. Without it the worker's stale-backup alert never starts, so nothing would tell you backups
+   aren't running.
+7. **A test restore** into a scratch database: [maintenance.md](maintenance.md), "Restore from
    backup". Do one now, and after any Postgres major upgrade.
 
 ## Troubleshooting

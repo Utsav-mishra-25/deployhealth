@@ -64,8 +64,19 @@ table.
 says 18: macOS `brew install postgresql@18`, Debian or Ubuntu `postgresql-client-18` from
 apt.postgresql.org); the Railway CLI, logged in and linked (`railway link`). `railway run --service
 backup -- …` runs a command on your machine with the backup service's variables (the R2 keys)
-in its environment, without printing them. Everything you download holds production data:
-delete it when you're done.
+in its environment, without printing them.
+
+**Delete what you download.** A dump and `deletions.json` hold production data: account emails,
+client contact emails, alert webhook URLs (they work like passwords) and token hashes. When the
+restore is done, `rm -rf ./restore` (not to the Trash, and not into a synced or backed-up
+folder), and drop any scratch database you restored into. `--latest` without `--download`
+deletes its own temporary download.
+
+**No `backup` heartbeat row means backups were never set up**, and nothing will say so: the
+worker's stale-backup alert starts only once the first run has written the row. Check it after
+setting up step 15, and whenever in doubt: Railway → **Postgres** → **Data** → the
+`worker_heartbeats` table should have a `backup` row whose `last_run_at` is at most a day old
+(next to `check-endpoints`, at most a few minutes old).
 
 ### A test restore (do one after the first backup, and after any Postgres upgrade)
 
@@ -86,7 +97,8 @@ delete it when you're done.
    ```
 
    It downloads the dump, restores it, re-applies the deletions in `deletions.json` and prints the
-   rows per table. Expect `re-applied N account deletions made since the dump` (often 0).
+   rows per table. Expect `re-applied N account deletions made since the dump` (often 0). A test
+   restore can leave out `--live-deletions`: it's thrown away.
 4. Check: the counts are close to production's (`node packages/db/dist/stats.js` in the web
    container, deploy-railway.md step 11, counts users and projects), and
    `drizzle.__drizzle_migrations` has as many rows as `packages/db/drizzle/` has migrations.
@@ -99,33 +111,53 @@ Only when the database is lost or damaged beyond repair (incident.md, step 4). R
 
 1. Status page: an incident (incident.md, step 0). Stop the worker (its active deployment's ⋯
    menu → **Remove**) and clear the backup service's Cron Schedule, so nothing writes meanwhile.
-2. If the old database still answers, run the backup service once (deploy-railway.md 15.5) so
-   `deletions.json` holds every deletion up to now. If it doesn't, deletions made after the last
-   `deletions.json` (at most a day old) can't be re-applied: the restore says how old it is, and
-   those users can be deleted again by hand afterwards (deploy-railway.md, step 10).
+2. **Does the old database still answer?** `deletions.json` can be a day behind, so whenever the
+   old database is reachable, the restore also re-applies its own `account_deletions`, as of the
+   download (`--live-deletions`, step 4): turn on the old Postgres service's **TCP Proxy** for it.
+   If it doesn't answer, deletions made after the last `deletions.json` (at most a day old) can't
+   be re-applied: the restore says how old the file is, and those accounts can be deleted again
+   by hand afterwards (deploy-railway.md, step 10).
 3. Railway → **+ Create** → **Database** → **PostgreSQL** (major version 18, like the old one);
    name it, e.g., `Postgres-restored`. Turn on its **TCP Proxy** (Settings → Networking) for the
    restore only.
-4. Download the dump and `deletions.json` with the backup service's keys:
+4. Download the dump and `deletions.json` with the backup service's keys. **The old database
+   answers:** add `--live-deletions`, run inside the old Postgres service's variables as well, so
+   its `account_deletions` are saved too (`live-deletions.json`). The outer `railway run` brings
+   the R2 keys, the inner one the old database's `DATABASE_PUBLIC_URL`, which `sh` hands to the
+   command as `DATABASE_URL`; nothing is printed:
 
    ```sh
    mkdir -p restore
-   railway run --service backup -- node apps/worker/dist/restore.js --latest --download ./restore
+   railway run --service backup -- railway run --service Postgres -- sh -c \
+     'DATABASE_URL="$DATABASE_PUBLIC_URL" node apps/worker/dist/restore.js --latest --download ./restore --live-deletions'
    ```
 
-5. Restore them into the new database with its own variables (`$DATABASE_PUBLIC_URL` is expanded
-   inside the command, never printed):
+   **It doesn't answer:** the same without the inner `railway run` and without `--live-deletions`:
+   `railway run --service backup -- node apps/worker/dist/restore.js --latest --download ./restore`.
+   Then turn the old database's TCP Proxy off.
+5. Restore into the new database with its own variables (`$DATABASE_PUBLIC_URL` is expanded inside
+   the command, never printed), with every deletions file step 4 saved:
 
    ```sh
    railway run --service Postgres-restored -- sh -c \
-     'node apps/worker/dist/restore.js --file ./restore/<the dump>.dump --deletions-file ./restore/deletions.json --into "$DATABASE_PUBLIC_URL"'
+     'node apps/worker/dist/restore.js --file ./restore/<the dump>.dump \
+        --deletions-file ./restore/deletions.json --deletions-file ./restore/live-deletions.json \
+        --into "$DATABASE_PUBLIC_URL"'
    ```
 
-6. Turn the new database's TCP Proxy off. Delete `./restore`.
-7. Point every service at it: on **web**, **worker** and **backup**, change `DATABASE_URL` to
-   `${{Postgres-restored.DATABASE_URL}}`. **Deploy** (web's pre-deploy migration step is a no-op on
-   a restored database of the same version). Redeploy the worker; set the backup's Cron Schedule
-   back to `41 3 * * *`.
+   (Leave out `--deletions-file ./restore/live-deletions.json` if step 4 couldn't save it.) Do 4
+   and 5 back to back: an account deleted on the old site between them isn't in either file.
+6. Turn the new database's TCP Proxy off. `rm -rf ./restore`.
+7. Point every service at it: on **worker**, **web** and **backup**, change `DATABASE_URL` to
+   `${{Postgres-restored.DATABASE_URL}}`. Deploy the **worker first**: dumps leave out pg-boss's
+   schema, and on its first start against the restored database the worker recreates it and
+   re-registers every queue and schedule (check-endpoints, the nightly prune, the demo reseed,
+   pr-check). Web's send-only queue client doesn't create the schema, so until the worker has
+   started, pull request webhooks can't be queued (GitHub shows them failed: redeliver them
+   afterwards). Jobs that were waiting in the old pg-boss, such as pending pull request checks,
+   are gone; a new push re-checks a pull request. Then **Deploy** web (its pre-deploy migration
+   step is a no-op on a restored database of the same version), and set the backup's Cron
+   Schedule back to `41 3 * * *`.
 8. Check `/api/health/worker` is green, sign in, open a project. Then update the status page.
    Keep the old Postgres service, unused, until you're sure; then delete it.
 
