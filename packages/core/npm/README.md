@@ -13,7 +13,7 @@ Python (including pydantic-settings classes), Go, Ruby, PHP (with Laravel and Sy
 Java/Kotlin (`.java`, `.kt`, `.kts`, with Spring), respects `.gitignore`, and treats each folder
 with its own env files as a separate scope (monorepos). One file, no dependencies, Node 20+.
 
-Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Rust, C# and others aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Other languages aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
 
 On a directory with no such source file (after the rules below), it prints
 `No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source files found: deployhealth can't check this directory yet.`,

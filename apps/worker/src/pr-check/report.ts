@@ -181,7 +181,7 @@ function coverageLines(r: PrReport): string[] {
   if (r.outcome === 'cant-check') {
     const found = describeExtensionCounts(c.unsupported);
     return [
-      `deployhealth reads ${SUPPORTED_LANGUAGES_AND}. ${UNREAD_LANGUAGES_TEXT} aren't read yet, so this repository's env vars can't be checked.`,
+      `deployhealth reads ${SUPPORTED_LANGUAGES_AND}. ${capitalize(UNREAD_LANGUAGES_TEXT)} aren't read yet, so this repository's env vars can't be checked.`,
       ...(found ? [`It holds ${found} that deployhealth doesn't read.`] : []),
       'Committed env files and secret-shaped strings on added lines are still checked.',
       `Which languages are read: ${LANGUAGES_DOC_URL}`,

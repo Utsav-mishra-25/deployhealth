@@ -136,7 +136,7 @@ describe('the FAQ', () => {
       'On Rust, C# and other languages we don\'t read yet, the PR check and CLI report "can\'t check" instead of passing. Supported today: JS/TS, Python, Go, Ruby, PHP, Java/Kotlin.',
     );
     expect(FAQ_STACK_SENTENCE.endsWith(`Supported today: ${SUPPORTED_LANGUAGES.map((l) => l.label).join(', ')}.`)).toBe(true);
-    expect(FAQ_STACK_SENTENCE).toContain(UNREAD_LANGUAGES_TEXT.replace(' and others', ''));
+    expect(FAQ_STACK_SENTENCE).toContain(UNREAD_LANGUAGES_TEXT);
     const stack = FAQ.find((item) => item.question === "What if my stack isn't supported?")!;
     expect(stack.answer).toBe(`Uptime checks, monthly reports and handoffs work for any site, including WordPress. ${FAQ_STACK_SENTENCE}`);
   });

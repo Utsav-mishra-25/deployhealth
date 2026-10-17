@@ -52,7 +52,7 @@ blob is downloaded**. The outcomes, in order:
    a language run: secrets on the pull request's added lines, and committed env files from the
    tree paths. Nothing flagged → neutral in every mode, strict included, titled
    `deployhealth can't check this repo yet: no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin files found`, with a
-   summary naming the languages read and the unread ones found by extension, and a README link;
+   summary naming the languages read and the unread ones found by extension, and a link to `/docs`;
    no comment is created (an earlier comment on the pull request is rewritten to say so, since its
    findings no longer describe the head). Something flagged → today's conclusion and comment
    (strict fails), titled e.g. `Committed env file found; deployhealth can't check env vars in this
