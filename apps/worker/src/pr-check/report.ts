@@ -52,6 +52,14 @@ export interface PrReport extends EnvVarDiff {
   frameworks?: DocsStackSlug[];
 }
 
+/** What to do about an undeclared variable: under the comment's tables and in the check run's summary. */
+export const DECLARE_IT_LINE = 'Declare it in `.env.example` (in the scope that reads it) and set it on your host.';
+/** The comment footer's mode, with what it means for the merge. */
+const MODE_TEXT: Record<Exclude<PrCheckMode, 'off'>, string> = {
+  comment: 'mode: comment (flags, never blocks)',
+  strict: 'mode: strict (fails the check)',
+};
+
 /** The check run's title when the repo holds nothing the scanner reads and nothing else was found. */
 export const CANT_CHECK_TITLE = `deployhealth can't check this repo yet: no ${SUPPORTED_LANGUAGES_OR} files found`;
 /** The check run's title when the pull request changes no file the check reads. */
@@ -253,10 +261,12 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
     if (r.added.length) {
       lines.push('', '#### Added', '');
       lines.push(...table(['Variable', 'Read at', '`.env.example`'], r.added, n.added, (a) => [code(name(a.name)), where(a.refs, a.total), a.declared ? '✅ declared' : '❌ **not declared**']));
+      if (n.addedUndeclared) lines.push('', DECLARE_IT_LINE);
     }
     if (r.renamed.length) {
       lines.push('', '#### Renamed', '');
       lines.push(...table(['From', 'To', 'In', '`.env.example`'], r.renamed, n.renamed, (x) => [code(name(x.from)), code(name(x.to)), code(`${path(x.file)}:${x.line}`), x.declared ? '✅ declared' : '❌ **not declared**']));
+      if (n.renamedUndeclared) lines.push('', DECLARE_IT_LINE);
     }
     if (r.removed.length) {
       lines.push('', '#### Removed', '', 'No longer read anywhere; you can drop them from your env files and deploy settings.', '');
@@ -272,7 +282,7 @@ export function renderComment(r: PrReport, { mode, headSha }: { mode: Exclude<Pr
   }
   const footer = [
     '',
-    `<sub>Checked ${code(headSha.slice(0, 7))} · mode: ${mode} · names and file:line only, never values · [What this checks](${docsUrl(r.frameworks ?? [])}) · [deployhealth](https://deployhealth.dev)</sub>`,
+    `<sub>Checked ${code(headSha.slice(0, 7))} · ${MODE_TEXT[mode]} · names and file:line only, never values · [What this checks](${docsUrl(r.frameworks ?? [])}) · [deployhealth](https://deployhealth.dev)</sub>`,
   ];
   return `${fitLines(lines, MAX_GITHUB_TEXT - 1, footer)}\n`;
 }
@@ -296,7 +306,7 @@ export function checkRunOutput(r: PrReport, conclusion: PrCheck['conclusion']): 
       ? changes
         ? [`${capitalize(changes)}.`]
         : []
-      : [`${summaryLine(r)}.${r.undeclared.length ? ` Not in .env.example: ${inline.join(', ')}${more}.` : ''}`];
+      : [`${summaryLine(r)}.${n.undeclared ? ` Not in .env.example: ${inline.join(', ')}${more}. ${DECLARE_IT_LINE}` : ''}`];
   return {
     conclusion,
     title: shorten(titleFor(r), MAX_TITLE),

@@ -8,6 +8,7 @@ import {
   checkRunOutput,
   COMMENT_MARKER,
   conclusionFor,
+  DECLARE_IT_LINE,
   emptyReport,
   fitLines,
   MAX_GITHUB_TEXT,
@@ -224,6 +225,44 @@ describe('conclusions and the comment', () => {
     expect(body).toContain('**1 possible secret in added lines** (see the `deployhealth / env` check run for where).');
     expect(body).not.toContain('config/app.ts'); // secret locations go to the check run only
     expect(body).toContain('Checked `0123456`');
+    expect(body).toContain(' · mode: comment (flags, never blocks) · ');
+    expect(renderComment(undeclared, { mode: 'strict', headSha: 'abc' })).toContain(' · mode: strict (fails the check) · ');
+  });
+
+  it('says what to do under Added and Renamed only when a row there is not declared', () => {
+    const line = 'Declare it in `.env.example` (in the scope that reads it) and set it on your host.';
+    expect(DECLARE_IT_LINE).toBe(line);
+    const addedSection = (body: string) => body.slice(body.indexOf('#### Added'), body.indexOf('#### Renamed') >= 0 ? body.indexOf('#### Renamed') : undefined);
+    const renamedSection = (body: string) => body.slice(body.indexOf('#### Renamed'));
+
+    const undeclaredRename = { from: 'MAILER_KEY', to: 'MAIL_API_KEY', file: 'src/mail.ts', line: 1, declared: false };
+    const both = renderComment(report({ ...undeclared, renamed: [undeclaredRename], undeclared: ['CACHE_TTL', 'MAIL_API_KEY'] }), { mode: 'comment', headSha: 'abc' });
+    expect(addedSection(both)).toContain(`❌ **not declared** |\n\n${line}`);
+    expect(renamedSection(both)).toContain(`❌ **not declared** |\n\n${line}`);
+    expect(both.split(line)).toHaveLength(3);
+
+    const declared = renderComment(
+      report({
+        added: [{ name: 'X', refs: [{ file: 'a.ts', line: 1 }], total: 1, declared: true }],
+        renamed: [{ ...undeclaredRename, declared: true }],
+        removed: [{ name: 'OLD_FLAG', refs: [{ file: 'src/flags.ts', line: 1 }], total: 1 }],
+      }),
+      { mode: 'comment', headSha: 'abc' },
+    );
+    expect(declared).not.toContain(line);
+    // Only the section with an undeclared row gets it.
+    const addedOnly = renderComment(report({ ...undeclared, renamed: [{ ...undeclaredRename, declared: true }] }), { mode: 'comment', headSha: 'abc' });
+    expect(addedSection(addedOnly)).toContain(line);
+    expect(renamedSection(addedOnly)).not.toContain(line);
+  });
+
+  it("appends what to do to the check run's first paragraph when anything is undeclared; titles unchanged", () => {
+    const output = checkRunOutput(undeclared, 'neutral');
+    expect(output.summary).toBe(`1 env var added (1 not in .env.example). Not in .env.example: \`CACHE_TTL\`. ${DECLARE_IT_LINE}`);
+    expect(output.title).toBe('1 env var added (1 not in .env.example)');
+    const declaredOnly = checkRunOutput(report({ added: [{ name: 'X', refs: [{ file: 'a.ts', line: 1 }], total: 1, declared: true }] }), 'success');
+    expect(declaredOnly.summary).toBe('1 env var added.');
+    expect(checkRunOutput(report({ envFiles: [{ path: '.env', added: true }] }), 'neutral').summary).not.toContain(DECLARE_IT_LINE);
   });
 
   it('escapes file names that could break the table, and truncates long tables', () => {
@@ -285,7 +324,7 @@ describe("GitHub's size limits", () => {
     };
     expect(renderComment(report, { mode: 'comment', headSha: 'a'.repeat(40) })).toContain('**5000 env vars added (4000 not in .env.example).**');
     const output = checkRunOutput(report, 'neutral');
-    expect(output.summary).toBe('5000 env vars added (4000 not in .env.example). Not in .env.example: `A` and 3999 more.');
+    expect(output.summary).toBe(`5000 env vars added (4000 not in .env.example). Not in .env.example: \`A\` and 3999 more. ${DECLARE_IT_LINE}`);
     expect(output.text).toContain('- …and 3999 more');
   });
 

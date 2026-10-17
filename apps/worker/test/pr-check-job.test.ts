@@ -597,7 +597,7 @@ describe('the comment footer links the docs page for the framework head uses', (
   it('no framework: /docs, and nothing else in the footer changes', async () => {
     const { link, body } = await footer({ 'next.config.example.js': '', 'package.json': JSON.stringify({ dependencies: { next: '15' } }) });
     expect(link).toBe('https://deployhealth.dev/docs');
-    expect(body).toMatch(/<sub>Checked `head1` · mode: comment · names and file:line only, never values · \[What this checks\]\(https:\/\/deployhealth\.dev\/docs\) · \[deployhealth\]\(https:\/\/deployhealth\.dev\)<\/sub>\n$/);
+    expect(body).toMatch(/<sub>Checked `head1` · mode: comment \(flags, never blocks\) · names and file:line only, never values · \[What this checks\]\(https:\/\/deployhealth\.dev\/docs\) · \[deployhealth\]\(https:\/\/deployhealth\.dev\)<\/sub>\n$/);
   });
 
   it("ignores markers that aren't the app's: in node_modules, vendor/, build output or tests", async () => {
