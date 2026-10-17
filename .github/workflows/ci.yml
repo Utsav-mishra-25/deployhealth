@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: deployhealth
           POSTGRES_PASSWORD: deployhealth
@@ -34,6 +34,19 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Production runs Postgres 18 and so does the service above; the backup test's pg_dump and
+      # pg_restore must be at least the server's major version (the runner ships 16), so the 18
+      # client comes from the PostgreSQL project's apt repository, first on PATH.
+      - name: PostgreSQL 18 client (pg_dump, pg_restore)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+      - name: pg_dump version
+        run: pg_dump --version && pg_restore --version
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint
@@ -49,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: deployhealth
           POSTGRES_PASSWORD: deployhealth
