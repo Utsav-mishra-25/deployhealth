@@ -8,6 +8,7 @@ import { ProjectGettingStarted } from '@/components/project-getting-started';
 import { RepoCoverageNotice } from '@/components/repo-coverage-notice';
 import { HOW_IT_WORKS } from '@/lib/marketing';
 import {
+  appCoversFor,
   checklist,
   installAppHref,
   installReturnPath,
@@ -270,5 +271,14 @@ describe('a project before any data', () => {
     expect(render({ prChecks: 2 })).toContain('Pull requests on acme/shop are being checked: see them below.');
     expect(render({ endpoints: 1 })).toContain("Your sites are listed below; each one's first check runs within its interval.");
     expect(render({ coverage: { state: 'no-app' } })).toContain("The GitHub App isn't set up on this deployment");
+  });
+});
+
+describe('appCoversFor: "Not set up"\'s reason on /clients and a client\'s page', () => {
+  it('reads the user\'s own installations, and knows nothing without an App on this deployment', () => {
+    const covers = appCoversFor([installation()], SLUG);
+    expect([covers('acme/shop'), covers('ACME/Shop'), covers('acme/blog'), covers('other/x')]).toEqual([true, true, false, false]);
+    expect(appCoversFor([installation({ repositorySelection: 'all', repos: [] })], SLUG)('acme/anything')).toBe(true);
+    expect(appCoversFor([], undefined)('acme/shop')).toBeUndefined();
   });
 });

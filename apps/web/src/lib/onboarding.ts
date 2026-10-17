@@ -1,6 +1,7 @@
-import type { OnboardingState } from '@deployhealth/db';
+import type { InstallationSummary, OnboardingState } from '@deployhealth/db';
 import { HOW_IT_WORKS } from './marketing';
-import { repoCoverage, type AppCoverage } from './repo-coverage';
+import type { AppCovers } from './project-status';
+import { appCoverage, coversRepo, repoCoverage, type AppCoverage } from './repo-coverage';
 
 // The first-run checklist on /clients and the GitHub App install round trip. The checklist's steps
 // are the landing page's "how it works" (HOW_IT_WORKS), in the same order.
@@ -45,6 +46,15 @@ export function installReturnPath(ret: InstallReturn): string {
 export function installAppHref(appSlug: string | undefined, ret: InstallReturn): string | null {
   if (!appSlug) return null;
   return `https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new?state=${encodeURIComponent(installState(ret))}`;
+}
+
+/**
+ * "Not set up"'s reason on the signed-in project lists (/clients and a client's page): whether the
+ * user's own installations (`listInstallationsForUser`) cover a repository. Both pages call this,
+ * so a project's reason reads the same on each.
+ */
+export function appCoversFor(installations: readonly InstallationSummary[], appSlug: string | undefined): AppCovers {
+  return coversRepo(appCoverage(installations, installAppHref(appSlug, { to: 'clients' })));
 }
 
 export type StepId = 'app' | 'project' | 'site' | 'action';

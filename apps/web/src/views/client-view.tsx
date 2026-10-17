@@ -8,16 +8,32 @@ import { ConfirmButton } from '@/components/confirm-button';
 import { ProjectRows, ProjectTableHead, StatusSummary } from '@/components/project-rows';
 import { getDb } from '@/lib/db';
 import type { ViewPaths } from '@/lib/paths';
-import { rankProjects, statusSummary } from '@/lib/project-status';
+import { rankProjects, statusSummary, type AppCovers } from '@/lib/project-status';
 
-/** One client: contact, notes and projects. Rendered at /clients/:slug and /demo/clients/:slug. */
-export async function ClientView({ ownerId, slug, paths, readOnly }: { ownerId: string; slug: string; paths: ViewPaths; readOnly: boolean }) {
+/**
+ * One client: contact, notes and projects. Rendered at /clients/:slug and /demo/clients/:slug. Its
+ * project rows are /clients' rows for the same projects: `rankProjects` with the same `appCovers`.
+ */
+export async function ClientView({
+  ownerId,
+  slug,
+  paths,
+  readOnly,
+  appCovers,
+}: {
+  ownerId: string;
+  slug: string;
+  paths: ViewPaths;
+  readOnly: boolean;
+  /** Signed in: whether the user's own App installations cover a repository ("Not set up"'s reason). */
+  appCovers?: AppCovers;
+}) {
   const db = getDb();
   const client = await getClientBySlug(db, ownerId, slug);
   if (!client) notFound();
   const month = monthOf(new Date());
   const [overview, agentPrs] = await Promise.all([listClientsOverview(db, ownerId), agentPrStats(db, ownerId, client.id, month.from, month.to)]);
-  const projects = rankProjects(overview.clients.find((c) => c.id === client.id)?.projects ?? []);
+  const projects = rankProjects(overview.clients.find((c) => c.id === client.id)?.projects ?? [], new Date(), appCovers);
 
   return (
     <div className="space-y-8">
