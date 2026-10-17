@@ -1,5 +1,6 @@
 import {
   alertOpenedMessage,
+  alertPausedMessage,
   alertResolvedMessage,
   decideAlert,
   DEPLOY_LINK_WINDOW_MINUTES,
@@ -89,14 +90,66 @@ export async function createEndpoint(db: Db, ownerId: string, projectId: string,
   });
 }
 
-/** Edits take effect on the next worker run: the endpoint becomes due immediately. */
-export async function updateEndpoint(db: Db, ownerId: string, endpointId: string, input: EndpointInput): Promise<Endpoint | null> {
-  const [endpoint] = await db
-    .update(endpoints)
-    .set({ ...input, nextCheckAt: sql`now()` })
-    .where(and(eq(endpoints.id, endpointId), inArray(endpoints.projectId, ownedProjectIds(db, ownerId))))
-    .returning();
-  return endpoint ?? null;
+export interface UpdateEndpointResult {
+  endpoint: Endpoint;
+  /** The 'resolved' event when this edit paused an endpoint with an open alert; the caller queues its webhook. */
+  event: AlertEvent | null;
+}
+
+/**
+ * Edits take effect on the next worker run: the endpoint becomes due immediately. Changing
+ * `enabled` either way resets both consecutive counters, so re-enabling starts fresh. Pausing
+ * (enabled true → false) resolves an open alert in the same transaction, at `now`, with
+ * resolution 'paused': a paused endpoint isn't counted as down until month end.
+ * Null when the endpoint isn't the owner's.
+ */
+export async function updateEndpoint(
+  db: Db,
+  ownerId: string,
+  endpointId: string,
+  input: EndpointInput,
+  { now = new Date() }: { now?: Date } = {},
+): Promise<UpdateEndpointResult | null> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ enabled: endpoints.enabled })
+      .from(endpoints)
+      .where(and(eq(endpoints.id, endpointId), inArray(endpoints.projectId, ownedProjectIds(db, ownerId))))
+      .for('update');
+    if (!current) return null;
+
+    const enabledChanged = current.enabled !== input.enabled;
+    const [endpoint] = await tx
+      .update(endpoints)
+      .set({ ...input, nextCheckAt: sql`now()`, ...(enabledChanged ? { consecutiveFailures: 0, consecutiveOk: 0 } : {}) })
+      .where(eq(endpoints.id, endpointId))
+      .returning();
+    if (!(current.enabled && !input.enabled)) return { endpoint: endpoint!, event: null };
+
+    const [paused] = await tx
+      .update(alerts)
+      .set({ resolvedAt: now, resolution: 'paused' })
+      .where(and(eq(alerts.endpointId, endpointId), isNull(alerts.resolvedAt)))
+      .returning({ id: alerts.id, createdAt: alerts.createdAt });
+    if (!paused) return { endpoint: endpoint!, event: null };
+
+    const [project] = await tx
+      .select({ name: projects.name, webhookUrl: projects.alertWebhookUrl })
+      .from(projects)
+      .where(eq(projects.id, endpoint!.projectId));
+    const message = alertPausedMessage({ endpoint: endpoint!, openedAt: paused.createdAt, pausedAt: now });
+    return {
+      endpoint: endpoint!,
+      event: {
+        type: 'resolved',
+        alertId: paused.id,
+        projectId: endpoint!.projectId,
+        projectName: project!.name,
+        webhookUrl: project!.webhookUrl,
+        message,
+      },
+    };
+  });
 }
 
 /** Deletes the endpoint with its checks and alerts. */
@@ -298,10 +351,13 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
         projectId: endpoints.projectId,
         url: endpoints.url,
         name: endpoints.name,
+        enabled: endpoints.enabled,
         consecutiveFailures: endpoints.consecutiveFailures,
         consecutiveOk: endpoints.consecutiveOk,
       });
     if (!endpoint) throw new Error(`endpoint ${endpointId} not found`);
+    // A check claimed before a pause can land after it: keep the check, take no alert action.
+    if (!endpoint.enabled) return { consecutiveFailures: endpoint.consecutiveFailures, event: null };
 
     const [open] = await tx
       .select({ id: alerts.id, createdAt: alerts.createdAt })

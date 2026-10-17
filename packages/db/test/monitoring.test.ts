@@ -1,5 +1,5 @@
 import { failingFor, LimitExceededError, MAX_CLAIM_PER_OWNER, type FindingRow } from '@deployhealth/core';
-import { eq } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   assignHostSlots,
@@ -616,6 +616,65 @@ describe('failingSince (the "Down for 21m" duration)', () => {
   });
 });
 
+describe('updateEndpoint: pausing resolves an open alert', () => {
+  const input = { url: 'https://api.acme.com/health', method: 'GET' as const, intervalSeconds: 60 as const, expectedStatus: 200 };
+
+  async function down() {
+    const { user, project, endpoint } = await setup();
+    await db.update(endpoints).set({ name: 'Acme API' }).where(eq(endpoints.id, endpoint.id));
+    await db.update(projects).set({ alertWebhookUrl: 'https://hooks.example/x' }).where(eq(projects.id, project.id));
+    await recordCheck(db, endpoint.id, ok(minutes(0)));
+    await recordCheck(db, endpoint.id, fail(minutes(1)));
+    const opened = await recordCheck(db, endpoint.id, fail(minutes(2)));
+    return { user, project, endpoint, alertId: opened.event!.alertId };
+  }
+
+  it('resolves the open alert in the same transaction and returns the event for the webhook', async () => {
+    const { user, project, endpoint, alertId } = await down();
+    const result = await updateEndpoint(db, user.id, endpoint.id, { ...input, name: 'Acme API', enabled: false }, { now: minutes(14) });
+
+    expect(result?.endpoint).toMatchObject({ enabled: false, consecutiveFailures: 0, consecutiveOk: 0 });
+    expect(result?.event).toEqual({
+      type: 'resolved',
+      alertId,
+      projectId: project.id,
+      projectName: 'shop',
+      webhookUrl: 'https://hooks.example/x',
+      message: 'Acme API paused (alert open for 12m)',
+    });
+    expect(await db.select().from(alerts)).toMatchObject([{ id: alertId, resolvedAt: minutes(14), resolution: 'paused' }]);
+    expect(await listOpenAlerts(db, user.id, project.id)).toEqual([]);
+  });
+
+  it('does nothing more without an open alert, or when the endpoint stays enabled', async () => {
+    const { user, endpoint } = await setup();
+    await recordCheck(db, endpoint.id, ok(minutes(0)));
+    expect((await updateEndpoint(db, user.id, endpoint.id, { ...input, enabled: false }))?.event).toBeNull();
+    expect(await db.select().from(alerts)).toEqual([]);
+
+    const busy = await down();
+    expect((await updateEndpoint(db, busy.user.id, busy.endpoint.id, { ...input, intervalSeconds: 300, enabled: true }))?.event).toBeNull();
+    expect((await db.select().from(alerts).where(eq(alerts.id, busy.alertId)))[0]).toMatchObject({ resolvedAt: null, resolution: null });
+  });
+
+  it('re-enabling starts fresh: counters at 0, due now; a check that lands while paused takes no alert action', async () => {
+    const { user, endpoint } = await down();
+    await updateEndpoint(db, user.id, endpoint.id, { ...input, enabled: false }, { now: minutes(3) });
+
+    // A check claimed before the pause and recorded after it: stored, but no new alert.
+    await recordCheck(db, endpoint.id, fail(minutes(4)));
+    expect(await recordCheck(db, endpoint.id, fail(minutes(5)))).toEqual({ consecutiveFailures: 2, event: null });
+    expect(await db.select().from(alerts).where(isNull(alerts.resolvedAt))).toEqual([]);
+
+    const before = Date.now();
+    const result = await updateEndpoint(db, user.id, endpoint.id, { ...input, enabled: true });
+    expect(result?.endpoint).toMatchObject({ enabled: true, consecutiveFailures: 0, consecutiveOk: 0 });
+    expect(result!.endpoint.nextCheckAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(result!.endpoint.nextCheckAt.getTime()).toBeGreaterThan(before - 60_000);
+    expect(result?.event).toBeNull();
+  });
+});
+
 describe('endpoint names', () => {
   const input = { url: 'https://api.acme.com/health', method: 'GET' as const, intervalSeconds: 60 as const, expectedStatus: 200, enabled: true };
 
@@ -623,8 +682,8 @@ describe('endpoint names', () => {
     const { user, project } = await setup();
     const created = await createEndpoint(db, user.id, project.id, { ...input, name: 'Acme API' });
     expect(created?.name).toBe('Acme API');
-    expect((await updateEndpoint(db, user.id, created!.id, { ...input, intervalSeconds: 300 }))?.name).toBe('Acme API');
-    expect((await updateEndpoint(db, user.id, created!.id, { ...input, name: null }))?.name).toBeNull();
+    expect((await updateEndpoint(db, user.id, created!.id, { ...input, intervalSeconds: 300 }))?.endpoint.name).toBe('Acme API');
+    expect((await updateEndpoint(db, user.id, created!.id, { ...input, name: null }))?.endpoint.name).toBeNull();
   });
 
   it('replace the host in alert messages and open-alert views', async () => {

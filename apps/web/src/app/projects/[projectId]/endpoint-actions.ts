@@ -51,7 +51,7 @@ export async function saveEndpointAction(
   const input = { ...parsed.data, url: url.href };
   let saved;
   try {
-    saved = endpointId ? await updateEndpoint(db, user.id, endpointId, input) : await createEndpoint(db, user.id, projectId, input);
+    saved = endpointId ? (await updateEndpoint(db, user.id, endpointId, input))?.endpoint : await createEndpoint(db, user.id, projectId, input);
   } catch (error) {
     if (error instanceof LimitExceededError) return invalid(error.message);
     throw error;
