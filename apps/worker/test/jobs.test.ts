@@ -1,7 +1,7 @@
 import type { AlertEvent, DueEndpoint } from '@deployhealth/db';
 import { describe, expect, it } from 'vitest';
 import type { CheckResult } from '../src/check';
-import { checkEndpoints, pruneOldChecks, reseedDemo, sendAlertWebhook } from '../src/jobs';
+import { checkEndpoints, checkSummaryLine, checkSummaryWorthLogging, pruneOldChecks, reseedDemo, sendAlertWebhook } from '../src/jobs';
 
 const T0 = new Date('2026-09-28T12:00:00Z');
 const due = (id: string, url = `https://${id}.example/`, runAt = T0): DueEndpoint => ({
@@ -54,7 +54,7 @@ describe('checkEndpoints job', () => {
     });
 
     expect(recorded.sort()).toEqual(['a:false', 'b:true', 'c:true']);
-    expect(summary).toEqual({ checked: 3, failed: 1, opened: 1, resolved: 1, errors: 0 });
+    expect(summary).toEqual({ claimed: 3, checked: 3, failed: 1, opened: 1, resolved: 1, errors: 0, dueButUnclaimed: null, runMs: expect.any(Number) });
     // Only the project with a webhook is notified.
     expect(notified).toEqual([['https://hooks.example/x', { text: '[down] shop: a.example started failing' }]]);
   });
@@ -161,7 +161,57 @@ describe('checkEndpoints job', () => {
       notify: async () => true,
       log: () => {},
     });
-    expect(summary).toEqual({ checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0 });
+    expect(summary).toEqual({ claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, runMs: expect.any(Number) });
+  });
+});
+
+describe('checkEndpoints summary: claimed, due_but_unclaimed, run_ms', () => {
+  const base = {
+    check: async () => result(true),
+    record: async () => ({ consecutiveFailures: 0, event: null }),
+    notify: async () => true,
+    heartbeat: async () => {},
+    log: () => {},
+  };
+
+  it('counts what the claim took, what it left due (counted after the claim) and how long the run took', async () => {
+    const order: string[] = [];
+    let t = 1_000;
+    const summary = await checkEndpoints({
+      ...base,
+      claimDue: async () => (order.push('claim'), [due('a'), due('b')]),
+      countDue: async () => (order.push('count'), 7),
+      check: async () => (order.push('check'), (t += 2_500), result(true)),
+      clock: () => t,
+    });
+    expect(order).toEqual(['claim', 'count', 'check', 'check']);
+    expect(summary).toEqual({ claimed: 2, checked: 2, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 7, runMs: 5_000 });
+  });
+
+  it('logs a failed count by error name and code, and still runs the checks', async () => {
+    const logs: string[] = [];
+    const summary = await checkEndpoints({
+      ...base,
+      claimDue: async () => [due('a')],
+      countDue: async () => Promise.reject(Object.assign(new Error('relation "endpoints" ... postgres://u:pw@h/db'), { code: '57P01' })),
+      log: (m) => logs.push(m),
+    });
+    expect(summary).toMatchObject({ claimed: 1, checked: 1, dueButUnclaimed: null });
+    expect(logs).toEqual(['[check] due endpoints not counted: Error 57P01']);
+  });
+
+  it('writes the summary line with snake_case backlog and duration keys', () => {
+    const line = checkSummaryLine({ claimed: 3, checked: 3, failed: 1, opened: 1, resolved: 0, errors: 0, dueButUnclaimed: 4, runMs: 5120 });
+    expect(line).toBe('[check] {"claimed":3,"checked":3,"failed":1,"opened":1,"resolved":0,"errors":0,"due_but_unclaimed":4,"run_ms":5120}');
+  });
+
+  it('logs a run that claimed, errored or left endpoints due; a quiet run stays quiet', () => {
+    const quiet = { claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 0, runMs: 3 };
+    expect(checkSummaryWorthLogging(quiet)).toBe(false);
+    expect(checkSummaryWorthLogging({ ...quiet, dueButUnclaimed: null })).toBe(false);
+    expect(checkSummaryWorthLogging({ ...quiet, claimed: 1 })).toBe(true);
+    expect(checkSummaryWorthLogging({ ...quiet, errors: 1 })).toBe(true);
+    expect(checkSummaryWorthLogging({ ...quiet, dueButUnclaimed: 2 })).toBe(true);
   });
 });
 

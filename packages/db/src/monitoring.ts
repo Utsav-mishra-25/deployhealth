@@ -301,6 +301,18 @@ export async function claimDueEndpoints(
   });
 }
 
+/**
+ * Enabled endpoints still due at `now` (worker): run right after a claim, these are the ones it
+ * left for next time (host spacing, the per-owner cap or the limit). A count, never ids or URLs.
+ */
+export async function countDueEndpoints(db: Db, now = new Date()): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(endpoints)
+    .where(and(eq(endpoints.enabled, true), sql`${endpoints.nextCheckAt} <= ${now.toISOString()}::timestamptz`));
+  return Number(row!.count);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Recording checks and the alert lifecycle (worker)
 // ---------------------------------------------------------------------------------------------
