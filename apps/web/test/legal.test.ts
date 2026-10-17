@@ -8,7 +8,7 @@ import SecurityPage from '@/app/security/page';
 import TermsPage from '@/app/terms/page';
 import { resetServerEnvForTests } from '@/env';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, formatLegalDate, LEGAL_LAST_UPDATED, OPERATOR, SELF_SERVE_DATA_TEXT, SUBPROCESSORS } from '@/lib/legal';
+import { BACKUPS_TEXT, CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, formatLegalDate, LEGAL_LAST_UPDATED, OPERATOR, SELF_SERVE_DATA_TEXT, SUBPROCESSORS } from '@/lib/legal';
 import { ACCOUNT_DELETION_RECORD_DAYS, BACKUP_RETENTION_WEEKS } from '@deployhealth/db';
 import { REDACTED } from '@deployhealth/db/redact';
 
@@ -52,6 +52,7 @@ describe('/privacy and /security agree', () => {
       ['error-reports', ERROR_REPORTS_TEXT],
       ['self-serve-data', SELF_SERVE_DATA_TEXT],
       ['deletion-record', DELETION_RECORD_TEXT],
+      ['backups', BACKUPS_TEXT],
     ] as const) {
       expect(plain(textOf(privacy, testId) ?? '')).toBe(text);
       expect(plain(textOf(security, testId) ?? '')).toBe(text);
@@ -60,6 +61,10 @@ describe('/privacy and /security agree', () => {
     expect(ERROR_REPORTS_TEXT).toContain(REDACTED);
     expect(DELETION_RECORD_TEXT).toContain(`${ACCOUNT_DELETION_RECORD_DAYS} days`);
     expect(ACCOUNT_DELETION_RECORD_DAYS).toBe((BACKUP_RETENTION_WEEKS + 1) * 7);
+    // Backups: the retention and the deletions list's span come from the same constants as the code.
+    expect(BACKUPS_TEXT).toContain(`The last ${BACKUP_RETENTION_WEEKS} weekly copies are kept`);
+    expect(BACKUPS_TEXT).toContain(`the last ${ACCOUNT_DELETION_RECORD_DAYS} days`);
+    expect(SUBPROCESSORS.find((s) => s.name === 'Cloudflare')?.purpose).toMatch(/backups \(R2\)/);
     expect(SUBPROCESSORS.map((s) => s.name)).toContain('Sentry');
     expect(plain(privacy)).not.toContain('planned');
   });

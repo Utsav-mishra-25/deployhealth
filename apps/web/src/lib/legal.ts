@@ -1,5 +1,5 @@
 import { CHECK_RETENTION_DAYS } from '@deployhealth/core';
-import { ACCOUNT_DELETION_RECORD_DAYS } from '@deployhealth/db';
+import { ACCOUNT_DELETION_RECORD_DAYS, BACKUP_RETENTION_WEEKS } from '@deployhealth/db';
 
 /** The source repository, linked from the footer, /security, /terms and the landing page. */
 export const REPO_URL = 'https://github.com/Utsav-mishra-25/deployhealth';
@@ -16,7 +16,7 @@ export const HOSTING = { provider: 'Railway', region: 'Singapore' } as const;
 /** Every third party that processes data for the hosted service. */
 export const SUBPROCESSORS = [
   { name: 'Railway', purpose: 'hosting and the database' },
-  { name: 'Cloudflare', purpose: 'DNS and the proxy in front of the site' },
+  { name: 'Cloudflare', purpose: 'DNS, the proxy in front of the site, and the storage for database backups (R2)' },
   { name: 'GitHub', purpose: 'sign-in, and the optional GitHub App for pull request checks' },
   { name: 'Sentry', purpose: 'error reports from the servers, scrubbed before they are sent (see Security)' },
 ] as const;
@@ -34,6 +34,12 @@ export const ERROR_REPORTS_TEXT =
 /** Self-serve export and deletion on /account, for /privacy and /security. */
 export const SELF_SERVE_DATA_TEXT =
   'On your Account page, "Export my data" downloads a JSON file of everything deployhealth holds for you (no tokens, no webhook URLs), and "Delete my account" deletes your account and everything it owns at once, after you type your GitHub login.';
+
+/**
+ * Where backups go and for how long, word for word the same on /security and /privacy. True to the
+ * backup service (apps/worker/src/backup/run.ts) and BACKUP_RETENTION_WEEKS (packages/db retention.ts).
+ */
+export const BACKUPS_TEXT = `Once a week the whole database is copied, compressed, to a private Cloudflare R2 bucket used only for backups, where it is encrypted at rest. The last ${BACKUP_RETENTION_WEEKS} weekly copies are kept and older ones deleted, so data you delete leaves every backup within about ${BACKUP_RETENTION_WEEKS} weeks. Next to them, a list of deleted accounts (GitHub numeric ids and dates, the last ${ACCOUNT_DELETION_RECORD_DAYS} days) is updated daily, so restoring a backup re-applies every deletion made since it was taken.`;
 
 /** What a deletion leaves behind, and for how long. */
 export const DELETION_RECORD_TEXT = `A deletion leaves one record: your GitHub numeric id and the date, kept for ${ACCOUNT_DELETION_RECORD_DAYS} days so that restoring a backup can never bring the account back.`;

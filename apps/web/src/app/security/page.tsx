@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { li, ProsePage, Section } from '@/components/prose-page';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, REPO_URL, SELF_SERVE_DATA_TEXT } from '@/lib/legal';
+import { BACKUPS_TEXT, CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, REPO_URL, SELF_SERVE_DATA_TEXT } from '@/lib/legal';
 import { securityContact } from '@/lib/security';
 import { SHARE_LINK_DAYS } from '@/lib/share-link';
 
@@ -70,6 +70,10 @@ export default function SecurityPage() {
 
       <Section title="Error reports and logs">
         <p data-testid="error-reports">{ERROR_REPORTS_TEXT}</p>
+      </Section>
+
+      <Section title="Backups">
+        <p data-testid="backups">{BACKUPS_TEXT}</p>
       </Section>
 
       <Section title="Exporting and deleting your data">
