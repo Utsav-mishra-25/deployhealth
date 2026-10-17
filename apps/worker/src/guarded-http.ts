@@ -1,6 +1,8 @@
+import { createReadStream, createWriteStream } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { isIP } from 'node:net';
+import { pipeline } from 'node:stream/promises';
 import { BlockedUrlError, guardedLookup, isBlockedAddress, systemGuardedLookup, type EndpointMethod } from '@deployhealth/core';
 
 /**
@@ -8,7 +10,8 @@ import { BlockedUrlError, guardedLookup, isBlockedAddress, systemGuardedLookup, 
  * goes through node:http(s) with the SSRF-guarded DNS lookup, which re-checks the address at
  * connect time (so redirects and DNS rebinding are covered) on a bounded resolver (A and AAAA in
  * parallel, a deadline, failing closed); literal IPs are checked up front;
- * connections aren't pooled; response bodies are never read. `test/no-unguarded-http.test.ts`
+ * connections aren't pooled; response bodies are never read, except by githubFetch and r2Request
+ * (fixed hosts only, capped in memory or streamed to a file). `test/no-unguarded-http.test.ts`
  * fails CI if any other file makes requests.
  */
 
@@ -136,4 +139,77 @@ export async function githubFetch(input: string | URL | Request, init: RequestIn
     const noBody = res.status === 204 || res.status === 205 || res.status === 304 || method === 'HEAD';
     return new Response(noBody ? null : new Uint8Array(res.body), { status: res.status, headers: responseHeaders });
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cloudflare R2 (the backup service: dumps and deletions.json), signed by apps/worker/src/backup/r2.ts
+// ---------------------------------------------------------------------------------------------
+
+/** R2's S3 API hosts: `<32-hex account id>.r2.cloudflarestorage.com`, or its EU jurisdiction. */
+export const R2_HOST = /^[0-9a-f]{32}\.(?:eu\.)?r2\.cloudflarestorage\.com$/;
+/** The largest R2 response read into memory (bucket listings, deletions.json, error bodies). */
+export const MAX_R2_RESPONSE_BYTES = 8 * 1024 * 1024;
+const R2_TIMEOUT_MS = 30 * 60_000;
+
+export interface R2HttpRequest {
+  method: 'GET' | 'PUT' | 'DELETE';
+  url: URL;
+  /** Signed headers (aws4), sent as they are. */
+  headers: Record<string, string | number>;
+  /** A file streamed as the body (its size is in content-length), or bytes. */
+  body?: { file: string } | Buffer;
+  /** Stream a 200 response's body into this file instead of memory (downloads). */
+  saveTo?: string;
+  signal?: AbortSignal;
+}
+
+export interface R2HttpResponse {
+  status: number;
+  /** The body, up to MAX_R2_RESPONSE_BYTES; empty when it was saved to a file. */
+  body: Buffer;
+}
+
+/**
+ * One request to R2's S3 API, and nothing else: https only, an R2 host only, the guarded lookup on
+ * the system resolver (a fixed host, like GitHub's), no redirects followed. The one guarded
+ * function besides githubFetch that reads response bodies: capped in memory, or streamed to a file.
+ */
+export function r2Request(request: R2HttpRequest): Promise<R2HttpResponse> {
+  const { url } = request;
+  if (url.protocol !== 'https:' || !R2_HOST.test(url.hostname) || url.port) {
+    return Promise.reject(new BlockedUrlError(`r2Request only talks to Cloudflare R2 (<account id>.r2.cloudflarestorage.com), not ${url.host}`));
+  }
+  return new Promise<R2HttpResponse>((resolve, reject) => {
+    const req = https.request(
+      url,
+      { method: request.method, signal: request.signal ?? AbortSignal.timeout(R2_TIMEOUT_MS), lookup: systemGuardedLookup, agent: false, headers: request.headers },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        if (request.saveTo && status === 200) {
+          const out = createWriteStream(request.saveTo);
+          pipeline(res, out).then(() => resolve({ status, body: Buffer.alloc(0) }), reject);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        res.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > MAX_R2_RESPONSE_BYTES) {
+            res.destroy();
+            reject(new Error(`R2 response larger than ${MAX_R2_RESPONSE_BYTES / 1024 / 1024} MB`));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on('end', () => resolve({ status, body: Buffer.concat(chunks) }));
+        res.on('error', reject);
+      },
+    );
+    req.on('error', reject);
+    if (request.body && !Buffer.isBuffer(request.body)) {
+      pipeline(createReadStream(request.body.file), req).catch(reject);
+    } else {
+      req.end(request.body);
+    }
+  });
 }
