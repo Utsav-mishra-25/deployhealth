@@ -119,4 +119,5 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   must be empty and must not be `DATABASE_URL`'s database (`sameDatabase()`). Deletions to
   re-apply come from `deletions.json` (the bucket's, or `--deletions-file`) and, with
   `--live-deletions`, `DATABASE_URL`'s `account_deletions` (read only); with none it refuses unless
-  `--skip-deletions`. It prints each source and the manifest's age, then rows per table.
+  `--skip-deletions`. `--download --live-deletions` also saves the live database's deletions as
+  `live-deletions.json`, and `--deletions-file` repeats, for the production restore's two steps. It prints each source and the manifest's age, then rows per table.
