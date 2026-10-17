@@ -37,9 +37,11 @@ describe('the deployhealth-scan npm package', () => {
     expect(readFileSync(fileURLToPath(new URL('../../../README.md', import.meta.url)), 'utf8').split('\n')).toContain(line);
   });
 
-  it("README's workflow is exactly the snippet the settings page generates", () => {
+  it("README leads with the Action; its \"From any other CI\" workflow is exactly the snippet the settings page generates", () => {
     const readme = readFileSync(`${NPM}README.md`, 'utf8');
-    const yaml = /```yaml\n([\s\S]*?)```/.exec(readme)?.[1];
+    expect(readme.indexOf('uses: Utsav-mishra-25/deployhealth-action@v1')).toBeGreaterThan(-1);
+    expect(readme.indexOf('uses: Utsav-mishra-25/deployhealth-action@v1')).toBeLessThan(readme.indexOf('### From any other CI'));
+    const yaml = /```yaml\n([\s\S]*?)```/.exec(readme.slice(readme.indexOf('### From any other CI')))?.[1];
     const snippet = githubActionSnippet({ appUrl: 'https://deployhealth.dev', version: CLI_VERSION });
     expect(yaml).toBe(snippet.slice(snippet.indexOf('\n') + 1)); // minus the "# .github/workflows/…" line
   });
