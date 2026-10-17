@@ -437,7 +437,7 @@ A public status page tells users about incidents and planned maintenance ([incid
 
 ## 15. Backups to Cloudflare R2 (optional)
 
-A fourth service, **backup**, built from `apps/worker/Dockerfile` (the worker package plus
+A fourth service, **backup**, built from `apps/worker/backup.Dockerfile` (the worker package plus
 PostgreSQL 18's `pg_dump`), runs once a day at 03:41 UTC and exits:
 
 1. it uploads `deletions.json`: the account deletions on record (GitHub numeric ids and times, the
@@ -475,7 +475,7 @@ API token can reach that one bucket only.
    | --- | --- | --- |
    | Source | Root Directory | leave empty; **Branch** `main` |
    | Build | Builder | **Dockerfile** |
-   | Build | Dockerfile Path | `apps/worker/Dockerfile` |
+   | Build | Dockerfile Path | `apps/worker/backup.Dockerfile` (named so that nothing picks it up for the worker) |
    | Build | Watch paths | `/apps/worker/**`, `/packages/**`, `/package.json`, `/pnpm-lock.yaml`, `/pnpm-workspace.yaml`, `/tsconfig.base.json`, `/.nvmrc`, `/.dockerignore` |
    | Deploy | Start command | `node apps/worker/dist/backup.js` (the Dockerfile's default too) |
    | Deploy | Cron Schedule | `41 3 * * *` (UTC) |
@@ -525,7 +525,7 @@ API token can reach that one bucket only.
 | GitHub App deliveries answer 404 | `GITHUB_APP_WEBHOOK_SECRET` isn't set on web. |
 | `/demo` is a 404 | `DEMO_PUBLIC` isn't `1` on web, or the worker hasn't reseeded yet (check its log). |
 | A log shows `[sentry] SENTRY_DSN is not a Sentry DSN` | The value isn't a DSN (`https://<key>@<host>/<project id>`); copy it again from Sentry (step 12). The service runs without error reports. |
-| The backup run logs `pg_dump 17 can't work with a PostgreSQL 18 server` (or another pair) | The server's major version moved past the image's client: change `postgresql-client-18` in `apps/worker/Dockerfile` to the new major, and `BACKUP_PG_MAJOR` in packages/db `backup.ts`. |
+| The backup run logs `pg_dump 17 can't work with a PostgreSQL 18 server` (or another pair) | The server's major version moved past the image's client: change `postgresql-client-18` in `apps/worker/backup.Dockerfile` to the new major, and `BACKUP_PG_MAJOR` in packages/db `backup.ts`. |
 | The backup run logs `Set all four BACKUP_R2_* variables, or none` | One of the four is missing on the backup service (step 15.4). |
 | The backup run logs `R2 PUT … answered HTTP 403 (AccessDenied)` | The token can't write to this bucket: check it's scoped to `BACKUP_R2_BUCKET` with Object Read & Write, and that the keys are that token's. |
 | The worker posts "the backup service hasn't succeeded for 8 days" | The backup's cron runs fail (its Deployments tab shows them red; the log says why) or stopped (check the Cron Schedule). |

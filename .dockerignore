@@ -1,4 +1,4 @@
-# For apps/worker/Dockerfile (the backup service). Never copy local env files, dependencies or
+# For apps/worker/backup.Dockerfile (the backup service). Never copy local env files, dependencies or
 # build output into an image.
 **/.env
 **/.env.*

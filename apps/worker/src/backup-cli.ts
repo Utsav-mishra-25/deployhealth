@@ -1,5 +1,5 @@
 // The backup service's command (dist/backup.js), run by Railway cron daily at 03:41 UTC
-// (docs/deploy-railway.md step 15) from apps/worker/Dockerfile, which installs pg_dump 18. One run:
+// (docs/deploy-railway.md step 15) from apps/worker/backup.Dockerfile, which installs pg_dump 18. One run:
 // deletions.json, a dump when the newest is older than 6.5 days, the 4-newest prune, the heartbeat
 // (backup/run.ts). Retried twice in-process; exits non-zero when every attempt failed, so Railway
 // marks the run failed, and Sentry gets the error.

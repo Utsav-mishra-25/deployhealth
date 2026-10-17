@@ -29,7 +29,8 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
     src/backup/restore.ts  restore logic: --list, --download, restore into an empty database + re-apply deletions
     src/backup-cli.ts dist/backup.js: the backup service's command (Railway cron)
     src/restore-cli.ts dist/restore.js: the operator's restore command (docs/maintenance.md)
-    Dockerfile        the backup service's image: this package plus PGDG's postgresql-client-18
+    backup.Dockerfile the backup service's image: this package plus PGDG's postgresql-client-18 (not named
+                      `Dockerfile`, so nothing auto-detects it for the worker, which stays on Railpack)
     railway.json      documentation only, like web's; railway.backup.json, the backup service's
 ```
 
@@ -100,7 +101,7 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
 ## The backup service and restores
 
 - **The backup service** is a separate Railway service (cron, daily at 03:41 UTC, restart policy
-  Never) built from `apps/worker/Dockerfile`; the worker itself still builds with Railpack and
+  Never) built from `apps/worker/backup.Dockerfile`; the worker itself still builds with Railpack and
   never holds the R2 keys. `backup.js` runs `runBackup()` with `withRetries()` (two retries, 1 and
   5 minutes apart): upload `deletions.json` (`deletionsManifest()`), then dump only when the newest
   dump is older than `BACKUP_DUMP_INTERVAL_DAYS` (6.5; a failed day retries the next), upload it as

@@ -28,7 +28,7 @@ worker is back, and nothing is alerted for the gap.
 
 **A Postgres major upgrade** (Railway's in-place upgrade, or a new service): the backup image's
 client must keep up, or its version check refuses every dump. Before the upgrade, change
-`postgresql-client-18` in `apps/worker/Dockerfile` and `BACKUP_PG_MAJOR` in
+`postgresql-client-18` in `apps/worker/backup.Dockerfile` and `BACKUP_PG_MAJOR` in
 `packages/db/src/backup.ts` to the new major, CI's `postgres:18` and `postgresql-client-18` too,
 and merge; afterwards, run a backup (deploy-railway.md 15.5) and a test restore (below).
 
