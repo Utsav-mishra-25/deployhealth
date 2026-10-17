@@ -18,6 +18,16 @@ function heavyInput(files: number): AnalyzeInput {
 }
 
 /** The main event loop's worst delay while `during` runs, sampled every 10 ms. */
+/**
+ * The longest main-thread stall these tests allow while hostile input is scanned in the isolate.
+ * Measured on a 4-core container (Phase 9b, 17 runs alone): 4 to 38 ms for the bounded-lists test,
+ * 2 to 16 ms for the time-limit one with one 315 ms outlier, and 141 ms once under the full
+ * parallel suite; the old 100 ms bound flaked on those. A scan on the main thread instead stalls
+ * for seconds (about 2.7 s alone), so 400 ms still catches the regression this guards against.
+ * Raise it deliberately, with numbers, never to quiet a flake.
+ */
+const MAX_LOOP_LAG_MS = 400;
+
 async function maxLoopLag<T>(during: Promise<T>): Promise<{ lag: number; result: PromiseSettledResult<T> }> {
   let lag = 0;
   let last = performance.now();
@@ -82,7 +92,7 @@ describe('the pull request check isolate', () => {
       expect(analysis.added).toHaveLength(MAX_REPORTED_ROWS);
       expect(analysis.undeclared).toHaveLength(MAX_REPORTED_UNDECLARED);
       expect(analysis.counts).toMatchObject({ added: 300_000, addedUndeclared: 300_000, undeclared: 300_000 });
-      expect(lag).toBeLessThan(100);
+      expect(lag).toBeLessThan(MAX_LOOP_LAG_MS);
     } finally {
       await isolate.close();
     }
@@ -127,6 +137,6 @@ describe('the pull request check isolate', () => {
     expect(await endpointsRun).toMatchObject({ checked: 3, errors: 0 });
     expect(late).toHaveLength(3);
     expect(Math.max(...late)).toBeLessThan(250); // each wave starts within 250 ms of its time
-    expect(lag).toBeLessThan(100); // the main event loop never stalls for 100 ms
+    expect(lag).toBeLessThan(MAX_LOOP_LAG_MS); // the main event loop never stalls
   });
 });
