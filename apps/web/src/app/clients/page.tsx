@@ -5,9 +5,9 @@ import { InstallConfirmation } from '@/components/install-confirmation';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { serverEnv } from '@/env';
 import { getDb } from '@/lib/db';
-import { checklist, installAppHref, INSTALLED_PARAM, INSTALLED_VALUE } from '@/lib/onboarding';
+import { appCoversFor, checklist, installAppHref, INSTALLED_PARAM, INSTALLED_VALUE } from '@/lib/onboarding';
 import { APP_PATHS } from '@/lib/paths';
-import { appCoverage, coversRepo } from '@/lib/repo-coverage';
+import { appCoverage } from '@/lib/repo-coverage';
 import { ClientsOverviewView } from '@/views/clients-overview';
 
 export const dynamic = 'force-dynamic';
@@ -38,7 +38,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           <AppNextSteps repos={repos} limit={5} />
         </div>
       )}
-      <ClientsOverviewView ownerId={user.id} paths={APP_PATHS} readOnly={false} appCovers={coversRepo(coverage)} />
+      <ClientsOverviewView ownerId={user.id} paths={APP_PATHS} readOnly={false} appCovers={appCoversFor(state.installations, appSlug)} />
     </>
   );
 }
