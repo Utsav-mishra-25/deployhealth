@@ -541,8 +541,11 @@ test("a client page's project rows: the same status and reasons as /clients", as
   await page.goto('/clients/new');
   await page.getByLabel('Client name').fill(`Reasons Client ${suffix}`);
   await page.getByRole('button', { name: 'Create client' }).click();
+  await expect(page.getByRole('heading', { name: `Reasons Client ${suffix}` })).toBeVisible();
   const clientPath = new URL(page.url()).pathname;
   await page.getByRole('link', { name: 'Add project' }).click();
+  await expect(page).toHaveURL(/\/projects\/new\?client=/);
+  await expect(page.getByLabel('Client')).toHaveValue(/[0-9a-f-]{36}/);
   // No scan and no pull request check: "Not set up", with the reason the user's App coverage gives.
   await createProject(page, { name: `reasons-${suffix}`, repo: `acme/reasons-${suffix}` });
 
