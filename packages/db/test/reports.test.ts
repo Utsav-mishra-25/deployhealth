@@ -119,6 +119,7 @@ describe('getClientReport', () => {
     await recordCheck(db, endpoint.id, check('2026-09-10T11:50:00Z', true));
     await recordCheck(db, endpoint.id, check('2026-09-10T12:00:00Z', false));
     await recordCheck(db, endpoint.id, check('2026-09-10T12:01:00Z', false));
+    await recordCheck(db, endpoint.id, check('2026-09-10T12:30:00Z', true));
     await recordCheck(db, endpoint.id, check('2026-09-10T12:31:00Z', true));
 
     const report = await getClientReport(db, client.id, SEPTEMBER, OCT_5);

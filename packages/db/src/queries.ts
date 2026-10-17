@@ -142,11 +142,12 @@ export interface ProjectListItem {
   counts: FindingCounts | null;
   uptime: UptimeStatus;
   /**
-   * When the failure behind a down or degraded badge began: the earliest first failed check of
-   * the current runs of the endpoints with an open alert (down) or failing now (degraded).
+   * When the failure behind a down or degraded badge began: the earliest open alert's created_at
+   * (down), or the earliest first failed check of the current runs of the endpoints failing now
+   * (degraded).
    */
   failingSince: Date | null;
-  /** Labels (name, else host) of the endpoints behind a down or degraded badge, longest-failing first. */
+  /** Labels (name, else host) of the endpoints behind a down or degraded badge, longest-down (or failing) first. */
   failingEndpoints: string[];
   /** Open pull requests whose latest GitHub App check found undeclared env vars. */
   openPrsWithUndeclared: number;
@@ -223,19 +224,19 @@ export async function listProjectsForOwner(db: Db, ownerId: string): Promise<Pro
     ) bare on s.env_scopes is not null
     left join lateral (
       select count(*)::int as enabled_endpoints,
-             count(*) filter (where ep.open_alert)::int as open_alerts,
+             count(ep.open_since)::int as open_alerts,
              count(ep.failing_since)::int as failing_endpoints,
-             min(ep.failing_since) filter (where ep.open_alert) as down_since,
+             min(ep.open_since) as down_since,
              min(ep.failing_since) as failing_since,
-             coalesce(json_agg(json_build_object('url', ep.url, 'name', ep.name) order by ep.failing_since)
-               filter (where ep.open_alert and ep.failing_since is not null), '[]') as down_endpoints,
+             coalesce(json_agg(json_build_object('url', ep.url, 'name', ep.name) order by ep.open_since)
+               filter (where ep.open_since is not null), '[]') as down_endpoints,
              coalesce(json_agg(json_build_object('url', ep.url, 'name', ep.name) order by ep.failing_since)
                filter (where ep.failing_since is not null), '[]') as failing_endpoint_refs
       from (
         select e.url, e.name,
-               exists (
-                 select 1 from ${alerts} a where a.endpoint_id = e.id and a.resolved_at is null
-               ) as open_alert,
+               (
+                 select a.created_at from ${alerts} a where a.endpoint_id = e.id and a.resolved_at is null
+               ) as open_since,
                ${failingSinceSql(sql`e.id`)} as failing_since
         from ${endpoints} e where e.project_id = p.id and e.enabled
       ) ep

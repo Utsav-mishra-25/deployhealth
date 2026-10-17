@@ -39,6 +39,9 @@ export type EndpointMethod = (typeof ENDPOINT_METHODS)[number];
 /** Consecutive failed checks that open an alert (only after the endpoint has had an ok check). */
 export const ALERT_FAILURE_THRESHOLD = 2;
 
+/** Consecutive ok checks that resolve an open alert, so a flapping host doesn't resolve and reopen. */
+export const ALERT_RECOVERY_THRESHOLD = 2;
+
 /** An alert links the most recent deploy within this window before the first failed check. */
 export const DEPLOY_LINK_WINDOW_MINUTES = 30;
 

@@ -275,9 +275,10 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /**
  * Store one check and apply the alert rule, atomically:
- * - ok resets consecutive_failures and resolves an open alert;
- * - a failure increments it; the second one in a row opens an alert if the endpoint has ever
- *   been ok. The alert links the most recent deploy in the 30 minutes before the first failure
+ * - ok resets consecutive_failures and increments consecutive_ok; the second ok in a row
+ *   (ALERT_RECOVERY_THRESHOLD) resolves an open alert, so a flapping host stays one incident;
+ * - a failure increments consecutive_failures and resets consecutive_ok; the second one in a row
+ *   opens an alert if the endpoint has ever been ok. The alert links the most recent deploy in the 30 minutes before the first failure
  *   and lists the MISSING vars that deploy introduced.
  * The returned event is for the webhook, which the caller sends after the transaction commits.
  */
@@ -287,13 +288,18 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
 
     const [endpoint] = await tx
       .update(endpoints)
-      .set({ consecutiveFailures: outcome.ok ? 0 : sql`${endpoints.consecutiveFailures} + 1` })
+      .set(
+        outcome.ok
+          ? { consecutiveFailures: 0, consecutiveOk: sql`${endpoints.consecutiveOk} + 1` }
+          : { consecutiveFailures: sql`${endpoints.consecutiveFailures} + 1`, consecutiveOk: 0 },
+      )
       .where(eq(endpoints.id, endpointId))
       .returning({
         projectId: endpoints.projectId,
         url: endpoints.url,
         name: endpoints.name,
         consecutiveFailures: endpoints.consecutiveFailures,
+        consecutiveOk: endpoints.consecutiveOk,
       });
     if (!endpoint) throw new Error(`endpoint ${endpointId} not found`);
 
@@ -311,6 +317,7 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
     const action = decideAlert({
       ok: outcome.ok,
       consecutiveFailures: endpoint.consecutiveFailures,
+      consecutiveOk: endpoint.consecutiveOk,
       hasOkHistory,
       hasOpenAlert: Boolean(open),
     });
@@ -323,7 +330,7 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
     const base = { projectId: endpoint.projectId, projectName: project!.name, webhookUrl: project!.webhookUrl };
 
     if (action === 'resolve') {
-      await tx.update(alerts).set({ resolvedAt: outcome.checkedAt }).where(eq(alerts.id, open!.id));
+      await tx.update(alerts).set({ resolvedAt: outcome.checkedAt, resolution: 'recovered' }).where(eq(alerts.id, open!.id));
       const message = alertResolvedMessage({ endpoint, openedAt: open!.createdAt, resolvedAt: outcome.checkedAt });
       return { consecutiveFailures: 0, event: { type: 'resolved', alertId: open!.id, ...base, message } };
     }
@@ -493,7 +500,11 @@ export interface EndpointMonitoring {
   /** Newest first. */
   recent: Check[];
   openAlert: Alert | null;
-  /** First failed check of the current run while the status is down or failing; null otherwise. */
+  /**
+   * What "Down for 21m" / "Failing for 1m" counts from: the open alert's created_at while down
+   * (the number the resolved message uses, so it stays through the ok checks before recovery),
+   * the first failed check of the current run while failing; null otherwise.
+   */
   failingSince: Date | null;
 }
 
@@ -557,7 +568,7 @@ async function endpointMonitoring(db: Db, endpoint: Endpoint, now: Date): Promis
     latency: latency.rows.map((r) => ({ hour: new Date(r.hour), p50: Math.round(Number(r.p50)), p95: Math.round(Number(r.p95)) })),
     recent,
     openAlert,
-    failingSince: (status === 'down' || status === 'failing') && since ? new Date(since) : null,
+    failingSince: status === 'down' ? openAlert!.createdAt : status === 'failing' && since ? new Date(since) : null,
   };
 }
 
