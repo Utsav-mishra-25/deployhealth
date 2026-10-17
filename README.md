@@ -84,7 +84,7 @@ Endpoints get a status, "Down for 22m", 24-hour and 7-day uptime, a p50/p95 late
 the last 20 checks. Alerts open after two failed checks in a row, link the deploy that preceded
 them, and can post to Slack or Discord.
 
-![A project with an open alert linked to its deploy, endpoint uptime, latency and recent checks](docs/screenshots/project.png)
+![A project: the open alert linked to its deploy, the latest scan's counts, findings with what to do about each, and the deploy the outage followed](docs/screenshots/project.png)
 
 ### Handoff export
 
@@ -108,7 +108,7 @@ every deploy with the config issues it introduced or fixed, the alerts as sent, 
 now. **Share report** creates a signed link your client can open without an account, valid for 90
 days.
 
-![A monthly report: the summary line, key numbers, uptime, the incident, and deploys with what each introduced and fixed](docs/screenshots/report.png)
+![A monthly report: who prepared it, a plain-language summary, key numbers, uptime, the incident, and under Technical details the deploys with what each introduced and fixed](docs/screenshots/report.png)
 
 ## Setup: two options
 
