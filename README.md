@@ -3,8 +3,6 @@
 **One page for every client project you maintain: is the config sane, is it up, and did the
 last deploy break it.**
 
-Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Other languages aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
-
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 
 The hosted version at deployhealth.dev is free while in beta. Its home page explains the product in
@@ -12,11 +10,16 @@ one screen and links to the demo; once you're signed in, it takes you straight t
 
 If you look after a dozen client sites and APIs, most bad deploys fail the same boring way: a new
 env var nobody set, a secret renamed in code but not in `.env.example`. deployhealth groups your
-projects by client and watches both halves:
+projects by client and watches both halves, in the order you set it up:
 
-- **Config health.** A GitHub Action scans every push for env vars that are referenced but never
-  defined, defined but never used, or out of sync between `.env` and `.env.example`.
-- **Uptime.** A worker checks your health endpoints every 1, 5 or 15 minutes.
+- **Pull request checks (GitHub App).** Install the App and add a project for the repository: every
+  pull request gets a comment and a check naming the env vars it adds, removes or renames, new ones
+  missing from `.env.example`, committed `.env` files and secret-shaped strings. No token or workflow.
+- **Uptime (your sites).** A worker checks your health endpoints every 1, 5 or 15 minutes, with
+  alerts to Slack or Discord.
+- **Optional: deploy history (the Action).** One workflow step and a repository secret scan every
+  push for env vars that are referenced but never defined, defined but never used, or out of sync
+  between `.env` and `.env.example`, and give you deploy history and alerts that name the deploy.
 
 When an endpoint goes down shortly after a deploy, the alert names the deploy and the variables it
 newly left undefined:
@@ -121,10 +124,10 @@ then, optionally, the Action.
   Secrets and variables → Actions → Secrets tab → New repository secret**. Not a Variable (the
   Variables tab shows values in plain text to anyone with access to the repository), and not an
   environment secret (the workflow declares no environment, so it wouldn't see one). The project's
-  settings page gives a workflow that runs the CLI pinned to an exact npm version; the
-  [deployhealth env check](https://github.com/Utsav-mishra-25/deployhealth-action) Action
-  (`uses: Utsav-mishra-25/deployhealth-action@v1` with `token: ${{ secrets.DEPLOYHEALTH_TOKEN }}`)
-  is an alternative.
+  settings page gives the [deployhealth env check](https://github.com/Utsav-mishra-25/deployhealth-action)
+  Action's workflow (`uses: Utsav-mishra-25/deployhealth-action@v1` with
+  `token: ${{ secrets.DEPLOYHEALTH_TOKEN }}`), then, under "From any other CI", a workflow that runs
+  the CLI pinned to an exact npm version.
 
 What each stack's code is read for, with examples the scanner is tested against:
 [Next.js](https://deployhealth.dev/docs/nextjs), [Laravel](https://deployhealth.dev/docs/laravel),
@@ -184,19 +187,7 @@ The name "deployhealth" and its logo are not licensed under MIT or FSL-1.1-MIT; 
 
 ## Phases
 
-| Phase | Status | What it adds |
-| --- | --- | --- |
-| 1. Config health | Done | GitHub Action + CLI, ingest API, findings per deploy, project pages, GitHub login |
-| 2. Clients, uptime and alerts | Done | Clients, uptime checks from a worker, alerts linked to deploys, Slack/Discord webhooks |
-| 3. Demo, handoff and reports | Done | Public read-only demo, endpoint names, handoff export, monthly client reports with share links |
-| 4. Security and pull requests | Done | CLI on npm, hard caps, /security, GitHub App env checks on every pull request |
-| 4.5 Launch polish | Done | Landing page, a demo that's fresh at any hour with sample PR checks, phone layouts, /privacy and /terms, link previews, security headers |
-| 4.6 Scanner accuracy | Done | CLI 0.3.0: skips vendored code and test tooling, reads more declaration files, pydantic-settings and Compose interpolation |
-| 4.7 Launch-week hardening | Done | The worker waits for migrations, a deep health check that sees the worker, alert messages list at most 6 variables |
-| 4.8 Security fixes | Done | Pull request checks run isolated with a time limit, linear-time scanning and gitignore matching, an env parser that never reads values as names, more SSRF ranges, fair endpoint claims, CLI 0.3.1 |
-| 4.9 Unsupported stacks say so | Done | The pull request check and the CLI say what they read, and say "can't check" on a repo in a language they don't read; setup split into pull request checks and deploy history; CLI 0.3.2 |
-| 5. More languages | In progress | Deleting an account on request, an accessibility check, PHP and Laravel (CLI 0.4.0), Java/Kotlin and Spring (CLI 0.5.0); the GitHub App reads each on deploy |
-| Next | Ideas | See [Known limitations](#known-limitations) for what's deliberately missing |
+What each phase built, and what's next, is in [docs/architecture/development.md](docs/architecture/development.md).
 
 ## Local setup
 
@@ -493,9 +484,11 @@ and 20 MB** per pull request and stop after **60 seconds** of scanning.
 
 ## Known limitations
 
+Reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin. Other languages aren't read yet: on a repo in those, the pull request check and the CLI say they can't check it instead of passing it.
+
 - **Languages.** The scanner reads JS/TS, Python, Go, Ruby, PHP and Java/Kotlin source, plus env,
   declaration and Compose files, Spring's application and bootstrap config and Symfony's config
-  YAML. Rust, C# and others aren't read yet. On a repo with none of the languages it reads, the
+  YAML. On a repo with none of the languages it reads, the
   pull request check says "can't check this repo yet" (neutral, never a failure) and the CLI
   prints `No JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source files found: deployhealth can't
   check this directory yet.` (exit 0) instead of passing it. The GitHub App reads a language as
