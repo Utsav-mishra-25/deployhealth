@@ -28,7 +28,7 @@ test('public pages have no serious or critical accessibility violations', async 
   await expectAccessible(page, '/no-such-page', 404);
 });
 
-test('the signed-in lists, a project with a deploy, its settings and a shared report have none either', async ({ page, browser }) => {
+test('the signed-in lists, a client page, a project with a deploy, its settings, the report and a shared report have none either', async ({ page, browser }) => {
   await signInAsDev(page);
 
   const suffix = Date.now();
@@ -56,6 +56,7 @@ test('the signed-in lists, a project with a deploy, its settings and a shared re
   await expectAccessible(page, clientPath);
   await expectAccessible(page, '/account');
 
+  await expectAccessible(page, `${clientPath}/report`);
   await page.goto(`${clientPath}/report`);
   await page.getByRole('button', { name: 'Share report' }).click();
   const shareUrl = await page.getByLabel('Share link').inputValue();

@@ -260,6 +260,22 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.locator('main form')).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Settings/ })).toHaveCount(0);
 
+  // Section links on top, in page order: findings, deploys, pull requests, endpoints.
+  await expect(page.getByTestId('section-links').getByRole('link')).toHaveText(['Findings', 'Deploys', 'Pull requests', 'Endpoints']);
+  const headings = (await page.locator('main h2').allTextContents()).map((h) => h.trim());
+  const order = ['Latest scan', 'Findings', 'Deploys', 'Pull requests', 'Endpoints'].map((h) => headings.indexOf(h));
+  expect(order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1]!))).toBe(true);
+  // Findings say what to do.
+  await expect(page.getByRole('columnheader', { name: 'What to do' }).first()).toBeVisible();
+  await expect(page.getByTestId('finding-action').first()).toHaveText(/^Declare it in .*\.env\.example and set it on your host$/);
+  // Five recent checks per endpoint; the rest under a closed "Show all checks".
+  await expect(apiCard.locator('table').first().locator('tbody tr')).toHaveCount(5);
+  const moreChecks = apiCard.getByTestId('more-checks');
+  await expect(moreChecks.locator('summary')).toHaveText('Show all checks');
+  await expect(moreChecks.locator('tbody tr').first()).toBeHidden();
+  await moreChecks.locator('summary').click();
+  await expect(moreChecks.locator('tbody tr')).toHaveCount(15);
+
   // Sample pull request checks: the agent PR behind the incident, a clean rename, a strict failure.
   // They aren't real pull requests, so nothing links to GitHub.
   const prs = page.getByRole('region', { name: 'Pull requests' });
@@ -293,7 +309,13 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page.getByTestId('agent-pr-stat')).toContainText(/Agent PRs that added undeclared env vars this month: \d+ of \d+/);
   await expect(page).toHaveTitle('Acme Corp · Live demo · deployhealth');
   await page.getByRole('link', { name: 'Monthly report' }).click();
-  await expect(page.getByTestId('report-summary')).toHaveText(/^1 project, .+ uptime, .+, \d+ deploys?, .+ fixed$/);
+  // For the client: who prepared it, a plain summary (no variable names), four tiles, no commit links.
+  await expect(page.getByTestId('prepared-by')).toHaveText('Prepared by Demo User');
+  await expect(page.getByTestId('report-summary')).toHaveText(/^(So far in|In) [A-Z][a-z]+, Acme Corp's sites were up [\d.]+% of the time\. .+ deployed.*\.$/);
+  await expect(page.getByTestId('report-summary')).not.toContainText(/REDIS_URL|STRIPE_KEY|b52952e|env var/);
+  await expect(page.getByTestId('report-tiles').locator('> div')).toHaveCount(4);
+  await expect(page.getByRole('heading', { name: 'Technical details' })).toBeVisible();
+  await expect(page.getByTestId('report').locator('a[href*="/commit/"]')).toHaveCount(0);
   await expect(page).toHaveTitle(/^Report · [A-Z][a-z]+ \d{4} · Live demo · deployhealth$/);
   await expect(page.getByTestId('report')).toContainText('All times UTC');
   await expect(page.getByRole('button', { name: 'Share report' })).toHaveCount(0);
@@ -477,7 +499,12 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   // Share the client's report, open the link with no session, and check a tampered one fails.
   await page.goto(clientUrl);
   await page.getByRole('link', { name: 'Monthly report' }).click();
-  await expect(page.getByTestId('report-summary')).toHaveText(/^1 project, /);
+  const summary = await page.getByTestId('report-summary').textContent();
+  expect(summary).toMatch(/^(So far in|In) [A-Z][a-z]+, /);
+  expect(summary).toContain(clientName);
+  expect(summary).not.toContain('LOG_LEVEL');
+  await expect(page.getByTestId('prepared-by')).toHaveText(/^Prepared by .+/);
+  const preparedBy = await page.getByTestId('prepared-by').textContent();
   await page.getByRole('button', { name: 'Share report' }).click();
   await expect(page).toHaveTitle(/^Report · [A-Z][a-z]+ \d{4} · deployhealth$/);
   const shareUrl = await page.getByLabel('Share link').inputValue();
@@ -494,11 +521,40 @@ test('signed in: client and project, a named endpoint, deploy notes, handoff and
   await expect(shared.getByTestId('report-project')).toHaveCount(1);
   await expect(shared.getByTestId('report-project')).toContainText(projectName);
   await expect(shared.getByTestId('current-user')).toHaveCount(0);
-  // A shared report is for the client: the logo, not the site's navigation.
+  // The same summary and preparer as the signed-in report; no commit links anywhere on it.
+  await expect(shared.getByTestId('report-summary')).toHaveText(summary!);
+  await expect(shared.getByTestId('prepared-by')).toHaveText(preparedBy!);
+  await expect(shared.getByTestId('report-summary')).not.toContainText(/LOG_LEVEL|0123456/);
+  await expect(shared.locator('a[href*="/commit/"], a[href*="github.com"]')).toHaveCount(0);
+  // A shared report is for the client: the logo, not the site's navigation, and a footer with
+  // Privacy and Terms only.
   await expect(shared.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
+  await expect(shared.getByRole('navigation', { name: 'Footer' }).getByRole('link')).toHaveText(['Privacy', 'Terms']);
   const tampered = await shared.goto(`${shareUrl.slice(0, -1)}${shareUrl.endsWith('A') ? 'B' : 'A'}`);
   expect(tampered?.status()).toBe(404);
   await stranger.close();
+});
+
+test("a client page's project rows: the same status and reasons as /clients", async ({ page }) => {
+  await signInAsDev(page);
+  const suffix = Date.now();
+  await page.goto('/clients/new');
+  await page.getByLabel('Client name').fill(`Reasons Client ${suffix}`);
+  await page.getByRole('button', { name: 'Create client' }).click();
+  const clientPath = new URL(page.url()).pathname;
+  await page.getByRole('link', { name: 'Add project' }).click();
+  // No scan and no pull request check: "Not set up", with the reason the user's App coverage gives.
+  await createProject(page, { name: `reasons-${suffix}`, repo: `acme/reasons-${suffix}` });
+
+  const row = (p: typeof page) => p.getByTestId('project-row').filter({ hasText: `reasons-${suffix}` });
+  await page.goto('/clients');
+  const status = await row(page).getByTestId('project-status').textContent();
+  const reasons = await row(page).getByTestId('status-reasons').textContent();
+  expect(status).toBe('Not set up');
+  expect(reasons).toMatch(/^(GitHub App not installed on this repo|Waiting for the first pull request check)$/);
+  await page.goto(clientPath);
+  await expect(row(page).getByTestId('project-status')).toHaveText(status!);
+  await expect(row(page).getByTestId('status-reasons')).toHaveText(reasons!);
 });
 
 test('account page: export downloads the signed-in user\'s data as JSON, without tokens; the dev user can\'t delete itself', async ({ page }) => {
