@@ -86,3 +86,66 @@ function parseGithubApp(raw: RawWorkerEnv): WorkerEnv['GITHUB_APP'] {
   }
   return { appId: Number(id), privateKey: pem };
 }
+
+// ---------------------------------------------------------------------------------------------
+// The backup service (dist/backup.js) and the restore command (dist/restore.js)
+// ---------------------------------------------------------------------------------------------
+
+export interface R2Settings {
+  accountId: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
+type RawR2 = Partial<Record<'BACKUP_R2_ACCOUNT_ID' | 'BACKUP_R2_BUCKET' | 'BACKUP_R2_ACCESS_KEY_ID' | 'BACKUP_R2_SECRET_ACCESS_KEY', string>>;
+
+const R2_NAMES = ['BACKUP_R2_ACCOUNT_ID', 'BACKUP_R2_BUCKET', 'BACKUP_R2_ACCESS_KEY_ID', 'BACKUP_R2_SECRET_ACCESS_KEY'] as const;
+
+/** The four BACKUP_R2_* variables: all of them, or none (null). Errors name variables, never values. */
+export function parseR2Settings(raw: RawR2): R2Settings | null {
+  const missing = R2_NAMES.filter((name) => !raw[name]?.trim());
+  if (missing.length === R2_NAMES.length) return null;
+  if (missing.length > 0) throw new Error(`Set all four BACKUP_R2_* variables, or none: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing.`);
+  const accountId = raw.BACKUP_R2_ACCOUNT_ID!.trim().toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(accountId)) throw new Error('BACKUP_R2_ACCOUNT_ID must be the 32-character Cloudflare account id.');
+  const bucket = raw.BACKUP_R2_BUCKET!.trim();
+  if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket)) throw new Error('BACKUP_R2_BUCKET must be an R2 bucket name (lowercase letters, digits and hyphens).');
+  return { accountId, bucket, accessKeyId: raw.BACKUP_R2_ACCESS_KEY_ID!.trim(), secretAccessKey: raw.BACKUP_R2_SECRET_ACCESS_KEY!.trim() };
+}
+
+function rawR2(): RawR2 {
+  return {
+    BACKUP_R2_ACCOUNT_ID: process.env.BACKUP_R2_ACCOUNT_ID,
+    BACKUP_R2_BUCKET: process.env.BACKUP_R2_BUCKET,
+    BACKUP_R2_ACCESS_KEY_ID: process.env.BACKUP_R2_ACCESS_KEY_ID,
+    BACKUP_R2_SECRET_ACCESS_KEY: process.env.BACKUP_R2_SECRET_ACCESS_KEY,
+  };
+}
+
+export interface BackupEnv {
+  DATABASE_URL: string;
+  NODE_ENV: string;
+  R2: R2Settings;
+  SENTRY_DSN: string | null;
+  RAILWAY_GIT_COMMIT_SHA: string | null;
+}
+
+/** The backup service: DATABASE_URL and the four BACKUP_R2_* are required; Sentry optional. */
+export function backupEnv(): BackupEnv {
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set. See apps/worker/.env.example.');
+  const r2 = parseR2Settings(rawR2());
+  if (!r2) throw new Error('The backup service needs BACKUP_R2_ACCOUNT_ID, BACKUP_R2_BUCKET, BACKUP_R2_ACCESS_KEY_ID and BACKUP_R2_SECRET_ACCESS_KEY.');
+  return {
+    DATABASE_URL: process.env.DATABASE_URL,
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    R2: r2,
+    SENTRY_DSN: process.env.SENTRY_DSN?.trim() || null,
+    RAILWAY_GIT_COMMIT_SHA: parseCommitSha(process.env.RAILWAY_GIT_COMMIT_SHA),
+  };
+}
+
+/** The restore command: the bucket (optional with --file) and the live database for --live-deletions (optional). */
+export function restoreEnv(): { R2: R2Settings | null; DATABASE_URL: string | null } {
+  return { R2: parseR2Settings(rawR2()), DATABASE_URL: process.env.DATABASE_URL || null };
+}
