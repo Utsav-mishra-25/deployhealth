@@ -5,8 +5,9 @@ import { NO_REFERENCES_NOTICE, NoReferencesNotice } from '@/components/env-scope
 import { SecretSteps } from '@/components/secret-steps';
 import { SetupOrder } from '@/components/setup-order';
 import { TokenReveal } from '@/components/token-reveal';
+import { ACTION_WORKFLOW, actionWorkflow } from '@/lib/docs-pages';
 import { HOW_IT_WORKS } from '@/lib/marketing';
-import { DEPLOY_HISTORY_OPTION, PR_CHECKS_OPTION, TOKEN_ONCE } from '@/lib/setup-copy';
+import { DEPLOY_HISTORY_OPTION, OTHER_CI, PR_CHECKS_OPTION, TOKEN_ONCE } from '@/lib/setup-copy';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
 
@@ -35,12 +36,35 @@ describe('the setup copy', () => {
 
   it('shows the token once, in the token box only, when it is created in settings', () => {
     const token = 'dh_0123456789abcdef0123456789abcdef';
-    const html = renderToStaticMarkup(createElement(TokenReveal, { token, snippet: 'jobs: {}', repo: 'acme/api' }));
+    const html = renderToStaticMarkup(createElement(TokenReveal, { token, workflow: 'uses: action', snippet: 'run: npx', repo: 'acme/api' }));
     expect(html.split(token)).toHaveLength(2);
     expect(text(html)).toContain(TOKEN_ONCE);
     expect(text(html)).toContain('In acme/api: Settings → Secrets and variables → Actions → Secrets tab → New repository secret');
     // The old creation screen's wording is gone.
     expect(text(html)).not.toMatch(/Copy your ingest token now|won't be shown again/);
+  });
+
+  it('shows the Action workflow first, then the pinned CLI workflow under "From any other CI"', () => {
+    const html = text(renderToStaticMarkup(createElement(TokenReveal, { token: 'dh_x', workflow: 'uses: action', snippet: 'run: npx', repo: 'acme/api' })));
+    expect(OTHER_CI.title).toBe('From any other CI');
+    expect(html.indexOf('uses: action')).toBeGreaterThan(-1);
+    expect(html.indexOf('uses: action')).toBeLessThan(html.indexOf(OTHER_CI.title));
+    expect(html.indexOf(OTHER_CI.title)).toBeLessThan(html.indexOf('run: npx'));
+  });
+});
+
+describe("the Action's workflow for this instance", () => {
+  it('is byte-identical to ACTION_WORKFLOW on https://deployhealth.dev (no url: line)', () => {
+    expect(actionWorkflow({ appUrl: 'https://deployhealth.dev' })).toBe(ACTION_WORKFLOW);
+    expect(actionWorkflow({ appUrl: 'https://deployhealth.dev/' })).toBe(ACTION_WORKFLOW);
+    expect(ACTION_WORKFLOW).not.toContain('url:');
+  });
+
+  it("names any other instance in the Action's url input, so deploys don't go to the hosted one", () => {
+    const yaml = actionWorkflow({ appUrl: 'https://dh.agency.example/' });
+    expect(yaml).toBe(`${ACTION_WORKFLOW}          url: "https://dh.agency.example"\n`);
+    // Under the step's `with:`, next to the token.
+    expect(yaml.split('\n').slice(-4, -1)).toEqual(['        with:', '          token: ${{ secrets.DEPLOYHEALTH_TOKEN }}', '          url: "https://dh.agency.example"']);
   });
 });
 

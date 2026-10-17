@@ -11,10 +11,11 @@ import { SecretSteps } from '@/components/secret-steps';
 import { serverEnv } from '@/env';
 import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
+import { actionWorkflow } from '@/lib/docs-pages';
 import { isUuid } from '@/lib/format';
 import { installAppHref, INSTALLED_PARAM, INSTALLED_VALUE } from '@/lib/onboarding';
 import { appCoverage, repoCoverage } from '@/lib/repo-coverage';
-import { DEPLOY_HISTORY_OPTION, PR_CHECKS_OPTION } from '@/lib/setup-copy';
+import { DEPLOY_HISTORY_OPTION, OTHER_CI, PR_CHECKS_OPTION } from '@/lib/setup-copy';
 import { PrCheckModeForm } from './pr-check-mode-form';
 import { ProjectSettingsForm } from './project-settings-form';
 import { RegenerateToken } from './regenerate-token';
@@ -52,6 +53,7 @@ export default async function ProjectSettingsPage({
   const back = (await searchParams)[INSTALLED_PARAM] === INSTALLED_VALUE;
 
   const url = await publicOrigin();
+  const workflow = actionWorkflow({ appUrl: url });
   const snippet = githubActionSnippet({ appUrl: url });
   const localRun = `${CLI_NPX} --dry-run`;
   const settingsPath = `/projects/${project.id}/settings`;
@@ -150,6 +152,9 @@ export default async function ProjectSettingsPage({
           <p className="mt-3 mb-3 text-sm text-gray-600">
             Then add this workflow to <strong className="break-all">{project.repoFullName}</strong>:
           </p>
+          <CodeBlock code={workflow} label=".github/workflows/deployhealth.yml" />
+          <h4 className="mt-6 text-sm font-semibold">{OTHER_CI.title}</h4>
+          <p className="mt-1 mb-3 text-sm text-gray-600">{OTHER_CI.body}</p>
           <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
         </div>
 

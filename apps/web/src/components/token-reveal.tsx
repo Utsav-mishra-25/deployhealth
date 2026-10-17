@@ -1,10 +1,13 @@
-import { TOKEN_ONCE } from '@/lib/setup-copy';
+import { OTHER_CI, TOKEN_ONCE } from '@/lib/setup-copy';
 import { CodeBlock } from './code-block';
 import { CopyButton } from './copy-button';
 import { SecretSteps } from './secret-steps';
 
-/** Shown exactly once, in settings, after the Action's token is created or replaced. */
-export function TokenReveal({ token, snippet, repo }: { token: string; snippet: string; repo?: string }) {
+/**
+ * Shown exactly once, in settings, after the Action's token is created or replaced: the Action's
+ * workflow (`workflow`), then the pinned CLI workflow (`snippet`) for any other CI.
+ */
+export function TokenReveal({ token, workflow, snippet, repo }: { token: string; workflow: string; snippet: string; repo?: string }) {
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
@@ -25,8 +28,11 @@ export function TokenReveal({ token, snippet, repo }: { token: string; snippet: 
         <li>
           Add this workflow. It scans the repo on every push to <code>main</code> and reports here:
           <div className="mt-2">
-            <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
+            <CodeBlock code={workflow} label=".github/workflows/deployhealth.yml" />
           </div>
+          <p className="mt-3 font-medium text-gray-900">{OTHER_CI.title}</p>
+          <p className="mt-1 mb-2">{OTHER_CI.body}</p>
+          <CodeBlock code={snippet} label=".github/workflows/deployhealth.yml" />
         </li>
         <li>Push. The deploy shows up on the project page within seconds.</li>
       </ol>

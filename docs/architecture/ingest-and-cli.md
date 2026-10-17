@@ -109,10 +109,12 @@ To switch (each step: check on GitHub/npm, since both UIs move):
 ## Published versions and the generated workflow
 
 - Published versions are immutable. Snippets and docs pin an exact version (`npx --yes deployhealth-scan@x.y.z`).
-  The settings page keeps that exact-pinned line: an Action tag can move, an npm version can't. The
-  README and the docs pages offer the **deployhealth env check** Action (`…/deployhealth-action@v1`,
-  a composite action that runs the same pinned `npx` line, token through `DEPLOYHEALTH_TOKEN` only)
-  as an alternative.
+  The settings page and the token reveal lead with the **deployhealth env check** Action
+  (`…/deployhealth-action@v1`, a composite action that runs the same pinned `npx` line, token through
+  `DEPLOYHEALTH_TOKEN` only; `actionWorkflow()` in `lib/docs-pages.ts` is `ACTION_WORKFLOW` exactly on
+  https://deployhealth.dev, the Action's default `url`, and adds `url:` on any other instance), then
+  keep the exact-pinned workflow under "From any other CI": an Action tag can move, an npm version
+  can't. The README and the docs pages offer the Action too.
 - The generated workflow: push events only (never `pull_request` from forks: it reads a secret),
   job-level `permissions: contents: read`, `persist-credentials: false`, and
   `package-manager-cache: false` on setup-node (v5 otherwise looks for pnpm/yarn and fails). Sha and

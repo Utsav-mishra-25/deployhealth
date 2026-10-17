@@ -91,6 +91,18 @@ export const ACTION_WORKFLOW = code(
   `          token: \${{ secrets.${TOKEN_SECRET_NAME} }}`,
 );
 
+/** The hosted instance: the Action's `url` input defaults to it. */
+export const ACTION_DEFAULT_URL = 'https://deployhealth.dev';
+
+/**
+ * The Action workflow for this instance (settings and the token reveal): exactly ACTION_WORKFLOW
+ * on the hosted one; elsewhere with `url:`, so deploys reach this instance and not the Action's default.
+ */
+export function actionWorkflow({ appUrl }: { appUrl: string }): string {
+  const url = appUrl.replace(/\/+$/, '');
+  return url === ACTION_DEFAULT_URL ? ACTION_WORKFLOW : `${ACTION_WORKFLOW}          url: "${url}"\n`;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Next.js
 // ---------------------------------------------------------------------------------------------
