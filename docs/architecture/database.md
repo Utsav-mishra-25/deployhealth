@@ -65,7 +65,7 @@ query (authorization rules for queries are in [security.md](security.md)).
 - **`account_deletions`** (`github_id`, `deleted_at`; primary key on both, no foreign keys): one row
   per deletion, written in `deleteUser()`'s transaction, so a restore from a backup can re-apply
   every deletion newer than the dump. The nightly prune deletes rows older than
-  `ACCOUNT_DELETION_RECORD_DAYS` (35). Migration 0009.
+  `ACCOUNT_DELETION_RECORD_DAYS` (35, derived from `BACKUP_RETENTION_WEEKS` = 4 in `retention.ts`, which the backup job reads too). Migration 0009.
 
 ## Exporting a user's data
 
