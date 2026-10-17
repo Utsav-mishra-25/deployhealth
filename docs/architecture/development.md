@@ -24,7 +24,10 @@ App status that can't reveal other accounts' repositories, absolute URLs from `P
 /security stating strict mode's limit (too large or couldn't be checked is neutral),
 the token kept out of the Action snippet's command line, and e2e on a production build) and
 Phase 7 part 1 (a freelancer-first landing page with a product screenshot, a header nav on every
-public page, /pricing, a friendly 404 and a guide on /demo), Phase 8.1 (first-run onboarding:
+public page, /pricing, a friendly 404 and a guide on /demo) and part 2 (the project page in
+section order with section links, 5 recent checks per endpoint and "What to do" per finding, the
+monthly report written for clients: Prepared by, a plain summary, Technical details, no commit links;
+a shared report's footer with Privacy and Terms only), Phase 8.1 (first-run onboarding:
 the setup checklist, the install round trip back to the step it started from, App coverage per
 repository, a project page that says what will appear, no token at creation) and Phase 9 part 1
 (production readiness: redacted logs, Sentry error reports, operator alerts, self-serve export and

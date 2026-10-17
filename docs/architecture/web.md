@@ -45,7 +45,8 @@ apps/
                       /github/installed (the App's setup URL), /account (+ /export, actions, /deleted,
                       /signed-out); icon.svg, opengraph-image.tsx (+
                       twitter-image), sitemap.ts, not-found.tsx (every 404)
-    src/components/   badges, breadcrumb, endpoints section, latency chart (Recharts, client-only),
+    src/components/   badges, breadcrumb, endpoints section, recent checks (5, then Show all checks),
+                      section links (the project page's "Findings · Deploys · …"), latency chart (Recharts, client-only),
                       SafeMarkdown, demo banner, demo guide, print/share buttons, report toolbar,
                       alert card, landing, public-nav, pricing, faq, prose-page (layout of
                       /security, /privacy, /terms), onboarding-checklist, install-confirmation,
@@ -87,7 +88,8 @@ And in core, for client components:
   (/account) and Sign out instead. On `/share/*` (a report a client opens) there is no nav, only the logo:
   `middleware.ts`, which already runs there, sets `HIDE_PUBLIC_NAV_HEADER` on the request and the
   layout reads it (forging it elsewhere only hides the nav for whoever sends it). The footer links
-  Docs, Pricing, Security, Privacy, Terms, Status and the source. Status links to the public status
+  Docs, Pricing, Security, Privacy, Terms, Status and the source (`footerLinks()` in
+  `lib/site-nav.ts`); on `/share/*`, signed in or not, only Privacy and Terms (the same header flag). Status links to the public status
   page in `STATUS_PAGE_URL` (decided in Phase 9; https only, parsed by `parseStatusPageUrl()` in
   `lib/site-nav.ts`, never failing a page): unset or unusable, there's no link, and an unusable
   value logs one error at startup.
@@ -187,6 +189,21 @@ And in core, for client components:
   the project page; Healthy rows add "checked <time>" (the later of the latest scan and pull request
   check). Projects sort worst first, then by name; client groups by their worst project, then name,
   "No client" last. One line on top: "2 of 5 projects need attention · 1 down" (`statusSummary()`).
+  /clients and a signed-in client page pass the same `appCoversFor(installations, appSlug)`
+  (`lib/onboarding.ts`) to `rankProjects`, so a project's status and reasons read the same on both.
+- **The project page**, in this order: the open alert, the latest scan's counts, Findings, Deploys,
+  Pull requests, Endpoints (before any data: "What shows up here" in the counts' place, its copy
+  unchanged). Under the title, links to those sections in page order
+  (`projectSectionLinks()` in `components/section-links.tsx`): only the sections the page renders
+  (no scan: no Findings or Deploys; checks off with none recorded: no Pull requests), and no row
+  for fewer than two. Each endpoint shows its 5 latest checks (`RECENT_CHECKS_SHOWN`); the rest of
+  the 20 the query returns are inside a closed `<details>` "Show all checks".
+- **Findings say what to do** (`findingAction()` in core `handoff.ts`), in a "What to do" column on
+  the project page and after each open finding in the handoff (page and Markdown): MISSING
+  "Declare it in <scope>/.env.example and set it on your host" (the deepest env scope containing
+  the file; "the .env.example for its code" for scans without scopes), UNUSED "Remove it from
+  <env file>, or ignore it", MISMATCH "Add it to <the env file it's absent from>" (usually
+  `.env.example`). Names and paths only.
 - **Deploy history** (project page, `listDeployHistory` in db): each row says what that deploy's
   latest scan changed against the previous scanned deploy's ("+1 missing: REDIS_URL · fixed 1
   unused: OLD_FLAG", "no change", "first scan", "not scanned"; names capped like alerts), and the
