@@ -221,6 +221,16 @@ export function assignHostSlots<T extends { hostname: string }>(
   return { assigned, nextFree };
 }
 
+export interface ClaimResult {
+  endpoints: DueEndpoint[];
+  /**
+   * Hostnames whose due endpoints this claim couldn't all take because of per-host spacing: more
+   * than MAX_CHECKS_PER_HOST_PER_CLAIM were due, or the host's slots in the window ran out. Their
+   * leftovers wait by design and aren't a backlog (countDueEndpoints counts them apart).
+   */
+  hostsAtCap: string[];
+}
+
 /**
  * Claim due endpoints (enabled, next_check_at passed), give each a start time with
  * `assignHostSlots`, and move each claimed endpoint's next_check_at one interval past its start.
@@ -229,12 +239,13 @@ export function assignHostSlots<T extends { hostname: string }>(
  * account can't fill a run. Owners take turns: each owner's oldest due endpoint, then each
  * owner's second, and so on (oldest first within a turn). Claims run one at a time (advisory
  * lock), so two workers never claim the same endpoint or share a host slot. If a worker dies
- * mid-check, the endpoint is simply checked again one interval later.
+ * mid-check, the endpoint is simply checked again one interval later. Also returns the hostnames
+ * that hit the per-host cap (`hostsAtCap`).
  */
 export async function claimDueEndpoints(
   db: Db,
   { now = new Date(), limit = 500, perOwner = MAX_CLAIM_PER_OWNER }: { now?: Date; limit?: number; perOwner?: number } = {},
-): Promise<DueEndpoint[]> {
+): Promise<ClaimResult> {
   const perHost = MAX_CHECKS_PER_HOST_PER_CLAIM;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${CLAIM_LOCK_KEY})`);
@@ -246,14 +257,16 @@ export async function claimDueEndpoints(
       method: EndpointMethod;
       interval_seconds: number;
       expected_status: number;
+      host_due: number;
     }>(sql`
-      select id, project_id, url, hostname, method, interval_seconds, expected_status
+      select id, project_id, url, hostname, method, interval_seconds, expected_status, host_due
       from (
         select h.*, row_number() over (partition by h.owner_id order by h.next_check_at, h.id) as owner_turn
         from (
           select e.id, e.project_id, e.url, e.method, e.interval_seconds, e.expected_status, e.next_check_at, p.owner_id,
                  ${hostnameOf(sql`e.url`)} as hostname,
-                 row_number() over (partition by ${hostnameOf(sql`e.url`)} order by e.next_check_at, e.id) as n
+                 row_number() over (partition by ${hostnameOf(sql`e.url`)} order by e.next_check_at, e.id) as n,
+                 count(*) over (partition by ${hostnameOf(sql`e.url`)})::int as host_due
           from ${endpoints} e
           join ${projects} p on p.id = e.project_id
           where e.enabled and e.next_check_at <= ${now.toISOString()}::timestamptz
@@ -264,7 +277,7 @@ export async function claimDueEndpoints(
       order by owner_turn, next_check_at, id
       limit ${limit}
     `);
-    if (due.rows.length === 0) return [];
+    if (due.rows.length === 0) return { endpoints: [], hostsAtCap: [] };
 
     const hostnames = [...new Set(due.rows.map((r) => r.hostname))];
     const reserved = await tx.select().from(checkHosts).where(inArray(checkHosts.hostname, hostnames));
@@ -281,7 +294,14 @@ export async function claimDueEndpoints(
       new Map(reserved.map((h) => [h.hostname, h.nextSlotAt])),
       now,
     );
-    if (assigned.length === 0) return [];
+    // At the cap: more due than one claim may take, or fewer slots left in the window than rows.
+    const taken = new Map<string, number>();
+    for (const a of assigned) taken.set(a.hostname, (taken.get(a.hostname) ?? 0) + 1);
+    const offered = new Map<string, number>();
+    for (const r of due.rows) offered.set(r.hostname, (offered.get(r.hostname) ?? 0) + 1);
+    const hostDue = new Map(due.rows.map((r) => [r.hostname, Number(r.host_due)]));
+    const hostsAtCap = hostnames.filter((host) => hostDue.get(host)! > perHost || (taken.get(host) ?? 0) < offered.get(host)!);
+    if (assigned.length === 0) return { endpoints: [], hostsAtCap };
 
     const starts = sql.join(
       assigned.map((a) => sql`(${a.id}::uuid, ${a.runAt.toISOString()}::timestamptz)`),
@@ -297,20 +317,34 @@ export async function claimDueEndpoints(
       .insert(checkHosts)
       .values([...nextFree].map(([hostname, nextSlotAt]) => ({ hostname, nextSlotAt })))
       .onConflictDoUpdate({ target: checkHosts.hostname, set: { nextSlotAt: sql`excluded.next_slot_at` } });
-    return assigned;
+    return { endpoints: assigned, hostsAtCap };
   });
+}
+
+export interface DueCount {
+  /** Enabled endpoints still due. */
+  due: number;
+  /** Of those, the ones on `hostsAtCap`: waiting on per-host spacing, by design. */
+  waitingOnHost: number;
 }
 
 /**
  * Enabled endpoints still due at `now` (worker): run right after a claim, these are the ones it
- * left for next time (host spacing, the per-owner cap or the limit). A count, never ids or URLs.
+ * left for next time (host spacing, the per-owner cap or the limit), and how many of them are on
+ * the hostnames that claim left at the per-host cap. Counts, never ids or URLs.
  */
-export async function countDueEndpoints(db: Db, now = new Date()): Promise<number> {
+export async function countDueEndpoints(db: Db, { now = new Date(), hostsAtCap = [] }: { now?: Date; hostsAtCap?: readonly string[] } = {}): Promise<DueCount> {
+  const onHosts = hostsAtCap.length
+    ? sql`${hostnameOf(sql`${endpoints.url}`)} in (${sql.join(
+        hostsAtCap.map((h) => sql`${h}`),
+        sql`, `,
+      )})`
+    : sql`false`;
   const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
+    .select({ due: sql<number>`count(*)::int`, waitingOnHost: sql<number>`(count(*) filter (where ${onHosts}))::int` })
     .from(endpoints)
     .where(and(eq(endpoints.enabled, true), sql`${endpoints.nextCheckAt} <= ${now.toISOString()}::timestamptz`));
-  return Number(row!.count);
+  return { due: Number(row!.due), waitingOnHost: Number(row!.waitingOnHost) };
 }
 
 // ---------------------------------------------------------------------------------------------

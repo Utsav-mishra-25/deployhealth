@@ -1,7 +1,8 @@
 import type { AlertEvent, DueEndpoint } from '@deployhealth/db';
 import { describe, expect, it } from 'vitest';
 import type { CheckResult } from '../src/check';
-import { checkEndpoints, checkSummaryLine, checkSummaryWorthLogging, pruneOldChecks, reseedDemo, sendAlertWebhook } from '../src/jobs';
+import { backlogBeyondSpacing, checkEndpoints, checkSummaryLine, checkSummaryWorthLogging, pruneOldChecks, reseedDemo, sendAlertWebhook } from '../src/jobs';
+import { createOperatorAlerts } from '../src/operator';
 
 const T0 = new Date('2026-09-28T12:00:00Z');
 const due = (id: string, url = `https://${id}.example/`, runAt = T0): DueEndpoint => ({
@@ -14,6 +15,9 @@ const due = (id: string, url = `https://${id}.example/`, runAt = T0): DueEndpoin
   expectedStatus: 200,
   runAt,
 });
+
+/** A claim result with no host at the per-host cap. */
+const claimed = (...endpoints: DueEndpoint[]) => ({ endpoints, hostsAtCap: [] as string[] });
 
 const result = (ok: boolean): CheckResult => ({
   checkedAt: new Date('2026-09-28T12:00:00Z'),
@@ -38,7 +42,7 @@ describe('checkEndpoints job', () => {
     const notified: Array<[string, { text: string }]> = [];
     const summary = await checkEndpoints({
       heartbeat: async () => {},
-      claimDue: async () => [due('a'), due('b'), due('c')],
+      claimDue: async () => claimed(due('a'), due('b'), due('c')),
       check: async (t) => result(!t.url.includes('a.')),
       record: async (id, outcome) => {
         recorded.push(`${id}:${outcome.ok}`);
@@ -54,7 +58,7 @@ describe('checkEndpoints job', () => {
     });
 
     expect(recorded.sort()).toEqual(['a:false', 'b:true', 'c:true']);
-    expect(summary).toEqual({ claimed: 3, checked: 3, failed: 1, opened: 1, resolved: 1, errors: 0, dueButUnclaimed: null, runMs: expect.any(Number) });
+    expect(summary).toEqual({ claimed: 3, checked: 3, failed: 1, opened: 1, resolved: 1, errors: 0, dueButUnclaimed: null, dueWaitingOnHost: null, runMs: expect.any(Number) });
     // Only the project with a webhook is notified.
     expect(notified).toEqual([['https://hooks.example/x', { text: '[down] shop: a.example started failing' }]]);
   });
@@ -66,7 +70,7 @@ describe('checkEndpoints job', () => {
     let peak = 0;
     const summary = await checkEndpoints({
       heartbeat: async () => {},
-      claimDue: async () => Array.from({ length: 7 }, (_, i) => due(`e${i}`, `https://e${i}.example/?token=abc`)),
+      claimDue: async () => claimed(...Array.from({ length: 7 }, (_, i) => due(`e${i}`, `https://e${i}.example/?token=abc`))),
       check: async () => {
         running++;
         peak = Math.max(peak, running);
@@ -97,7 +101,7 @@ describe('checkEndpoints job', () => {
     const webhookDone = new Promise<void>((resolve) => (releaseWebhook = resolve));
     const run = checkEndpoints({
       heartbeat: async () => void order.push('heartbeat'),
-      claimDue: async () => [due('a'), due('b'), due('c')],
+      claimDue: async () => claimed(due('a'), due('b'), due('c')),
       check: async (t) => {
         order.push(`check ${t.url}`);
         return result(!t.url.includes('a.'));
@@ -126,7 +130,7 @@ describe('checkEndpoints job', () => {
     await checkEndpoints({
       heartbeat: async () => {},
       // Two checks of shared.example (10s apart) and one of other.example, claimed out of order.
-      claimDue: async () => [due('s2', 'https://shared.example/2', at(10)), due('o', 'https://other.example/', at(0)), due('s1', 'https://shared.example/1', at(0))],
+      claimDue: async () => claimed(due('s2', 'https://shared.example/2', at(10)), due('o', 'https://other.example/', at(0)), due('s1', 'https://shared.example/1', at(0))),
       check: async (t) => {
         events.push(`check ${t.url} at +${(clock - T0.getTime()) / 1000}s`);
         clock += 3_000; // each check takes 3s
@@ -153,7 +157,7 @@ describe('checkEndpoints job', () => {
   it('does nothing when nothing is due', async () => {
     const summary = await checkEndpoints({
       heartbeat: async () => {},
-      claimDue: async () => [],
+      claimDue: async () => claimed(),
       check: async () => {
         throw new Error('should not run');
       },
@@ -161,7 +165,7 @@ describe('checkEndpoints job', () => {
       notify: async () => true,
       log: () => {},
     });
-    expect(summary).toEqual({ claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, runMs: expect.any(Number) });
+    expect(summary).toEqual({ claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, dueWaitingOnHost: null, runMs: expect.any(Number) });
   });
 });
 
@@ -174,39 +178,45 @@ describe('checkEndpoints summary: claimed, due_but_unclaimed, run_ms', () => {
     log: () => {},
   };
 
-  it('counts what the claim took, what it left due (counted after the claim) and how long the run took', async () => {
+  it('counts what the claim took, what it left due (counted after the claim, with its hosts at the cap) and how long the run took', async () => {
     const order: string[] = [];
+    const hostsSeen: string[][] = [];
     let t = 1_000;
     const summary = await checkEndpoints({
       ...base,
-      claimDue: async () => (order.push('claim'), [due('a'), due('b')]),
-      countDue: async () => (order.push('count'), 7),
+      claimDue: async () => (order.push('claim'), { endpoints: [due('a'), due('b')], hostsAtCap: ['busy.example'] }),
+      countDue: async (hosts) => (order.push('count'), hostsSeen.push(hosts), { due: 7, waitingOnHost: 3 }),
       check: async () => (order.push('check'), (t += 2_500), result(true)),
       clock: () => t,
     });
     expect(order).toEqual(['claim', 'count', 'check', 'check']);
-    expect(summary).toEqual({ claimed: 2, checked: 2, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 7, runMs: 5_000 });
+    expect(hostsSeen).toEqual([['busy.example']]);
+    expect(summary).toEqual({ claimed: 2, checked: 2, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 7, dueWaitingOnHost: 3, runMs: 5_000 });
+    expect(backlogBeyondSpacing(summary)).toBe(4);
   });
 
   it('logs a failed count by error name and code, and still runs the checks', async () => {
     const logs: string[] = [];
     const summary = await checkEndpoints({
       ...base,
-      claimDue: async () => [due('a')],
+      claimDue: async () => claimed(due('a')),
       countDue: async () => Promise.reject(Object.assign(new Error('relation "endpoints" ... postgres://u:pw@h/db'), { code: '57P01' })),
       log: (m) => logs.push(m),
     });
-    expect(summary).toMatchObject({ claimed: 1, checked: 1, dueButUnclaimed: null });
+    expect(summary).toMatchObject({ claimed: 1, checked: 1, dueButUnclaimed: null, dueWaitingOnHost: null });
+    expect(backlogBeyondSpacing(summary)).toBeNull();
     expect(logs).toEqual(['[check] due endpoints not counted: Error 57P01']);
   });
 
   it('writes the summary line with snake_case backlog and duration keys', () => {
-    const line = checkSummaryLine({ claimed: 3, checked: 3, failed: 1, opened: 1, resolved: 0, errors: 0, dueButUnclaimed: 4, runMs: 5120 });
-    expect(line).toBe('[check] {"claimed":3,"checked":3,"failed":1,"opened":1,"resolved":0,"errors":0,"due_but_unclaimed":4,"run_ms":5120}');
+    const line = checkSummaryLine({ claimed: 5, checked: 5, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 3, dueWaitingOnHost: 3, runMs: 41230 });
+    expect(line).toBe(
+      '[check] {"claimed":5,"checked":5,"failed":0,"opened":0,"resolved":0,"errors":0,"due_but_unclaimed":3,"due_waiting_on_host":3,"run_ms":41230}',
+    );
   });
 
   it('logs a run that claimed, errored or left endpoints due; a quiet run stays quiet', () => {
-    const quiet = { claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 0, runMs: 3 };
+    const quiet = { claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 0, dueWaitingOnHost: 0, runMs: 3 };
     expect(checkSummaryWorthLogging(quiet)).toBe(false);
     expect(checkSummaryWorthLogging({ ...quiet, dueButUnclaimed: null })).toBe(false);
     expect(checkSummaryWorthLogging({ ...quiet, claimed: 1 })).toBe(true);
@@ -224,10 +234,10 @@ describe('checkEndpoints heartbeat', () => {
 
   it('records a heartbeat after every run, also when nothing is due', async () => {
     const order: string[] = [];
-    await checkEndpoints({ ...base, claimDue: async () => [], heartbeat: async () => void order.push('heartbeat'), log: () => {} });
+    await checkEndpoints({ ...base, claimDue: async () => claimed(), heartbeat: async () => void order.push('heartbeat'), log: () => {} });
     await checkEndpoints({
       ...base,
-      claimDue: async () => [due('a')],
+      claimDue: async () => claimed(due('a')),
       record: async () => {
         order.push('record');
         return { consecutiveFailures: 0, event: null };
@@ -241,7 +251,7 @@ describe('checkEndpoints heartbeat', () => {
   it('records it even when an endpoint errors, but not when the claim fails', async () => {
     let beats = 0;
     const heartbeat = async () => void beats++;
-    await checkEndpoints({ ...base, claimDue: async () => [due('a')], check: async () => Promise.reject(new Error('boom')), heartbeat, log: () => {} });
+    await checkEndpoints({ ...base, claimDue: async () => claimed(due('a')), check: async () => Promise.reject(new Error('boom')), heartbeat, log: () => {} });
     expect(beats).toBe(1);
     await expect(checkEndpoints({ ...base, claimDue: async () => Promise.reject(new Error('db down')), heartbeat, log: () => {} })).rejects.toThrow('db down');
     expect(beats).toBe(1);
@@ -249,7 +259,7 @@ describe('checkEndpoints heartbeat', () => {
 
   it('logs a failed heartbeat write without failing the run', async () => {
     const logs: string[] = [];
-    const summary = await checkEndpoints({ ...base, claimDue: async () => [due('a')], heartbeat: async () => Promise.reject(new TypeError('x')), log: (m) => logs.push(m) });
+    const summary = await checkEndpoints({ ...base, claimDue: async () => claimed(due('a')), heartbeat: async () => Promise.reject(new TypeError('x')), log: (m) => logs.push(m) });
     expect(summary.checked).toBe(1);
     expect(logs).toEqual(['[check] heartbeat not recorded: TypeError']);
   });
@@ -353,5 +363,46 @@ describe('sendAlertWebhook job (an alert resolved by a pause in the web app)', (
     expect(await sendAlertWebhook(job, { target: async () => ({ projectName: 'shop', webhookUrl: null }), notify, log: () => {} })).toBe(false);
     expect(await sendAlertWebhook(job, { target: async () => null, notify, log: () => {} })).toBe(false);
     expect(sent).toEqual([]);
+  });
+});
+
+describe('the falling-behind alert never fires on per-host spacing (check-endpoints → operator alerts)', () => {
+  // The claim and count numbers below are what packages/db's monitoring.test.ts gets from the real
+  // queries for the same setups ("8 every-minute endpoints on one host", "8 endpoints on 8 hosts
+  // with a low claim limit").
+  async function runs(results: Array<{ claimed: number; hostsAtCap: string[]; due: number; waitingOnHost: number }>) {
+    const sent: string[] = [];
+    const operator = createOperatorAlerts({ send: async (text) => (sent.push(text), true), log: () => {}, now: () => 0 });
+    for (const r of results) {
+      const summary = await checkEndpoints({
+        claimDue: async () => ({ endpoints: Array.from({ length: r.claimed }, (_, i) => due(`e${i}`)), hostsAtCap: r.hostsAtCap }),
+        countDue: async () => ({ due: r.due, waitingOnHost: r.waitingOnHost }),
+        check: async () => result(true),
+        record: async () => ({ consecutiveFailures: 0, event: null }),
+        notify: async () => true,
+        heartbeat: async () => {},
+        log: () => {},
+      });
+      const backlog = backlogBeyondSpacing(summary);
+      if (backlog !== null) await operator.checkBacklog(backlog);
+    }
+    return sent;
+  }
+
+  it('8 every-minute endpoints on one host: never', async () => {
+    const atCap = { claimed: 5, hostsAtCap: ['busy.example'], due: 3, waitingOnHost: 3 };
+    const caughtUp = { claimed: 4, hostsAtCap: [], due: 0, waitingOnHost: 0 };
+    expect(await runs(Array.from({ length: 20 }, (_, i) => (i % 2 ? caughtUp : atCap)))).toEqual([]);
+    expect(await runs(Array(20).fill(atCap))).toEqual([]);
+  });
+
+  it('8 endpoints on 8 hosts with a low claim limit: on the 5th run, then the recovery line', async () => {
+    const behind = { claimed: 3, hostsAtCap: [], due: 5, waitingOnHost: 0 };
+    const clear = { claimed: 8, hostsAtCap: [], due: 0, waitingOnHost: 0 };
+    expect(await runs(Array(4).fill(behind))).toEqual([]);
+    expect(await runs([...Array(5).fill(behind), clear])).toEqual([
+      '[deployhealth worker] check-endpoints left 5 due endpoints unclaimed 5 runs in a row, not counting per-host spacing: checks are falling behind their intervals.',
+      '[deployhealth worker] check-endpoints is claiming every due endpoint again.',
+    ]);
   });
 });

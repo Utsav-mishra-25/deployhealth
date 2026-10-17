@@ -34,6 +34,7 @@ import { isolateEntry } from './pr-check/isolate';
 import {
   ALERT_WEBHOOK_QUEUE,
   CHECK_QUEUE,
+  backlogBeyondSpacing,
   checkEndpoints,
   checkSummaryLine,
   checkSummaryWorthLogging,
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
     observed(CHECK_QUEUE, async () => {
       const summary = await checkEndpoints({
         claimDue: () => claimDueEndpoints(db),
-        countDue: () => countDueEndpoints(db),
+        countDue: (hostsAtCap) => countDueEndpoints(db, { hostsAtCap }),
         check: (target) => runCheck(target),
         record: (endpointId, outcome) => recordCheck(db, endpointId, outcome),
         notify: (url, payload) => sendWebhook(url, payload, { log }),
@@ -104,7 +105,8 @@ async function main(): Promise<void> {
         report: (error) => reportError(error, { queue: CHECK_QUEUE }),
       });
       if (checkSummaryWorthLogging(summary)) log(checkSummaryLine(summary));
-      if (summary.dueButUnclaimed !== null) await operator.checkBacklog(summary.dueButUnclaimed);
+      const backlog = backlogBeyondSpacing(summary);
+      if (backlog !== null) await operator.checkBacklog(backlog);
     }),
   );
 

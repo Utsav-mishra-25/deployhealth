@@ -8,8 +8,9 @@ import { errorLabel } from './jobs';
  * - the check-endpoints heartbeat is older than WORKER_HEARTBEAT_MAX_AGE_SECONDS (uptime checks
  *   aren't running), then once more when it recovers;
  * - a queue's job failed FAILURES_BEFORE_ALERT times in a row, then once more when it succeeds;
- * - check-endpoints left due endpoints unclaimed BACKLOG_RUNS_BEFORE_ALERT runs in a row (checks
- *   are falling behind their intervals), then once more when a run leaves none;
+ * - check-endpoints left due endpoints unclaimed BACKLOG_RUNS_BEFORE_ALERT runs in a row, not
+ *   counting the ones waiting on per-host spacing (checks are falling behind their intervals),
+ *   then once more when a run leaves none;
  * - the backup service's 'backup' heartbeat is older than BACKUP_STALE_DAYS (at most once a day),
  *   then once more when it's fresh. Backups count as set up once that row exists (the first run
  *   writes it), so the worker needs no backup setting and never holds the R2 keys.
@@ -45,8 +46,8 @@ export interface OperatorAlerts {
   heartbeat(ageSeconds: number | null): Promise<void>;
   /** The backup heartbeat's age in seconds (null: backups aren't set up yet, so nothing to say). */
   backupHeartbeat(ageSeconds: number | null): Promise<void>;
-  /** After each check-endpoints run: enabled endpoints still due after its claim. */
-  checkBacklog(dueButUnclaimed: number): Promise<void>;
+  /** After each check-endpoints run: due endpoints its claim left, not counting per-host spacing (backlogBeyondSpacing). */
+  checkBacklog(backlog: number): Promise<void>;
 }
 
 /** The webhook URL when it's a public http(s) URL, else null with one error line (alerts stay off). */
@@ -132,14 +133,14 @@ export function createOperatorAlerts(deps: OperatorAlertDeps): OperatorAlerts {
       }
     },
 
-    async checkBacklog(dueButUnclaimed) {
-      if (dueButUnclaimed > 0) {
+    async checkBacklog(backlog) {
+      if (backlog > 0) {
         backlogRuns++;
         if (backlogRuns >= BACKLOG_RUNS_BEFORE_ALERT) {
           backlogAlerted = true;
           await notify(
             'backlog',
-            `check-endpoints left ${dueButUnclaimed} due endpoints unclaimed ${backlogRuns} runs in a row: checks are falling behind their intervals.`,
+            `check-endpoints left ${backlog} due endpoints unclaimed ${backlogRuns} runs in a row, not counting per-host spacing: checks are falling behind their intervals.`,
           );
         }
         return;

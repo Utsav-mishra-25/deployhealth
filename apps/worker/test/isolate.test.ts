@@ -117,7 +117,7 @@ describe('the pull request check isolate', () => {
     const due = [0, 100, 200].map((offset, i) => ({ id: `e${i}`, runAt: new Date(t0 + offset) }) as unknown as DueEndpoint);
     const late: number[] = [];
     const endpointsRun = checkEndpoints({
-      claimDue: async () => due,
+      claimDue: async () => ({ endpoints: due, hostsAtCap: [] }),
       check: async (target) => {
         late.push(Date.now() - (target as unknown as DueEndpoint).runAt.getTime());
         return { checkedAt: new Date(), statusCode: 200, latencyMs: 1, ok: true, error: null };
