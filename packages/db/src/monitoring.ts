@@ -418,6 +418,19 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
 }
 
 /**
+ * Where to send a queued alert webhook (worker): the project's name and current webhook URL, or
+ * null when the project is gone. By project id, like recordCheck: the web app scoped the event
+ * to its owner when it queued it.
+ */
+export async function alertWebhookTarget(db: Db, projectId: string): Promise<{ projectName: string; webhookUrl: string | null } | null> {
+  const [project] = await db
+    .select({ projectName: projects.name, webhookUrl: projects.alertWebhookUrl })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  return project ?? null;
+}
+
+/**
  * SQL subquery: when the endpoint's current run of failed checks began, i.e. its first failed
  * check after its last ok one. Null when the latest check was ok or there are no checks. Pass an
  * id, or a column reference such as sql`e.id` for use inside a larger query.

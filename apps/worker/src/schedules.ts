@@ -1,5 +1,5 @@
 import type { PgBoss, Queue } from 'pg-boss';
-import { CHECK_QUEUE, PR_CHECK_QUEUE, PRUNE_QUEUE, RESEED_QUEUE } from './jobs';
+import { ALERT_WEBHOOK_QUEUE, CHECK_QUEUE, PR_CHECK_QUEUE, PRUNE_QUEUE, RESEED_QUEUE } from './jobs';
 
 export const CHECK_CRON = '* * * * *';
 /** Nightly, 03:17 UTC: roll complete days up into daily stats, then prune raw checks. */
@@ -15,7 +15,10 @@ export const RESEED_CRON = `*/${RESEED_INTERVAL_MINUTES} * * * *`;
 
 type QueueOptions = Omit<Queue, 'name'>;
 
-/** Every queue is `singleton` (runs never overlap) except pr-check, which is `stately` per pull request. */
+/**
+ * Every scheduled queue is `singleton` (runs never overlap); pr-check is `stately` per pull
+ * request; alert-webhook is `standard` (each pause's webhook is its own job).
+ */
 export const QUEUES: Record<string, QueueOptions> = {
   [CHECK_QUEUE]: { policy: 'singleton', retryLimit: 0, expireInSeconds: 120 },
   [PRUNE_QUEUE]: { policy: 'singleton', retryLimit: 2 },
@@ -26,6 +29,8 @@ export const QUEUES: Record<string, QueueOptions> = {
   // 30 s × 2^n to twice that (pg-boss's jitter), at most 5 minutes, span about 17 to 22 minutes:
   // a web build, its pre-deploy migration and the worker's 10-minute migration wait. A job queued
   // while the worker waits uses no retries; it just waits too.
+  // sendWebhook already retries once; a webhook that arrives much later is noise, so no queue retry.
+  [ALERT_WEBHOOK_QUEUE]: { policy: 'standard', retryLimit: 0, expireInSeconds: 60 },
   [PR_CHECK_QUEUE]: { policy: 'stately', retryLimit: 6, retryDelay: 30, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 600 },
 };
 

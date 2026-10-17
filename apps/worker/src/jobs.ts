@@ -1,4 +1,4 @@
-import { CHECK_RETENTION_DAYS, LimitExceededError, webhookPayload, type PrCheckJobData } from '@deployhealth/core';
+import { CHECK_RETENTION_DAYS, LimitExceededError, webhookPayload, type AlertWebhookJobData, type PrCheckJobData } from '@deployhealth/core';
 import { ACCOUNT_DELETION_RECORD_DAYS, type CheckOutcome, type DueEndpoint, type NewPrCheck, type PrCheck, type PrCheckTarget, type RecordCheckResult } from '@deployhealth/db';
 import type { CheckResult, CheckTarget } from './check';
 import type { GithubApi } from './github/api';
@@ -20,7 +20,7 @@ import {
 export const CHECK_QUEUE = 'check-endpoints';
 export const PRUNE_QUEUE = 'prune-checks';
 export const RESEED_QUEUE = 'reseed-demo';
-export { PR_CHECK_QUEUE } from '@deployhealth/core';
+export { ALERT_WEBHOOK_QUEUE, PR_CHECK_QUEUE } from '@deployhealth/core';
 
 export interface CheckEndpointsDeps {
   claimDue: () => Promise<DueEndpoint[]>;
@@ -105,6 +105,26 @@ async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary
     deps.log(`[check] ${endpoint.hostname} could not be processed: ${errorLabel(error)}`);
     deps.report?.(error);
   }
+}
+
+/**
+ * The `alert-webhook` job: send an alert event the web app raised (pausing an endpoint resolves
+ * its alert there) to the project's current webhook, through the same guarded sender. One try
+ * plus sendWebhook's own retry; never retried by the queue. False when nothing was sent.
+ */
+export async function sendAlertWebhook(
+  job: AlertWebhookJobData,
+  deps: {
+    target: (projectId: string) => Promise<{ projectName: string; webhookUrl: string | null } | null>;
+    notify: (webhookUrl: string, payload: { text: string }) => Promise<boolean>;
+    log: (message: string) => void;
+  },
+): Promise<boolean> {
+  const target = await deps.target(job.projectId);
+  if (!target) return false;
+  deps.log(`[alert] ${job.type}: ${target.projectName}: ${job.message}`);
+  if (!target.webhookUrl) return false;
+  return deps.notify(target.webhookUrl, webhookPayload(job.type, target.projectName, job.message));
 }
 
 /** An error's name, plus its code when it has a string one (`ECONNRESET`, a Postgres SQLSTATE). */

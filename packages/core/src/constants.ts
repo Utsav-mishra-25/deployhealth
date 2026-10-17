@@ -52,6 +52,20 @@ export const MAX_REDIRECTS = 5;
 /** Checks older than this are deleted nightly. */
 export const CHECK_RETENTION_DAYS = 30;
 
+/**
+ * pg-boss queue for alert webhooks raised outside the worker (pausing an endpoint resolves its
+ * alert in the web app): web enqueues, the worker sends, since all outbound HTTP is the worker's.
+ */
+export const ALERT_WEBHOOK_QUEUE = 'alert-webhook';
+
+/** A queued alert webhook. No URL: the worker reads the project's current one (and name) when it sends. */
+export interface AlertWebhookJobData {
+  projectId: string;
+  type: 'opened' | 'resolved';
+  /** The alert message, as webhookPayload() takes it: names only, never values. */
+  message: string;
+}
+
 /** pg-boss queue for GitHub App pull request checks: web enqueues from the webhook, the worker runs it. */
 export const PR_CHECK_QUEUE = 'pr-check';
 

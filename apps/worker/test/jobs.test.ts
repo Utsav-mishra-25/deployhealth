@@ -1,7 +1,7 @@
 import type { AlertEvent, DueEndpoint } from '@deployhealth/db';
 import { describe, expect, it } from 'vitest';
 import type { CheckResult } from '../src/check';
-import { checkEndpoints, pruneOldChecks, reseedDemo } from '../src/jobs';
+import { checkEndpoints, pruneOldChecks, reseedDemo, sendAlertWebhook } from '../src/jobs';
 
 const T0 = new Date('2026-09-28T12:00:00Z');
 const due = (id: string, url = `https://${id}.example/`, runAt = T0): DueEndpoint => ({
@@ -278,5 +278,30 @@ describe('reseedDemo job', () => {
 
   it('propagates a failed seed so pg-boss retries it', async () => {
     await expect(reseedDemo({ seed: async () => Promise.reject(new Error('db down')), log: () => {} })).rejects.toThrow('db down');
+  });
+});
+
+describe('sendAlertWebhook job (an alert resolved by a pause in the web app)', () => {
+  const job = { projectId: 'p1', type: 'resolved' as const, message: 'Acme API paused (alert open for 12m)' };
+
+  it("posts to the project's current webhook, escaped like every alert", async () => {
+    const sent: Array<{ url: string; text: string }> = [];
+    const logs: string[] = [];
+    const ok = await sendAlertWebhook(job, {
+      target: async (id) => (id === 'p1' ? { projectName: 'Acme <Storefront>', webhookUrl: 'https://hooks.example/x' } : null),
+      notify: async (url, payload) => (sent.push({ url, text: payload.text }), true),
+      log: (m) => logs.push(m),
+    });
+    expect(ok).toBe(true);
+    expect(sent).toEqual([{ url: 'https://hooks.example/x', text: '[resolved] Acme &lt;Storefront&gt;: Acme API paused (alert open for 12m)' }]);
+    expect(logs).toEqual(['[alert] resolved: Acme <Storefront>: Acme API paused (alert open for 12m)']);
+  });
+
+  it('sends nothing without a webhook, or when the project is gone', async () => {
+    const sent: string[] = [];
+    const notify = async (url: string) => (sent.push(url), true);
+    expect(await sendAlertWebhook(job, { target: async () => ({ projectName: 'shop', webhookUrl: null }), notify, log: () => {} })).toBe(false);
+    expect(await sendAlertWebhook(job, { target: async () => null, notify, log: () => {} })).toBe(false);
+    expect(sent).toEqual([]);
   });
 });
