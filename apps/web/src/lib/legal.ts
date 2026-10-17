@@ -8,7 +8,7 @@ export const REPO_URL = 'https://github.com/Utsav-mishra-25/deployhealth';
 export const OPERATOR = { name: 'Utsav Mishra', country: 'India' } as const;
 
 /** Shown as "Last updated" on /privacy and /terms. Change it with every change to either page. */
-export const LEGAL_LAST_UPDATED = new Date('2026-10-16T00:00:00Z');
+export const LEGAL_LAST_UPDATED = new Date('2026-10-17T00:00:00Z');
 
 /** Where the hosted service and its database run. */
 export const HOSTING = { provider: 'Railway', region: 'Singapore' } as const;
