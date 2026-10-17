@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { EXIT, run, type CliIo } from '../src/cli';
+import { DRY_RUN_LAST_LINE, EXIT, MISMATCH_READ_LINE, run, type CliIo } from '../src/cli';
 import { ingestPayloadSchema } from '../src/ingest';
 import { NO_SOURCE_FILES_LINE } from '../src/languages';
 
@@ -130,6 +130,57 @@ describe('--dry-run', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('ends with what to do instead, and says nothing about MISMATCH when no row is a variable the code reads', async () => {
+    const { io, out } = makeIo();
+    expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+    expect(out.stdout.endsWith(`\n\n${DRY_RUN_LAST_LINE}\n`)).toBe(true);
+    // LEGACY_TOKEN is in .env but nothing reads it; SENTRY_DSN is read but missing from .env, not .env.example.
+    expect(out.stdout).toMatch(/LEGACY_TOKEN\s+\.env:\d+ \(missing from \.env\.example\)/);
+    expect(out.stdout).not.toContain(MISMATCH_READ_LINE);
+  });
+
+  it('says why a MISMATCH matters when a variable the code reads is in .env but not .env.example, per scope', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-mismatch-'));
+    await mkdir(join(dir, 'apps/web/src'), { recursive: true });
+    await writeFile(join(dir, 'apps/web/src/cache.ts'), 'export const url = process.env.CACHE_URL;\n');
+    await writeFile(join(dir, 'apps/web/.env'), 'CACHE_URL=\n');
+    await writeFile(join(dir, 'apps/web/.env.example'), '# nothing yet\n');
+    const { io, out } = makeIo({ cwd: dir });
+    expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+    expect(out.stdout).toMatch(new RegExp(`MISMATCH \\(1\\)\\n {2}CACHE_URL\\s+apps/web/\\.env:1 \\(missing from apps/web/\\.env\\.example\\)\\n {2}${MISMATCH_READ_LINE.replace(/\./g, '\\.')}\\n\\n`));
+
+    // The same name read in another scope doesn't count: this scope's code doesn't read it.
+    await rm(join(dir, 'apps/web/src/cache.ts'));
+    await mkdir(join(dir, 'apps/api/src'), { recursive: true });
+    await writeFile(join(dir, 'apps/api/src/cache.ts'), 'export const url = process.env.CACHE_URL;\n');
+    await writeFile(join(dir, 'apps/api/.env.example'), 'CACHE_URL=\n');
+    const other = makeIo({ cwd: dir });
+    expect(await run(['--dry-run'], other.io)).toBe(EXIT.ok);
+    expect(other.out.stdout).toMatch(/CACHE_URL\s+apps\/web\/\.env:1 \(missing from apps\/web\/\.env\.example\)/);
+    expect(other.out.stdout).not.toContain(MISMATCH_READ_LINE);
+
+    // --json is unchanged: the same keys as before, and none of the text output's sentences.
+    const json = makeIo({ cwd: dir });
+    expect(await run(['--dry-run', '--json'], json.io)).toBe(EXIT.ok);
+    expect(Object.keys(JSON.parse(json.out.stdout))).toEqual([
+      'source_files',
+      'can_check',
+      'counts',
+      'scopes',
+      'env_scopes',
+      'findings',
+      'variables',
+      'default_ignored',
+      'test_files_skipped',
+      'vendored_skipped',
+      'too_large_skipped',
+      'warnings',
+    ]);
+    expect(json.out.stdout + json.out.stderr).not.toContain(MISMATCH_READ_LINE);
+    expect(json.out.stdout + json.out.stderr).not.toContain(DRY_RUN_LAST_LINE);
+    await rm(dir, { recursive: true, force: true });
   });
 
   it('prints JSON and honors --ignore, --exclude and --dir', async () => {
@@ -306,8 +357,26 @@ describe('a directory with no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source
   it('prints the can\'t-check line with --dry-run, reports no UNUSED rows, and exits 0', async () => {
     const { io, out } = makeIo({ cwd: rustDir });
     expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
-    expect(out.stdout).toContain(`deployhealth-scan: 0 source files, scopes: (root)\n\n${NO_SOURCE_FILES_LINE}\n`);
-    expect(out.stdout).toContain('UNUSED (0)');
+    expect(out.stdout).toBe(`deployhealth-scan: 0 source files, scopes: (root)\n\n${NO_SOURCE_FILES_LINE}\n\n${DRY_RUN_LAST_LINE}\n`);
+  });
+
+  it('skips the empty MISSING and UNUSED sections, prints MISMATCH only with rows, and keeps the Skipped lines', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'deployhealth-cli-rust-mismatch-'));
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await mkdir(join(dir, 'tests'), { recursive: true });
+    await writeFile(join(dir, 'src/main.rs'), 'fn main() {}\n');
+    await writeFile(join(dir, 'tests/setup.ts'), 'export const url = process.env.TEST_URL;\n');
+    await writeFile(join(dir, '.env'), 'DATABASE_URL=\nLOCAL_ONLY=\n');
+    await writeFile(join(dir, '.env.example'), 'DATABASE_URL=\n');
+    const { io, out } = makeIo({ cwd: dir });
+    expect(await run(['--dry-run'], io)).toBe(EXIT.ok);
+    expect(out.stdout).not.toMatch(/^(MISSING|UNUSED) \(/m);
+    expect(out.stdout).toMatch(/MISMATCH \(1\)\n {2}LOCAL_ONLY\s+\.env:2 \(missing from \.env\.example\)\n\n/);
+    // Nothing read could reference LOCAL_ONLY, so the line about variables read in code stays out.
+    expect(out.stdout).not.toContain(MISMATCH_READ_LINE);
+    expect(out.stdout).toContain('Skipped 1 test and fixture file');
+    expect(out.stdout.endsWith(`\n${DRY_RUN_LAST_LINE}\n`)).toBe(true);
+    await rm(dir, { recursive: true, force: true });
   });
 
   it('keeps --json valid: can_check false and source_files 0, with the line on stderr', async () => {
@@ -316,6 +385,7 @@ describe('a directory with no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source
     const json = JSON.parse(out.stdout);
     expect(json).toMatchObject({ source_files: 0, can_check: false, findings: [] });
     expect(out.stderr).toBe(`${NO_SOURCE_FILES_LINE}\n`);
+    expect(out.stdout).not.toContain(DRY_RUN_LAST_LINE);
   });
 
   it('still sends the scan (so the deploy is recorded), prints the line, and exits 0', async () => {
@@ -328,6 +398,7 @@ describe('a directory with no JS/TS, Python, Go, Ruby, PHP or Java/Kotlin source
     expect(await run(['--url', 'https://dh.example', '--token', 'dh_t', '--sha', SHA, '--branch', 'main'], io)).toBe(EXIT.ok);
     expect(sent).toBe(1);
     expect(out.stdout).toContain(`${NO_SOURCE_FILES_LINE}\n`);
+    expect(out.stdout).not.toContain(DRY_RUN_LAST_LINE);
   });
 
   it('says "1 source file", singular, and "2 source files"', async () => {
