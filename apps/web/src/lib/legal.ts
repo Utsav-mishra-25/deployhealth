@@ -8,7 +8,7 @@ export const REPO_URL = 'https://github.com/Utsav-mishra-25/deployhealth';
 export const OPERATOR = { name: 'Utsav Mishra', country: 'India' } as const;
 
 /** Shown as "Last updated" on /privacy and /terms. Change it with every change to either page. */
-export const LEGAL_LAST_UPDATED = new Date('2026-10-17T00:00:00Z');
+export const LEGAL_LAST_UPDATED = new Date('2026-10-21T00:00:00Z');
 
 /** Where the hosted service and its database run. */
 export const HOSTING = { provider: 'Railway', region: 'Singapore' } as const;
@@ -39,7 +39,7 @@ export const SELF_SERVE_DATA_TEXT =
  * Where backups go and for how long, word for word the same on /security and /privacy. True to the
  * backup service (apps/worker/src/backup/run.ts) and BACKUP_RETENTION_WEEKS (packages/db retention.ts).
  */
-export const BACKUPS_TEXT = `Once a week the whole database is copied, compressed, to a private Cloudflare R2 bucket used only for backups, where it is encrypted at rest. The last ${BACKUP_RETENTION_WEEKS} weekly copies are kept and older ones deleted, so data you delete leaves every backup within about ${BACKUP_RETENTION_WEEKS} weeks. Next to them, a list of deleted accounts (GitHub numeric ids and dates, the last ${ACCOUNT_DELETION_RECORD_DAYS} days) is updated daily, so restoring a backup re-applies every deletion made since it was taken.`;
+export const BACKUPS_TEXT = `Once a week the whole database is copied, compressed, to a private Cloudflare R2 bucket used only for backups. The copies include alert webhook URLs and email addresses; R2 encrypts them at rest, and they aren't encrypted separately. The last ${BACKUP_RETENTION_WEEKS} weekly copies are kept and older ones deleted, so data you delete leaves every backup within about ${BACKUP_RETENTION_WEEKS} weeks. Next to them, a list of deleted accounts (GitHub numeric ids and dates, the last ${ACCOUNT_DELETION_RECORD_DAYS} days) is updated daily, so restoring a backup re-applies every account deletion made since it was taken.`;
 
 /** What a deletion leaves behind, and for how long. */
 export const DELETION_RECORD_TEXT = `A deletion leaves one record: your GitHub numeric id and the date, kept for ${ACCOUNT_DELETION_RECORD_DAYS} days so that restoring a backup can never bring the account back.`;

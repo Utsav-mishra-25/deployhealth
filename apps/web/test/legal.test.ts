@@ -64,6 +64,9 @@ describe('/privacy and /security agree', () => {
     // Backups: the retention and the deletions list's span come from the same constants as the code.
     expect(BACKUPS_TEXT).toContain(`The last ${BACKUP_RETENTION_WEEKS} weekly copies are kept`);
     expect(BACKUPS_TEXT).toContain(`the last ${ACCOUNT_DELETION_RECORD_DAYS} days`);
+    // What a copy holds that works like a password, and that R2's encryption is the only one.
+    expect(BACKUPS_TEXT).toContain("The copies include alert webhook URLs and email addresses; R2 encrypts them at rest, and they aren't encrypted separately.");
+    expect(BACKUPS_TEXT).toContain('re-applies every account deletion made since it was taken');
     expect(SUBPROCESSORS.find((s) => s.name === 'Cloudflare')?.purpose).toMatch(/backups \(R2\)/);
     expect(SUBPROCESSORS.map((s) => s.name)).toContain('Sentry');
     expect(plain(privacy)).not.toContain('planned');
