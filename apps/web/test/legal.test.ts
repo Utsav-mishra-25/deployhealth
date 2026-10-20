@@ -1,4 +1,4 @@
-import { HOST_CHECK_SPACING_MS, MAX_CHECKS_PER_HOST_PER_CLAIM, MAX_CLAIM_PER_OWNER, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
+import { CHECK_TIMEOUT_MS, HOST_CHECK_SPACING_MS, MAX_CHECKS_PER_HOST_PER_CLAIM, MAX_CLAIM_PER_OWNER, MAX_REDIRECTS, PR_CHECK_TIME_LIMIT_MS } from '@deployhealth/core';
 import { CHECK_RETENTION_DAYS } from '@deployhealth/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -8,7 +8,7 @@ import SecurityPage from '@/app/security/page';
 import TermsPage from '@/app/terms/page';
 import { resetServerEnvForTests } from '@/env';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { BACKUPS_TEXT, CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, formatLegalDate, LEGAL_LAST_UPDATED, OPERATOR, SELF_SERVE_DATA_TEXT, SUBPROCESSORS } from '@/lib/legal';
+import { BACKUPS_TEXT, CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, formatLegalDate, HOSTING, LEGAL_LAST_UPDATED, OPERATOR, SELF_SERVE_DATA_TEXT, SUBPROCESSORS } from '@/lib/legal';
 import { ACCOUNT_DELETION_RECORD_DAYS, BACKUP_RETENTION_WEEKS } from '@deployhealth/db';
 import { REDACTED } from '@deployhealth/db/redact';
 
@@ -139,5 +139,22 @@ describe('/security states what the code does', () => {
     // Never the stronger claim that a server (rather than a name) is protected.
     expect(text).not.toMatch(/(spaced|checked) [^.]*per (server|IP)/i);
     expect(text).not.toContain('.gitignore');
+  });
+
+  it('says a HEAD answered with 405 is retried as a GET, and that checks run from one region', () => {
+    const text = plain(render(SecurityPage)).replace(/\s+/g, ' ');
+    expect(text).toContain(
+      `One request per check (GET or HEAD) with a ${CHECK_TIMEOUT_MS / 1000}-second budget, following at most ${MAX_REDIRECTS} redirects. A HEAD answered with 405 is retried once as a GET, within the same budget.`,
+    );
+    expect(text).toContain(`Checks run from one region (${HOSTING.provider}, ${HOSTING.region}), and a failure isn't confirmed from a second location yet.`);
+  });
+
+  it('describes the App and the Action in the landing order, neither as the optional one', () => {
+    const text = plain(render(SecurityPage)).replace(/\s+/g, ' ');
+    expect(text).toContain(
+      'The scanner reads env files only for their names, whether the GitHub App runs it (on files it reads in memory and discards after the check) or the Action runs it in your CI; the ingest API accepts only names, paths and line numbers.',
+    );
+    expect(text).toContain('Sign-in gets no access to your repositories (the GitHub App below is separate).');
+    expect(text).not.toMatch(/optional GitHub App/);
   });
 });
