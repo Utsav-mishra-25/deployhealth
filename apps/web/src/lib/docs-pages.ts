@@ -577,7 +577,7 @@ export const DOCS_INDEX = {
     'How deployhealth catches env vars your code reads that .env.example doesn’t declare, for Next.js, Laravel and Spring Boot: read forms, defaults, limits.',
   h1: 'Catch missing env vars before they reach production',
   intro: [
-    'deployhealth compares the variables your code reads with the ones your env files declare. On every pull request, the GitHub App comments when the change reads an env var no `.env.example` declares; on every push, the scan records MISSING, UNUSED and MISMATCH per deploy, so an alert can name the deploy that broke things.',
+    'deployhealth compares the variables your code reads with the ones your env files declare. On every pull request, the GitHub App comments when the change reads an env var no `.env.example` declares; on every push, the scan records MISSING, UNUSED and MISMATCH per deploy, so an alert can name the deploy just before things broke.',
     'It reports names, file paths and line numbers only, never values.',
   ],
 } as const;

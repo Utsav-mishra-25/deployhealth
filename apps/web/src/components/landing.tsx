@@ -149,7 +149,7 @@ export function Landing({ demo }: { demo: boolean }) {
         <ul className="grid gap-3 text-sm text-gray-700 sm:grid-cols-3">
           <li>
             <strong className="font-medium text-gray-900">
-              Your env values never leave your CI: we only see names and file:line. Response bodies are never read.
+              We store variable names and file:line, never values. The PR check reads your code in memory and discards it; the Action sends names only. Response bodies are never read.
             </strong>{' '}
             <Link href="/security" className="text-emerald-700 underline">
               What we store
