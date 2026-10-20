@@ -1,5 +1,5 @@
 import { CLI_NPX, githubActionSnippet } from '@deployhealth/core';
-import { getClientForOwner, getGithubAppStatus, getProjectForOwner, listClients, listDeploys, listInstallationsForUser } from '@deployhealth/db';
+import { getClientForOwner, getGithubAppStatus, getProjectForOwner, listClients, listDeploys, listEndpointsForOwner, listInstallationsForUser } from '@deployhealth/db';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/auth';
 import { Breadcrumb } from '@/components/breadcrumb';
@@ -13,7 +13,7 @@ import { publicOrigin } from '@/lib/app-url';
 import { getDb } from '@/lib/db';
 import { actionWorkflow } from '@/lib/docs-pages';
 import { isUuid } from '@/lib/format';
-import { installAppHref, INSTALLED_PARAM, INSTALLED_VALUE } from '@/lib/onboarding';
+import { ALERTS_NOWHERE, installAppHref, INSTALLED_PARAM, INSTALLED_VALUE } from '@/lib/onboarding';
 import { appCoverage, repoCoverage } from '@/lib/repo-coverage';
 import { DEPLOY_HISTORY_OPTION, OTHER_CI, PR_CHECKS_OPTION } from '@/lib/setup-copy';
 import { PrCheckModeForm } from './pr-check-mode-form';
@@ -39,13 +39,15 @@ export default async function ProjectSettingsPage({
   const db = getDb();
   const project = await getProjectForOwner(db, projectId, user.id);
   if (!project) notFound();
-  const [client, clients, appStatus, installations, deploys] = await Promise.all([
+  const [client, clients, appStatus, installations, deploys, endpoints] = await Promise.all([
     project.clientId ? getClientForOwner(db, user.id, project.clientId) : null,
     listClients(db, user.id),
     getGithubAppStatus(db, user.id, project.id),
     listInstallationsForUser(db, user.id),
     listDeploys(db, project.id, 1),
+    listEndpointsForOwner(db, user.id, project.id),
   ]);
+  const alertsNowhere = endpoints.length > 0 && !project.alertWebhookUrl;
   const appSlug = serverEnv().GITHUB_APP_SLUG;
   const installHref = installAppHref(appSlug, { to: 'settings', projectId: project.id });
   const coverage = repoCoverage(appCoverage(installations, installHref), project.repoFullName);
@@ -76,6 +78,15 @@ export default async function ProjectSettingsPage({
           />
           <h1 className="mt-2 text-2xl font-semibold">Settings</h1>
         </div>
+        {alertsNowhere && (
+          <p className="text-sm text-amber-800" data-testid="alerts-nowhere">
+            {ALERTS_NOWHERE}{' '}
+            <a href="#client-alerts" className="font-medium underline underline-offset-2 hover:text-amber-900">
+              Add a Slack or Discord webhook below
+            </a>
+            .
+          </p>
+        )}
         {back && <InstallConfirmation installations={installations} reloadHref={`${settingsPath}?${INSTALLED_PARAM}=${INSTALLED_VALUE}`} />}
       </div>
 

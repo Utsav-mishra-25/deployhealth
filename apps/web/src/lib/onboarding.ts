@@ -57,7 +57,7 @@ export function appCoversFor(installations: readonly InstallationSummary[], appS
   return coversRepo(appCoverage(installations, installAppHref(appSlug, { to: 'clients' })));
 }
 
-export type StepId = 'app' | 'project' | 'site' | 'action';
+export type StepId = 'app' | 'project' | 'site' | 'alerts' | 'action';
 
 export interface ChecklistStep {
   id: StepId;
@@ -89,10 +89,34 @@ export function uncoveredLine(names: readonly string[]): string {
 export const NOT_COVERED_HREF = '/github/installed#not-covered';
 
 /**
+ * Whether the user's down alerts have somewhere to go (`lib/alert-destination.ts` loads it): a
+ * boolean and a project id, never a webhook URL.
+ */
+export interface AlertDestination {
+  /** Any of the user's projects has an alert webhook. */
+  webhookSet: boolean;
+  /** The first project (oldest first) with an endpoint and no webhook; null when `webhookSet`, or no project has an endpoint. */
+  projectId: string | null;
+}
+
+export const ALERTS_STEP = {
+  title: 'Choose where alerts go',
+  body: 'Down alerts go to Slack or Discord. Email is coming.',
+} as const;
+
+/** The top of a project's settings when it has endpoints and no webhook. */
+export const ALERTS_NOWHERE = 'Alerts for this project have nowhere to go yet.';
+
+/** The settings page's section with the alert webhook field. */
+export function alertSettingsHref(projectId: string): string {
+  return `/projects/${projectId}/settings#client-alerts`;
+}
+
+/**
  * The checklist for one user, from their own data only. `coverage` is built from the same
  * installations (`appCoverage(state.installations, …)`).
  */
-export function checklist(state: OnboardingState, coverage: AppCoverage, appSlug: string | undefined): Checklist {
+export function checklist(state: OnboardingState, coverage: AppCoverage, appSlug: string | undefined, alerts: AlertDestination): Checklist {
   const [app, sites, action] = HOW_IT_WORKS;
   const appAvailable = Boolean(appSlug);
   const appDone = state.installations.some((i) => !i.suspended);
@@ -129,6 +153,15 @@ export function checklist(state: OnboardingState, coverage: AppCoverage, appSlug
       optional: false,
       action: newest ? { href: `/projects/${newest.id}#add-endpoint`, label: 'Add a site' } : null,
       ...(newest ? {} : { blocked: 'Sites belong to a project: add one first (step 2).' }),
+    },
+    {
+      id: 'alerts',
+      title: ALERTS_STEP.title,
+      body: ALERTS_STEP.body,
+      done: alerts.webhookSet,
+      optional: false,
+      action: alerts.projectId ? { href: alertSettingsHref(alerts.projectId), label: ALERTS_STEP.title } : null,
+      ...(alerts.webhookSet || alerts.projectId ? {} : { blocked: 'Alerts are for sites: add one first (step 3).' }),
     },
     {
       id: 'action',
