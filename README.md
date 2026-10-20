@@ -5,6 +5,21 @@ last deploy break it.**
 
 **[Try the live demo →](https://deployhealth.dev/demo)** · no sign-up, read-only sample data
 
+**Try the scanner on your repo:** `npx -y deployhealth-scan@0.5.0 --dry-run` (no sign-up; prints
+names and file:line only).
+
+About three quarters of the code was written with Claude Code under my direction; I review and
+author every commit.
+
+How it differs:
+
+- **t3-env, envalid:** validate env inside one app at build or start time; deployhealth flags a
+  variable the code reads that no env file declares, on the pull request, before merge.
+- **dotenv-linter:** lints `.env` files; deployhealth reads the code against them, across all your
+  client repos, in six language families.
+- **UptimeRobot:** says a site is down; deployhealth ties the outage to the deploy just before it
+  and what that deploy changed.
+
 The hosted version at deployhealth.dev is free while in beta. Its home page explains the product in
 one screen and links to the demo; once you're signed in, it takes you straight to your clients.
 
