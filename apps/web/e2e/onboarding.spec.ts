@@ -5,11 +5,13 @@ import { signInAsDev } from './session';
 // The first run on a fresh account, as a new user walks it: the checklist on an empty home, a
 // project, the GitHub App install round trip (GitHub's signed webhook, then its redirect to the
 // Setup URL with the install link's state), the "App doesn't cover this repo" case, a site, and
-// the optional Action. Every first-run screen also gets axe and a 375 px check.
+// where alerts go, and the optional Action. Every first-run screen also gets axe and a 375 px check.
 
 const DEMO_STOREFRONT = '0d3e0000-0000-4000-8000-000000000001'; // the demo user's project, not the dev user's
 const DEV_GITHUB_ID = -2;
 const INSTALL = 'https://github.com/apps/deployhealth/installations/new';
+/** A placeholder Slack incoming webhook, as in the unit tests; never posted to (nothing goes down here). */
+const WEBHOOK = 'https://hooks.slack.com/services/T000/B000/XXXX';
 
 /** GitHub's installation.created delivery, sent by the dev user's GitHub id. */
 function installed(id: number, account: string, selection: 'all' | 'selected', repos: string[]) {
@@ -31,17 +33,19 @@ async function stepsDone(page: Page) {
 test.beforeAll(() => resetDevUser());
 test.afterAll(() => resetDevUser());
 
-test('first run: checklist, project, App install round trip, coverage, a site and the optional Action', async ({ page }) => {
+test('first run: checklist, project, App install round trip, coverage, a site, where alerts go and the optional Action', async ({ page }) => {
   await signInAsDev(page);
 
   // 1. Nothing done: the checklist in the landing page's order; no client offered yet.
   await expect(page.getByTestId('onboarding-checklist')).toBeVisible();
-  expect(await stepsDone(page)).toEqual(['step-app=false', 'step-project=false', 'step-site=false', 'step-action=false']);
+  expect(await stepsDone(page)).toEqual(['step-app=false', 'step-project=false', 'step-site=false', 'step-alerts=false', 'step-action=false']);
   await expect(page.getByTestId('onboarding-checklist').getByRole('heading', { level: 3 })).toHaveText([
     '1.Install the GitHub App',
     '2.Add a project for a repo',
     '3.Add a site (a URL to watch)',
+    '4.Choose where alerts go',
   ]);
+  await expect(page.getByTestId('step-alerts')).toContainText('Alerts are for sites: add one first (step 3).');
   await expect(page.getByTestId('step-action').locator('summary')).toHaveText('Optional: deploy history with the Action');
   await expect(page.getByTestId('step-app').getByRole('link', { name: 'Install the GitHub App' })).toHaveAttribute('href', `${INSTALL}?state=clients`);
   await expect(page.getByTestId('step-action').getByRole('link', { name: 'Set up the Action' })).toBeHidden(); // collapsed
@@ -123,7 +127,7 @@ test('first run: checklist, project, App install round trip, coverage, a site an
 
   // 6. Home: step 1 done, step 2 names the uncovered project and links to the notice, and the row says why.
   await page.goto('/clients');
-  expect(await stepsDone(page)).toEqual(['step-app=true', 'step-project=true', 'step-site=false', 'step-action=false']);
+  expect(await stepsDone(page)).toEqual(['step-app=true', 'step-project=true', 'step-site=false', 'step-alerts=false', 'step-action=false']);
   await expect(page.getByTestId('checklist-uncovered')).toHaveText("1 project isn't covered by the App: dh-laravel-test. How to add it");
   await expect(page.getByTestId('checklist-uncovered').getByRole('link')).toHaveAttribute('href', '/github/installed#not-covered');
   await expect(page.getByTestId('checklist-suggestions')).toContainText('Add a project for utsav-test/blog');
@@ -166,21 +170,46 @@ test('first run: checklist, project, App install round trip, coverage, a site an
   await expect(page.getByTestId('repo-coverage')).toHaveCount(0); // covered: nothing to warn about
   await expectFirstRunScreen(page);
 
-  // 8. A site, from the checklist: then the three steps are done and the checklist goes away.
+  // 8. A site, from the checklist: step 3 is done, and step 4 links to that project's alert settings.
   await page.goto('/clients');
   await page.getByTestId('step-site').getByRole('link', { name: 'Add a site' }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}#add-endpoint$/);
+  const sitePath = new URL(page.url()).pathname;
   const addForm = page.locator('#add-endpoint');
   await addForm.getByLabel('URL').fill('https://example.com/health');
   await addForm.getByRole('button', { name: 'Add endpoint' }).click();
   await expect(page.getByTestId('endpoint-card')).toHaveCount(1);
   await expect(page.getByTestId('endpoint-card')).toContainText('No checks yet: the first one runs within 5 minutes.');
   await page.goto('/clients');
+  expect(await stepsDone(page)).toEqual(['step-app=true', 'step-project=true', 'step-site=true', 'step-alerts=false', 'step-action=false']);
+  await expect(page.getByTestId('step-alerts')).toContainText('Down alerts go to Slack or Discord. Email is coming.');
+  await expectFirstRunScreen(page);
+
+  // 9. Where alerts go: the settings page says they have nowhere to go until a webhook is saved
+  // (only on a project with a site); then the checklist goes away.
+  await page.goto(`${projectPath}/settings`);
+  await expect(page.getByTestId('alerts-nowhere')).toHaveCount(0); // dh-laravel-test has no site
+  await page.goto('/clients');
+  await page.getByTestId('step-alerts').getByRole('link', { name: 'Choose where alerts go' }).click();
+  await expect(page).toHaveURL(new RegExp(`${sitePath}/settings#client-alerts$`));
+  await expect(page.getByTestId('alerts-nowhere')).toHaveText('Alerts for this project have nowhere to go yet. Add a Slack or Discord webhook below.');
+  await expectFirstRunScreen(page);
+  await page.getByLabel(/Alert webhook URL/).fill(WEBHOOK);
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await expect(page.locator('form').filter({ has: page.getByRole('button', { name: 'Save settings' }) }).getByText('Saved')).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId('alerts-nowhere')).toHaveCount(0);
+  await page.goto('/clients');
   await expect(page.getByTestId('onboarding-checklist')).toHaveCount(0);
+  // Only a boolean and a project id reach /clients: never the saved URL, in the HTML or the RSC payload.
+  const clientsHtml = await (await page.request.get('/clients')).text();
+  expect(clientsHtml).toContain('data-testid="project-row"');
+  expect(clientsHtml).not.toContain(WEBHOOK);
+  expect(clientsHtml).not.toContain('hooks.slack.com');
   await expect(page.getByTestId('client-offer')).toBeVisible();
   await expectFirstRunScreen(page);
 
-  // 9. Optional: the Action. The token appears once, in settings; a reported scan fills the page.
+  // 10. Optional: the Action. The token appears once, in settings; a reported scan fills the page.
   const token = await createToken(page, projectPath);
   await expect(page.getByText(token, { exact: true })).toHaveCount(1);
   const scan = await page.request.post('/api/ingest/scan', {

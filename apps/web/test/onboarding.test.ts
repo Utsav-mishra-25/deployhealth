@@ -15,6 +15,7 @@ import {
   installState,
   parseInstallState,
   uncoveredLine,
+  type AlertDestination,
   type InstallReturn,
 } from '@/lib/onboarding';
 import { appCoverage, repoCoverage } from '@/lib/repo-coverage';
@@ -38,14 +39,17 @@ function installation(overrides: Partial<InstallationSummary> = {}): Installatio
 
 const EMPTY: OnboardingState = { installations: [], projects: [], endpoints: 0, deploys: 0, clients: 0 };
 
+const NO_WEBHOOK: AlertDestination = { webhookSet: false, projectId: null };
+const WEBHOOK_SET: AlertDestination = { webhookSet: true, projectId: null };
+
 /** `slug` null: no GitHub App on this deployment (GITHUB_APP_SLUG unset). */
-function stepsOf(state: OnboardingState, appSlug: string | null = SLUG) {
+function stepsOf(state: OnboardingState, appSlug: string | null = SLUG, alerts: AlertDestination = NO_WEBHOOK) {
   const slug = appSlug ?? undefined;
-  const list = checklist(state, appCoverage(state.installations, installAppHref(slug, { to: 'clients' })), slug);
+  const list = checklist(state, appCoverage(state.installations, installAppHref(slug, { to: 'clients' })), slug, alerts);
   return { list, byId: Object.fromEntries(list.steps.map((s) => [s.id, s])) };
 }
 
-const done = (state: OnboardingState) => stepsOf(state).list.steps.map((s) => [s.id, s.done]);
+const done = (state: OnboardingState, alerts: AlertDestination = NO_WEBHOOK) => stepsOf(state, SLUG, alerts).list.steps.map((s) => [s.id, s.done]);
 
 describe('the first-run checklist', () => {
   it("follows the landing page's setup order and wording, with the Action last and optional", () => {
@@ -54,10 +58,17 @@ describe('the first-run checklist', () => {
       HOW_IT_WORKS[0].title,
       'Add a project for a repo',
       'Add a site (a URL to watch)',
+      'Choose where alerts go',
       'Optional: deploy history with the Action',
     ]);
-    expect(list.steps.map((s) => s.body)).toEqual([HOW_IT_WORKS[0].body, expect.any(String), HOW_IT_WORKS[1].body, HOW_IT_WORKS[2].body]);
-    expect(list.steps.map((s) => s.optional)).toEqual([false, false, false, true]);
+    expect(list.steps.map((s) => s.body)).toEqual([
+      HOW_IT_WORKS[0].body,
+      expect.any(String),
+      HOW_IT_WORKS[1].body,
+      'Down alerts go to Slack or Discord. Email is coming.',
+      HOW_IT_WORKS[2].body,
+    ]);
+    expect(list.steps.map((s) => s.optional)).toEqual([false, false, false, false, true]);
   });
 
   it('nothing done: install links to GitHub coming back to /clients; sites and the Action wait for a project', () => {
@@ -66,6 +77,7 @@ describe('the first-run checklist', () => {
       ['app', false],
       ['project', false],
       ['site', false],
+      ['alerts', false],
       ['action', false],
     ]);
     expect(list.complete).toBe(false);
@@ -73,6 +85,8 @@ describe('the first-run checklist', () => {
     expect(byId.project!.action?.href).toBe('/projects/new');
     expect(byId.site!.action).toBeNull();
     expect(byId.site!.blocked).toMatch(/add one first/);
+    expect(byId.alerts!.action).toBeNull();
+    expect(byId.alerts!.blocked).toBe('Alerts are for sites: add one first (step 3).');
     expect(byId.action!.action).toBeNull();
   });
 
@@ -82,6 +96,7 @@ describe('the first-run checklist', () => {
       ['app', true],
       ['project', false],
       ['site', false],
+      ['alerts', false],
       ['action', false],
     ]);
     expect(stepsOf(state).byId.app!.action?.href).toBe('/github/installed');
@@ -92,23 +107,40 @@ describe('the first-run checklist', () => {
   it('project added: the site and Action steps link to the newest project', () => {
     const state = { ...EMPTY, projects: [{ id: 'p-old', name: 'old', repoFullName: 'acme/old' }, { id: PROJECT_ID, name: 'shop', repoFullName: 'acme/shop' }] };
     const { byId } = stepsOf(state);
-    expect(done(state).map(([, d]) => d)).toEqual([false, true, false, false]);
+    expect(done(state).map(([, d]) => d)).toEqual([false, true, false, false, false]);
     expect(byId.site!.action?.href).toBe(`/projects/${PROJECT_ID}#add-endpoint`);
     expect(byId.action!.action?.href).toBe(`/projects/${PROJECT_ID}/settings#deploy-history`);
   });
 
-  it('site added, and all done: the checklist is complete (hidden) without the optional Action', () => {
+  it('site added, no webhook: the alerts step links to that project\'s alert settings and holds the checklist open', () => {
     const project = { id: PROJECT_ID, name: 'shop', repoFullName: 'acme/shop' };
-    expect(done({ ...EMPTY, projects: [project], endpoints: 1 }).map(([, d]) => d)).toEqual([false, true, true, false]);
+    const state = { ...EMPTY, installations: [installation()], projects: [project], endpoints: 1 };
+    const alerts = { webhookSet: false, projectId: PROJECT_ID };
+    expect(done(state, alerts).map(([, d]) => d)).toEqual([true, true, true, false, false]);
+    const { list, byId } = stepsOf(state, SLUG, alerts);
+    expect(list.complete).toBe(false);
+    expect(byId.alerts!.action).toEqual({ href: `/projects/${PROJECT_ID}/settings#client-alerts`, label: 'Choose where alerts go' });
+    expect(byId.alerts!.blocked).toBeUndefined();
+    const html = renderToStaticMarkup(createElement(OnboardingChecklist, { checklist: list }));
+    expect(text(html)).toContain('Get set up3 of 4 done');
+    expect(text(html)).toContain('4.Choose where alerts goTo do');
+    expect(text(html)).toContain('Down alerts go to Slack or Discord. Email is coming.');
+  });
+
+  it('site added and a webhook set, and all done: the checklist is complete (hidden) without the optional Action', () => {
+    const project = { id: PROJECT_ID, name: 'shop', repoFullName: 'acme/shop' };
+    expect(done({ ...EMPTY, projects: [project], endpoints: 1 }, WEBHOOK_SET).map(([, d]) => d)).toEqual([false, true, true, true, false]);
     const all = { ...EMPTY, installations: [installation()], projects: [project], endpoints: 1 };
-    expect(stepsOf(all).list.complete).toBe(true);
-    expect(renderToStaticMarkup(createElement(OnboardingChecklist, { checklist: stepsOf(all).list }))).toBe('');
-    expect(done({ ...all, deploys: 2 }).at(-1)).toEqual(['action', true]);
+    expect(stepsOf(all, SLUG, WEBHOOK_SET).list.complete).toBe(true);
+    expect(renderToStaticMarkup(createElement(OnboardingChecklist, { checklist: stepsOf(all, SLUG, WEBHOOK_SET).list }))).toBe('');
+    expect(done({ ...all, deploys: 2 }, WEBHOOK_SET).at(-1)).toEqual(['action', true]);
+    // A webhook alone doesn't stand in for a site: step 3 still holds the checklist open.
+    expect(stepsOf({ ...all, endpoints: 0 }, SLUG, WEBHOOK_SET).list.complete).toBe(false);
   });
 
   it('without a GitHub App on the deployment, step 1 says so and does not hold the checklist open', () => {
     const project = { id: PROJECT_ID, name: 'shop', repoFullName: 'acme/shop' };
-    const { list, byId } = stepsOf({ ...EMPTY, projects: [project], endpoints: 1 }, null);
+    const { list, byId } = stepsOf({ ...EMPTY, projects: [project], endpoints: 1 }, null, WEBHOOK_SET);
     expect(byId.app!.action).toBeNull();
     expect(byId.app!.blocked).toBe('Not available on this deployment.');
     expect(list.complete).toBe(true);
@@ -137,7 +169,7 @@ describe('the first-run checklist', () => {
   it('renders each step with a text state, step 2 with the repositories the App can see, and the Action collapsed', () => {
     const state = { ...EMPTY, installations: [installation()] };
     const html = renderToStaticMarkup(createElement(OnboardingChecklist, { checklist: stepsOf(state).list, suggestedRepos: ['acme/shop'] }));
-    expect(text(html)).toContain('Get set up1 of 3 done');
+    expect(text(html)).toContain('Get set up1 of 4 done');
     expect(text(html)).toContain('1.Install the GitHub AppDone');
     expect(text(html)).toContain('2.Add a project for a repoTo do');
     expect(html).toContain('href="/projects/new?repo=acme%2Fshop"');

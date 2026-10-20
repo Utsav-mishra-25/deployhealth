@@ -4,6 +4,7 @@ import { AppNextSteps } from '@/components/app-next-steps';
 import { InstallConfirmation } from '@/components/install-confirmation';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { serverEnv } from '@/env';
+import { alertDestination } from '@/lib/alert-destination';
 import { getDb } from '@/lib/db';
 import { appCoversFor, checklist, installAppHref, INSTALLED_PARAM, INSTALLED_VALUE } from '@/lib/onboarding';
 import { APP_PATHS } from '@/lib/paths';
@@ -16,9 +17,10 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const user = await requireUser();
   const back = (await searchParams)[INSTALLED_PARAM] === INSTALLED_VALUE;
   const appSlug = serverEnv().GITHUB_APP_SLUG;
-  const state = await getOnboardingState(getDb(), user.id);
+  const db = getDb();
+  const state = await getOnboardingState(db, user.id);
   const coverage = appCoverage(state.installations, installAppHref(appSlug, { to: 'clients' }));
-  const list = checklist(state, coverage, appSlug);
+  const list = checklist(state, coverage, appSlug, await alertDestination(db, user.id, state));
   // Repositories the GitHub App can check for this user that have no project yet: say what to do next.
   const repos = reposWithoutProject(state.installations);
   return (
