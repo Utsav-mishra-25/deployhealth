@@ -99,3 +99,21 @@ describe('malformed share tokens', () => {
     }
   });
 });
+
+describe('an expired share link', () => {
+  it('says so and tells the client who to ask, without reading the report', async () => {
+    Object.assign(process.env, { DATABASE_URL: 'postgres://x@localhost/db', AUTH_SECRET: 'x'.repeat(32) });
+    delete process.env.REPORT_SHARE_SECRET;
+    resetServerEnvForTests();
+    const { default: SharedReportPage } = await import('@/app/share/reports/[token]/page');
+    const { serverEnv } = await import('@/env');
+    const expired = signReportShare(
+      { clientId: '00000000-0000-4000-8000-000000000001', month: '2026-01', expiresAt: new Date('2026-02-01T00:00:00Z') },
+      reportShareKey(serverEnv()),
+    );
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const html = renderToStaticMarkup(await SharedReportPage({ params: Promise.resolve({ token: expired }) }));
+    expect(html).toContain('This report link has expired');
+    expect(html).toContain('Share links last 90 days. Ask your developer for a new one.');
+  });
+});

@@ -51,7 +51,7 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
   const inProgress = data.generatedAt.getTime() < data.month.to.getTime();
 
   return (
-    <article className="mx-auto max-w-4xl space-y-8 rounded-lg border border-gray-200 bg-white p-8 print:border-0 print:p-0" data-testid="report">
+    <article className="mx-auto max-w-4xl space-y-8 rounded-lg border border-gray-200 bg-white p-4 sm:p-8 print:border-0 print:p-0" data-testid="report">
       {banner}
       {toolbar && <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">{toolbar}</div>}
 
@@ -70,8 +70,8 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="report-tiles">
-        <Stat label="uptime (endpoint average)" value={formatPercent(totals.uptime)} />
-        <Stat label={totals.incidents === 1 ? 'incident' : 'incidents'} value={String(totals.incidents)} />
+        <Stat label="uptime" value={formatPercent(totals.uptime)} />
+        <Stat label={totals.incidents === 1 ? 'outage' : 'outages'} value={String(totals.incidents)} />
         <Stat label={totals.deploys === 1 ? 'deploy' : 'deploys'} value={String(totals.deploys)} />
         <Stat label={totals.fixed === 1 ? 'config issue fixed' : 'config issues fixed'} value={String(totals.fixed)} />
       </div>
@@ -114,7 +114,7 @@ export function ReportView({ data, toolbar, banner }: { data: ReportData; toolba
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-sm font-semibold">Incidents</h3>
+            <h3 className="text-sm font-semibold">Outages</h3>
             {project.incidents.length === 0 ? (
               <p className="text-sm text-gray-600">None.</p>
             ) : (

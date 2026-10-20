@@ -59,10 +59,19 @@ describe('the monthly report', () => {
     expect(text(html)).toContain(reportSummary(DATA));
   });
 
-  it('has four tiles: uptime, incidents, deploys, issues fixed (no "introduced")', () => {
+  it('has four tiles: uptime, outages, deploys, issues fixed (no "introduced")', () => {
     const tiles = /data-testid="report-tiles">([\s\S]*?)<section/.exec(html)![1]!;
-    expect(text(tiles).trim()).toBe('99.81% uptime (endpoint average) 1 incident 1 deploy 1 config issue fixed');
+    expect(text(tiles).trim()).toBe('99.81% uptime 1 outage 1 deploy 1 config issue fixed');
     expect(text(clientPart)).not.toMatch(/introduced/i);
+  });
+
+  it('says outage, as the summary does, never incident, in the part a client reads', () => {
+    expect(clientPart).toContain('<h3 class="text-sm font-semibold">Outages</h3>');
+    expect(text(clientPart)).not.toMatch(/incident/i);
+  });
+
+  it('pads less at phone width (p-4, sm:p-8) and not at all in print', () => {
+    expect(html).toMatch(/class="[^"]*\bp-4 sm:p-8 print:border-0 print:p-0"[^>]*data-testid="report"/);
   });
 
   it('keeps variable names, commits and alert messages under "Technical details"', () => {
