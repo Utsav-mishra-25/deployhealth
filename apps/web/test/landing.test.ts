@@ -67,7 +67,7 @@ describe('the landing hero', () => {
   it('leads with the freelancer story, the buttons, the docs link, then free during the beta', () => {
     expect(HERO.headline).toBe("Know which deploy broke your client's site, before they call you.");
     expect(HERO.subline).toBe(
-      'deployhealth checks every pull request for config your code needs but nobody declared, watches your sites, and ties each outage to the deploy that caused it. Monthly reports your clients can read.',
+      'deployhealth checks every pull request for config your code needs but nobody declared, watches your sites, and ties each outage to the deploy just before it, and what that deploy changed. Monthly reports your clients can read.',
     );
     const html = render(true);
     expect(html).toContain(`>${escaped(HERO.headline)}</h1>`);
@@ -128,7 +128,7 @@ describe('the FAQ', () => {
     expect(html.match(/<details/g)).toHaveLength(4);
     expect(html).toContain('href="/security"');
     expect(html).toContain('href="/pricing"');
-    expect(html).toContain('including WordPress');
+    expect(html).toContain('WordPress included; each project is tied to one repo today.');
   });
 
   it("answers an unsupported stack with what works anywhere, then one line naming what's read, from core's list", () => {
@@ -138,15 +138,28 @@ describe('the FAQ', () => {
     expect(FAQ_STACK_SENTENCE.endsWith(`Supported today: ${SUPPORTED_LANGUAGES.map((l) => l.label).join(', ')}.`)).toBe(true);
     expect(FAQ_STACK_SENTENCE).toContain(UNREAD_LANGUAGES_TEXT);
     const stack = FAQ.find((item) => item.question === "What if my stack isn't supported?")!;
-    expect(stack.answer).toBe(`Uptime checks, monthly reports and handoffs work for any site, including WordPress. ${FAQ_STACK_SENTENCE}`);
+    expect(stack.answer).toBe(
+      `Uptime checks, monthly reports and handoffs work for any site whose code is in a GitHub repository, WordPress included; each project is tied to one repo today. ${FAQ_STACK_SENTENCE}`,
+    );
   });
 });
 
 describe('the landing page trust strip', () => {
-  it('says values stay in CI (the CLI reads .env files locally), not that they are never read', () => {
+  it('says what is stored and how each path handles code, not that values never leave CI (the App reads code too)', () => {
     const html = render(true);
-    expect(html).toContain('Your env values never leave your CI: we only see names and file:line. Response bodies are never read.');
+    expect(html).toContain(
+      'We store variable names and file:line, never values. The PR check reads your code in memory and discards it; the Action sends names only. Response bodies are never read.',
+    );
     expect(html).not.toMatch(/Never reads your env values/i);
+    expect(html).not.toMatch(/never leave your CI/i);
+  });
+
+  it('claims no causation: an outage is tied to the deploy before it, not the one that caused it', () => {
+    const html = render(true);
+    expect(html).not.toMatch(/deploy that (caused|broke)/i);
+    expect(LANDING_METADATA.description).toBe(
+      'Checks every pull request for config nobody declared, watches your sites, and ties each outage to the deploy before it and what it changed.',
+    );
   });
 });
 

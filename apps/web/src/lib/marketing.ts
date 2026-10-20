@@ -11,7 +11,7 @@ export const TAGLINE = 'One page for every client project you maintain.';
 export const HERO = {
   headline: "Know which deploy broke your client's site, before they call you.",
   subline:
-    'deployhealth checks every pull request for config your code needs but nobody declared, watches your sites, and ties each outage to the deploy that caused it. Monthly reports your clients can read.',
+    'deployhealth checks every pull request for config your code needs but nobody declared, watches your sites, and ties each outage to the deploy just before it, and what that deploy changed. Monthly reports your clients can read.',
   docsLink: 'Docs: Next.js, Laravel, Spring Boot',
 } as const;
 
@@ -86,7 +86,7 @@ export const FAQ = [
   },
   {
     question: "What if my stack isn't supported?",
-    answer: `Uptime checks, monthly reports and handoffs work for any site, including WordPress. ${FAQ_STACK_SENTENCE}`,
+    answer: `Uptime checks, monthly reports and handoffs work for any site whose code is in a GitHub repository, WordPress included; each project is tied to one repo today. ${FAQ_STACK_SENTENCE}`,
   },
   {
     question: 'What does it cost after the beta?',
@@ -97,7 +97,7 @@ export const FAQ = [
 
 export const LANDING_METADATA = {
   title: "deployhealth: know which deploy broke your client's site",
-  description: 'Checks every pull request for config nobody declared, watches your sites, and ties each outage to the deploy that caused it.',
+  description: 'Checks every pull request for config nobody declared, watches your sites, and ties each outage to the deploy before it and what it changed.',
   ogTitle: HERO.headline,
   /** The Open Graph image (app/opengraph-image.tsx) shows the headline, so its alt is the headline. */
   imageAlt: `deployhealth: ${HERO.headline}`,
@@ -114,7 +114,7 @@ export const DEMO_GUIDE_CLIENT_SLUG = 'acme-corp';
 /** /demo's three-item guide: where to look first. */
 export const DEMO_GUIDE = {
   projects: { href: `${DEMO_PATHS.clients}#projects`, label: 'The project list', note: 'worst first' },
-  deploy: { href: `${DEMO_PATHS.project(DEMO_PROJECT_IDS.storefront)}#deploys`, label: "The deploy that broke Acme's API", note: 'acme-storefront' },
+  deploy: { href: `${DEMO_PATHS.project(DEMO_PROJECT_IDS.storefront)}#deploys`, label: "The deploy before Acme's API went down", note: 'acme-storefront' },
   report: { href: DEMO_PATHS.clientReport(DEMO_GUIDE_CLIENT_SLUG), label: "The monthly report you'd send Acme" },
   handoff: { href: DEMO_PATHS.handoff(DEMO_PROJECT_IDS.storefront), label: 'its handoff' },
 } as const;

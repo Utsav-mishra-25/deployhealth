@@ -51,7 +51,7 @@ test('landing page for a signed-out visitor: the hero first, the alert below it,
   await expect(faq.locator('details')).toHaveCount(4);
   const stack = faq.locator('details').filter({ hasText: "What if my stack isn't supported?" });
   await stack.getByText("What if my stack isn't supported?").click();
-  await expect(stack).toContainText('including WordPress');
+  await expect(stack).toContainText('WordPress included; each project is tied to one repo today.');
   await expect(stack).toContainText('Supported today: JS/TS, Python, Go, Ruby, PHP, Java/Kotlin.');
   await expect(landing).not.toContainText('Reads JS/TS');
   await expect(landing.getByTestId('pricing-plans')).toContainText('Free during the beta: everything you see in the demo.');
@@ -125,7 +125,7 @@ test('/demo guide: three items under the banner, each link resolves', async ({ p
   expect((await guide.boundingBox())!.y).toBeGreaterThan((await banner.boundingBox())!.y);
   await expect(guide.getByRole('listitem')).toHaveCount(3);
   const links = guide.getByRole('link');
-  await expect(links).toHaveText(['The project list', "The deploy that broke Acme's API", "The monthly report you'd send Acme", 'its handoff']);
+  await expect(links).toHaveText(['The project list', "The deploy before Acme's API went down", "The monthly report you'd send Acme", 'its handoff']);
   const hrefs = await links.evaluateAll((as) => as.map((a) => a.getAttribute('href')!));
   expect(hrefs).toEqual(['/demo#projects', `/demo/projects/${STOREFRONT}#deploys`, '/demo/clients/acme-corp/report', `/demo/projects/${STOREFRONT}/handoff`]);
 
