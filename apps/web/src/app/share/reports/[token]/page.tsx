@@ -25,7 +25,7 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
     return (
       <div className="mx-auto mt-16 max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center" role="alert">
         <h1 className="text-lg font-semibold">This report link has expired</h1>
-        <p className="mt-2 text-sm text-gray-600">Share links last 90 days. Ask for a new one.</p>
+        <p className="mt-2 text-sm text-gray-600">Share links last 90 days. Ask your developer for a new one.</p>
       </div>
     );
   }
