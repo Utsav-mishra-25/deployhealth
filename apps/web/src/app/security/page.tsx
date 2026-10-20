@@ -14,7 +14,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { li, ProsePage, Section } from '@/components/prose-page';
 import { githubSignInReads } from '@/lib/auth-providers';
-import { BACKUPS_TEXT, CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, REPO_URL, SELF_SERVE_DATA_TEXT } from '@/lib/legal';
+import { BACKUPS_TEXT, CHECK_RETENTION_TEXT, DELETION_RECORD_TEXT, ERROR_REPORTS_TEXT, HOSTING, REPO_URL, SELF_SERVE_DATA_TEXT } from '@/lib/legal';
 import { securityContact } from '@/lib/security';
 import { SHARE_LINK_DAYS } from '@/lib/share-link';
 
@@ -44,8 +44,9 @@ export default function SecurityPage() {
           <li className={li}>
             <strong>Variable names and file:line, never values.</strong> For each deploy: the commit sha, branch and time,
             and for each finding the variable name, the file and line that reads it, and the env file involved, plus the
-            names each env file defines. The scanner runs in your CI and reads env files only for their names; the
-            ingest API accepts only names, paths and line numbers.
+            names each env file defines. The scanner reads env files only for their names, whether the GitHub App runs it
+            (on files it reads in memory and discards after the check) or the Action runs it in your CI; the ingest API
+            accepts only names, paths and line numbers.
           </li>
           <li className={li}>
             <strong>Findings</strong> per deploy (missing, unused, out of sync), so you can see what changed.
@@ -64,7 +65,7 @@ export default function SecurityPage() {
           <li className={li}>
             <strong>Your account:</strong> your GitHub id, login, name, email address and avatar URL, from GitHub sign-in.{' '}
             <span data-testid="signin-reads">{githubSignInReads()}</span> Sign-in gets no access to your repositories (the
-            optional GitHub App below is separate). Clients, deploy notes and contact emails are what you type in.
+            GitHub App below is separate). Clients, deploy notes and contact emails are what you type in.
           </li>
         </ul>
       </Section>
@@ -89,9 +90,13 @@ export default function SecurityPage() {
 
       <Section title="How checks run">
         <ul className="space-y-2">
-          <li className={li}>
+          <li className={li} data-testid="check-request">
             One request per check (GET or HEAD) with a {CHECK_TIMEOUT_MS / 1000}-second budget, following at most{' '}
-            {MAX_REDIRECTS} redirects.
+            {MAX_REDIRECTS} redirects. A HEAD answered with 405 is retried once as a GET, within the same budget.
+          </li>
+          <li className={li} data-testid="check-region">
+            Checks run from one region ({HOSTING.provider}, {HOSTING.region}), and a failure isn&apos;t confirmed from a
+            second location yet.
           </li>
           <li className={li}>
             <strong>SSRF-guarded.</strong> A URL must be public http(s): no credentials, no private, loopback, link-local
