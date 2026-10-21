@@ -452,14 +452,14 @@ describe('recordCheck and the alert lifecycle', () => {
     expect(banner).toMatchObject([{ endpointUrl: 'https://api.acme.com/health', deploy: { id: linked.deployId } }]);
   });
 
-  it('says the linked deploy changed no config when nothing new is missing', async () => {
+  it('ends after the linked deploy when nothing new is missing and the scans have no variable lists to compare', async () => {
     const { endpoint, project } = await setup();
     await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [missing('A')] });
     await recordScan(db, { projectId: project.id, sha: 'bbbbbbb', branch: 'main', deployedAt: minutes(-15), findings: [missing('A')] });
     await recordCheck(db, endpoint.id, ok(minutes(-20)));
     await recordCheck(db, endpoint.id, fail(minutes(0)));
     const { event } = await recordCheck(db, endpoint.id, fail(minutes(1)));
-    expect(event?.message).toBe('api.acme.com started failing 15m after deploy bbbbbbb, which changed no config');
+    expect(event?.message).toBe('api.acme.com started failing 15m after deploy bbbbbbb');
   });
 
   it('ignores deploys older than 30 minutes or after the first failure', async () => {
@@ -527,12 +527,72 @@ describe('deploy correlation for scopes with no env file (CLI 0.2.0+)', () => {
     );
   });
 
-  it('correlates scans from CLIs before 0.2.0 (no env scopes) exactly as before', async () => {
+  it('calls nothing undeclared for scans from CLIs before 0.2.0 (no env scopes); a new name there counts as added', async () => {
     const { endpoint, project } = await setup();
     await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [], variables: [] });
     // A variable list with nothing defined but no env scopes: nothing to call "undeclared".
     await recordScan(db, { projectId: project.id, sha: 'bbbbbbb', branch: 'main', deployedAt: minutes(-4), findings: [], variables: [bare('NEW_ONE')] });
-    expect((await openAlert(endpoint.id))?.message).toBe('api.acme.com started failing 4m after deploy bbbbbbb, which changed no config');
+    expect((await openAlert(endpoint.id))?.message).toBe("api.acme.com started failing 4m after deploy bbbbbbb, which added 1 env var: NEW_ONE (check it's set on the host)");
+  });
+});
+
+describe('the "added" part: env vars a deploy newly references that nothing flags', () => {
+  const declared = (name: string, optional = false) => ({ var_name: name, scope: '', defined_in: ['.env.example' as const], ...(optional ? { optional: true as const } : {}) });
+  const ROOT_DECLARED = [{ scope: '', env_files: ['.env.example' as const] }];
+  const SHA = 'b52952e8192c38c054e53b5447ea20de88f2e2e9';
+
+  async function deployAndFail(previous: Parameters<typeof recordScan>[1] | null, current: Omit<Parameters<typeof recordScan>[1], 'projectId'>) {
+    const { endpoint, project } = await setup();
+    await db.update(endpoints).set({ name: 'Acme API' }).where(eq(endpoints.id, endpoint.id));
+    if (previous) await recordScan(db, { ...previous, projectId: project.id });
+    await recordScan(db, { ...current, projectId: project.id });
+    await recordCheck(db, endpoint.id, ok(minutes(-10)));
+    await recordCheck(db, endpoint.id, fail(minutes(0)));
+    return (await recordCheck(db, endpoint.id, fail(minutes(1)))).event?.message;
+  }
+  const prev = (variables?: ReturnType<typeof declared>[]) =>
+    ({ projectId: '', sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [], variables, envScopes: ROOT_DECLARED }) as Parameters<typeof recordScan>[1];
+  const linked = (variables: ReturnType<typeof declared>[] | undefined, findings: FindingRow[] = []) => ({
+    sha: SHA,
+    branch: 'main',
+    deployedAt: minutes(-4),
+    findings,
+    variables,
+    envScopes: ROOT_DECLARED,
+  });
+
+  it('a first deploy (no previous scan) ends after the deploy', async () => {
+    expect(await deployAndFail(null, linked([declared('DATABASE_URL'), declared('STRIPE_KEY')]))).toBe('Acme API started failing 4m after deploy b52952e');
+  });
+
+  it('a previous scan without a variable list (variables_reported = false) ends after the deploy', async () => {
+    expect(await deployAndFail(prev(undefined), linked([declared('DATABASE_URL'), declared('STRIPE_KEY')]))).toBe('Acme API started failing 4m after deploy b52952e');
+  });
+
+  it('a linked scan without a variable list (variables_reported = false) ends after the deploy', async () => {
+    expect(await deployAndFail(prev([declared('DATABASE_URL')]), linked(undefined))).toBe('Acme API started failing 4m after deploy b52952e');
+  });
+
+  it('compared with nothing new: "which added no env vars"', async () => {
+    expect(await deployAndFail(prev([declared('DATABASE_URL')]), linked([declared('DATABASE_URL'), declared('PORT', true)]))).toBe(
+      'Acme API started failing 4m after deploy b52952e, which added no env vars',
+    );
+  });
+
+  it('compared with a new declared var only: names it and asks to check the host (optional ones left out)', async () => {
+    expect(await deployAndFail(prev([declared('DATABASE_URL')]), linked([declared('DATABASE_URL'), declared('STRIPE_KEY'), declared('CACHE_TTL', true)]))).toBe(
+      "Acme API started failing 4m after deploy b52952e, which added 1 env var: STRIPE_KEY (check it's set on the host)",
+    );
+  });
+
+  it('combined with new MISSING vars: ", plus added", and a missing name is never listed twice', async () => {
+    const message = await deployAndFail(
+      prev([declared('DATABASE_URL')]),
+      linked([declared('DATABASE_URL'), declared('STRIPE_KEY'), declared('SENTRY_DSN'), { var_name: 'REDIS_URL', scope: '', defined_in: [] }], [missing('REDIS_URL')]),
+    );
+    expect(message).toBe(
+      "Acme API started failing 4m after deploy b52952e, which introduced 1 missing env var: REDIS_URL, plus added 2 env vars: SENTRY_DSN, STRIPE_KEY (check they're set on the host)",
+    );
   });
 });
 
@@ -895,19 +955,32 @@ describe('the alert message after splitting the deploy diff out of linkDeploy (d
     expect(alert?.relatedDeployId).toBe(linked.deployId);
   });
 
-  // Phase 10: a linked deploy whose config diff is empty now reads "which changed no config"
-  // (was "which had no new config findings"); the non-empty case above is unchanged.
-  const EMPTY_DIFF = 'api.acme.com started failing 12m after deploy abc1234, which changed no config';
+  // Phase 10.1: a linked deploy whose config diff is empty reads "which added no env vars" when
+  // both scans reported a variable list (was "which changed no config"), and ends after the sha
+  // when they can't be compared; the non-empty case above is unchanged.
+  const NOT_COMPARED = 'api.acme.com started failing 12m after deploy abc1234';
+  const EMPTY_DIFF = 'api.acme.com started failing 12m after deploy abc1234, which added no env vars';
 
-  it('is byte-identical for a linked deploy that changed no config', async () => {
+  it('ends after the sha for a linked deploy whose scans have no variable lists to compare', async () => {
     const { endpoint, project } = await setup();
     await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [missing('OLD_ONE')] });
+    await recordScan(db, { projectId: project.id, sha: 'abc1234def5678abc1234def5678abc1234def56', branch: 'main', deployedAt: minutes(-12), findings: [missing('OLD_ONE')] });
+    await recordCheck(db, endpoint.id, ok(minutes(-20)));
+    await recordCheck(db, endpoint.id, fail(minutes(0)));
+    expect((await recordCheck(db, endpoint.id, fail(minutes(1)))).event?.message).toBe(NOT_COMPARED);
+  });
+
+  it('is byte-identical for a linked deploy that added no env vars', async () => {
+    const { endpoint, project } = await setup();
+    const variables = [{ var_name: 'OLD_ONE', scope: '', defined_in: [] }];
+    await recordScan(db, { projectId: project.id, sha: 'aaaaaaa', branch: 'main', deployedAt: minutes(-60), findings: [missing('OLD_ONE')], variables });
     const linked = await recordScan(db, {
       projectId: project.id,
       sha: 'abc1234def5678abc1234def5678abc1234def56',
       branch: 'main',
       deployedAt: minutes(-12),
       findings: [missing('OLD_ONE')],
+      variables,
     });
     await recordCheck(db, endpoint.id, ok(minutes(-20)));
     await recordCheck(db, endpoint.id, fail(minutes(0)));

@@ -166,14 +166,61 @@ describe('alert messages', () => {
     });
   });
 
-  it('says the linked deploy changed no config when its config diff is empty', () => {
-    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0.5), deploy, newMissing: [] })).toBe(
-      'x.dev started failing under a minute after deploy b52952e, which changed no config',
+  it('says the linked deploy added no env vars when the scans were compared and nothing was new', () => {
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0.5), deploy, newMissing: [], newDeclared: [] })).toBe(
+      'x.dev started failing under a minute after deploy b52952e, which added no env vars',
     );
     const abc = { sha: 'abc1234def5678abc1234def5678abc1234def56', deployedAt: at(0) };
-    const message = alertOpenedMessage({ endpoint: { url: 'https://api.acme.com/health', name: 'Acme API' }, firstFailureAt: at(12), deploy: abc, newMissing: [], newUndeclared: [] });
-    expect(message).toBe('Acme API started failing 12m after deploy abc1234, which changed no config');
-    expect(webhookPayload('opened', 'Acme Storefront', message).text).toBe('[down] Acme Storefront: Acme API started failing 12m after deploy abc1234, which changed no config');
+    const message = alertOpenedMessage({
+      endpoint: { url: 'https://api.acme.com/health', name: 'Acme API' },
+      firstFailureAt: at(12),
+      deploy: abc,
+      newMissing: [],
+      newUndeclared: [],
+      newDeclared: [],
+    });
+    expect(message).toBe('Acme API started failing 12m after deploy abc1234, which added no env vars');
+    expect(webhookPayload('opened', 'Acme Storefront', message).text).toBe('[down] Acme Storefront: Acme API started failing 12m after deploy abc1234, which added no env vars');
+  });
+
+  it('ends after the deploy when the scans could not be compared and nothing is missing', () => {
+    const name = { name: 'Acme API', url: 'https://x.dev' };
+    expect(alertOpenedMessage({ endpoint: name, firstFailureAt: at(4), deploy, newMissing: [] })).toBe('Acme API started failing 4m after deploy b52952e');
+    expect(alertOpenedMessage({ endpoint: name, firstFailureAt: at(4), deploy, newMissing: [], newUndeclared: [], newDeclared: null })).toBe(
+      'Acme API started failing 4m after deploy b52952e',
+    );
+    // Missing and undeclared parts read as before either way.
+    expect(alertOpenedMessage({ endpoint: name, firstFailureAt: at(4), deploy, newMissing: ['A'], newDeclared: null })).toBe(
+      'Acme API started failing 4m after deploy b52952e, which introduced 1 missing env var: A',
+    );
+  });
+
+  it('names env vars the deploy added that nothing flags, and asks to check the host', () => {
+    const name = { name: 'Acme API', url: 'https://x.dev' };
+    expect(alertOpenedMessage({ endpoint: name, firstFailureAt: at(4), deploy, newMissing: [], newDeclared: ['STRIPE_KEY'] })).toBe(
+      "Acme API started failing 4m after deploy b52952e, which added 1 env var: STRIPE_KEY (check it's set on the host)",
+    );
+    expect(alertOpenedMessage({ endpoint: name, firstFailureAt: at(4), deploy, newMissing: [], newDeclared: ['A', 'B'] })).toBe(
+      "Acme API started failing 4m after deploy b52952e, which added 2 env vars: A, B (check they're set on the host)",
+    );
+    expect(alertOpenedMessage({ endpoint: name, firstFailureAt: at(4), deploy, newMissing: [], newDeclared: Array.from({ length: 8 }, (_, i) => `V${i + 1}`) })).toBe(
+      "Acme API started failing 4m after deploy b52952e, which added 8 env vars: V1, V2, V3, V4, V5 and 3 more (check they're set on the host)",
+    );
+  });
+
+  it('joins the added part to missing and undeclared ones with ", plus added"', () => {
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: ['A', 'B'], newDeclared: ['C'] })).toBe(
+      "x.dev started failing 4m after deploy b52952e, which introduced 2 missing env vars: A, B, plus added 1 env var: C (check it's set on the host)",
+    );
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(4), deploy, newMissing: ['A'], newUndeclared: ['B'], newDeclared: ['C', 'D'] })).toBe(
+      "x.dev started failing 4m after deploy b52952e, which introduced 1 missing env var: A, plus 1 new env var no env file declares: B, plus added 2 env vars: C, D (check they're set on the host)",
+    );
+  });
+
+  it('never mentions added vars when there was no deploy', () => {
+    expect(alertOpenedMessage({ endpoint: { url: 'https://x.dev' }, firstFailureAt: at(0), deploy: null, newMissing: [], newDeclared: ['A'] })).toBe(
+      'x.dev started failing; no deploy in the 30 minutes before the first failure',
+    );
   });
 
   it('says so when there was no deploy in the window', () => {

@@ -4,7 +4,7 @@ export * from './constants';
 export * from './languages';
 export { parseEnv, type EnvEntry, type EnvParseResult } from './env-parser';
 export { languageForFile, scanSource, SCANNED_EXTENSIONS, type Language } from './scanner';
-export { analyzeScope, compareFindings, newMissingVars, newUndeclaredVars, summarize } from './findings';
+export { analyzeScope, compareFindings, newDeclaredVars, newMissingVars, newUndeclaredVars, summarize } from './findings';
 export { DEFAULT_IGNORE } from './default-ignore';
 export { passesTreeRules, scanFiles, scanProject, selectTreeFiles, type ScanOptions, type ScanResult } from './scan';
 export { treeMarkers, type TreeMarkers } from './build-dirs';

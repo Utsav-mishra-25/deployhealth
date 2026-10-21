@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newMissingVars, newUndeclaredVars } from '../src/findings';
+import { newDeclaredVars, newMissingVars, newUndeclaredVars } from '../src/findings';
 import type { EnvScope, RequiredVariable } from '../src/types';
 
 const v = (var_name: string, scope: string, extra: Partial<RequiredVariable> = {}): RequiredVariable => ({ var_name, scope, defined_in: [], ...extra });
@@ -29,5 +29,29 @@ describe('newUndeclaredVars (deploy correlation for scopes with no env file)', (
 
   it('works alongside newMissingVars, which is unchanged', () => {
     expect(newMissingVars([{ kind: 'missing', var_name: 'X' }], null)).toEqual(['X']);
+  });
+});
+
+describe('newDeclaredVars (the alert\'s "added" part)', () => {
+  const opt = { optional: true as const };
+
+  it('names variables the previous scan never referenced, sorted and once each', () => {
+    expect(newDeclaredVars([v('DATABASE_URL', ''), v('STRIPE_KEY', ''), v('REDIS_URL', 'apps/api'), v('REDIS_URL', 'apps/web')], new Set(['DATABASE_URL']))).toEqual([
+      'REDIS_URL',
+      'STRIPE_KEY',
+    ]);
+  });
+
+  it('leaves out optional variables and the names already listed as missing or undeclared', () => {
+    expect(newDeclaredVars([v('A', ''), v('B', '', opt), v('C', ''), v('D', '')], new Set(), ['C', 'D'])).toEqual(['A']);
+  });
+
+  it('keeps a name that is optional in one scope and required in another', () => {
+    expect(newDeclaredVars([v('A', 'apps/api', opt), v('A', 'apps/web')], new Set())).toEqual(['A']);
+  });
+
+  it('is empty when nothing is new', () => {
+    expect(newDeclaredVars([v('A', '')], new Set(['A']))).toEqual([]);
+    expect(newDeclaredVars([], new Set())).toEqual([]);
   });
 });
