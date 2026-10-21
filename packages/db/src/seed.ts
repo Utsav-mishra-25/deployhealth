@@ -3,7 +3,7 @@ import { generateToken, hashToken, tokenHint, type EnvFileBasename, type EnvScop
 import { eq } from 'drizzle-orm';
 import { createClient } from './clients';
 import type { Db } from './client';
-import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_INSTALLATION_ID, DEMO_LOGIN, DEMO_PROJECT_IDS } from './demo';
+import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_INSTALLATION_ID, DEMO_LOGIN, DEMO_NAME, DEMO_PROJECT_IDS } from './demo';
 import { recordCheck, type CheckOutcome } from './monitoring';
 import { createProject, recordScan, upsertGithubUser } from './queries';
 import { checks, clients, endpoints, installationRepos, installations, prChecks, projects, type NewPrCheck, type Project } from './schema';
@@ -353,7 +353,7 @@ export async function seed(db: Db, now = new Date(), options: SeedOptions = {}):
 }
 
 async function seedDemo(db: Db, now: Date, brokenUrl: string): Promise<SeedResult> {
-  const user = await upsertGithubUser(db, { githubId: DEMO_GITHUB_ID, login: DEMO_LOGIN, name: 'Demo User', email: 'demo@example.com' });
+  const user = await upsertGithubUser(db, { githubId: DEMO_GITHUB_ID, login: DEMO_LOGIN, name: DEMO_NAME, email: 'demo@example.com' });
   // Everything else the demo user owns hangs off its projects and clients (on delete cascade).
   await db.delete(projects).where(eq(projects.ownerId, user.id));
   await db.delete(clients).where(eq(clients.userId, user.id));

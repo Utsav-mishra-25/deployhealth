@@ -312,7 +312,7 @@ test('public demo without a session: clients, project, handoff and report', asyn
   await expect(page).toHaveTitle('Acme Corp · Live demo · deployhealth');
   await page.getByRole('link', { name: 'Monthly report' }).click();
   // For the client: who prepared it, a plain summary (no variable names), four tiles, no commit links.
-  await expect(page.getByTestId('prepared-by')).toHaveText('Prepared by Demo User');
+  await expect(page.getByTestId('prepared-by')).toHaveText('Prepared by Lena Hartwig');
   await expect(page.getByTestId('report-summary')).toHaveText(/^(So far in|In) [A-Z][a-z]+, Acme Corp's sites were up [\d.]+% of the time\. .+ deployed.*\.$/);
   await expect(page.getByTestId('report-summary')).not.toContainText(/REDIS_URL|STRIPE_KEY|b52952e|env var/);
   await expect(page.getByTestId('report-tiles').locator('> div')).toHaveCount(4);

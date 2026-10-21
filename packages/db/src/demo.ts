@@ -9,6 +9,11 @@ import { users, type User } from './schema';
  */
 export const DEMO_GITHUB_ID = -1;
 export const DEMO_LOGIN = 'demo';
+/**
+ * The demo user's display name: an invented freelancer, so the demo's monthly report reads
+ * "Prepared by Lena Hartwig" like a real one. Not a real person.
+ */
+export const DEMO_NAME = 'Lena Hartwig';
 
 /**
  * The local dev account the dev-only login signs in as (AUTH_DEMO_LOGIN=1, never in production).

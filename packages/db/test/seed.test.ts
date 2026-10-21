@@ -1,11 +1,12 @@
-import { githubActionSnippet, hashToken, parseHandoffVariables, renderHandoffMarkdown } from '@deployhealth/core';
+import { githubActionSnippet, hashToken, parseHandoffVariables, parseMonth, renderHandoffMarkdown } from '@deployhealth/core';
 import { eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { listClientsOverview } from '../src/clients';
 import { agentPrStats, listPrChecksForOwner } from '../src/github';
 import { getHandoffData } from '../src/handoff';
-import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_PROJECT_IDS } from '../src/demo';
+import { DEMO_ENDPOINT_IDS, DEMO_GITHUB_ID, DEMO_NAME, DEMO_PROJECT_IDS } from '../src/demo';
 import { getProjectMonitoring, listOpenAlerts } from '../src/monitoring';
+import { getClientReport } from '../src/reports';
 import { findProjectByTokenHash, getLatestScan, getProjectForOwner, listDeploys, listProjectsForOwner } from '../src/queries';
 import { alerts, checks, clients, endpoints, installations, prChecks, projects, users } from '../src/schema';
 import { DEMO_DEPLOY_COUNT, DEMO_FRESHNESS, DEMO_PROJECT, demoBrokenUrl, demoDeploys, SCENARIO, seed } from '../src/seed';
@@ -30,7 +31,7 @@ describe('seed', () => {
   it('creates two clients and three projects, one unassigned, each with endpoints', async () => {
     const result = await seed(db, NOW);
     const [user] = await db.select().from(users).where(eq(users.githubId, DEMO_GITHUB_ID));
-    expect(user).toMatchObject({ id: result.userId, login: 'demo' });
+    expect(user).toMatchObject({ id: result.userId, login: 'demo', name: 'Lena Hartwig' });
 
     const overview = await listClientsOverview(db, result.userId);
     expect(overview.clients.map((c) => [c.name, c.projects.map((p) => p.name)])).toEqual([
@@ -139,6 +140,11 @@ describe('seed', () => {
     const second = await seed(db, later);
 
     expect(await db.select().from(users)).toHaveLength(2);
+    // A reseed over a demo row seeded with the old name updates it (the upsert sets the name).
+    await db.update(users).set({ name: 'Demo User' }).where(eq(users.githubId, DEMO_GITHUB_ID));
+    await seed(db, later);
+    expect((await db.select().from(users).where(eq(users.githubId, DEMO_GITHUB_ID)))[0]?.name).toBe(DEMO_NAME);
+    expect((await getClientReport(db, (await db.select().from(clients).where(eq(clients.name, 'Acme Corp')))[0]!.id, parseMonth('2026-09')!, later))?.preparedBy).toBe('Lena Hartwig');
     // The demo user row survives reseeds: ids a request read before a reseed stay valid after it.
     expect(second.userId).toBe(first.userId);
     expect((await db.select({ id: endpoints.id }).from(endpoints)).map((e) => e.id).sort()).toEqual(Object.values(DEMO_ENDPOINT_IDS).sort());
