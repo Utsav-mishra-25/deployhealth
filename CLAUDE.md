@@ -12,6 +12,8 @@ checklist, App coverage, no token at creation) and Phase 9 part 1 (redacted logs
 alerts, /account export and deletion, status link, runbooks) and part 2 (daily backups to R2 from a
 separate backup service, restore that re-applies deletions) and Phase 10 (alert trust: recovery after
 2 ok checks, pausing resolves, HEAD → GET on 405, honest intervals, alert history read model)
+and Phase 10.1 (launch hardening: alerts name env vars a deploy added, heartbeat after each claim,
+25 checks at a time, a claim that never waits on the demo reseed, honest no-data report summary)
 (list: development.md).
 
 This file is the table of contents. The detail lives in `docs/architecture/`: read the file for

@@ -63,6 +63,12 @@ never match a real GitHub account) owns, in **one transaction**, with:
   undeclared (neutral, merged a minute before b52952e), a clean rename (#86), and a committed
   `apps/web/.env.local` with one secret-shaped string (#88, failure), plus a Devin PR on northwind.
   The web app renders demo PR rows without GitHub links, marked "Sample";
+- **the demo user** is named **Lena Hartwig** (`DEMO_NAME`, an invented freelancer, not a real
+  person), so the demo's monthly report reads "Prepared by Lena Hartwig"; each reseed upserts it;
+- **reseeds never stall checks**: the reseed deletes and recreates the demo's endpoints in its one
+  transaction, holding their rows until it commits; the check claim skips rows another
+  transaction holds (`SKIP LOCKED`, worker.md), so the demo's endpoints are just checked a run
+  later;
 - **stable ids across reseeds**: the demo user row is kept (upserted; its clients and projects are
   deleted and recreated), and projects and endpoints have fixed ids (`DEMO_PROJECT_IDS`,
   `DEMO_ENDPOINT_IDS`). A /demo request that resolved the demo owner before a reseed committed
