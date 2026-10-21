@@ -144,13 +144,16 @@ describe('checkEndpoints job', () => {
         events.push(`wait until +${(until.getTime() - T0.getTime()) / 1000}s`);
         clock = Math.max(clock, until.getTime());
       },
+      now: () => clock,
     });
     expect(events).toEqual([
       'wait until +0s',
       'check https://other.example/ at +0s',
       'check https://shared.example/1 at +3s',
       'wait until +10s',
-      'check https://shared.example/2 at +10s',
+      // Its slot was +10s, but the first check of the host started 3 s late: held to +13s.
+      'wait until +13s',
+      'check https://shared.example/2 at +13s',
     ]);
   });
 
@@ -166,6 +169,69 @@ describe('checkEndpoints job', () => {
       log: () => {},
     });
     expect(summary).toEqual({ claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, dueWaitingOnHost: null, runMs: expect.any(Number) });
+  });
+});
+
+describe('per-host spacing when checks start later than their slot', () => {
+  const base = {
+    heartbeat: async () => {},
+    record: async () => ({ consecutiveFailures: 0, event: null }),
+    notify: async () => true,
+    log: () => {},
+  };
+
+  it('holds a host\'s next check until 10 s after its previous one actually started', async () => {
+    const at = (s: number) => new Date(T0.getTime() + s * 1000);
+    let clock = T0.getTime();
+    const starts: Array<[string, number]> = [];
+    await checkEndpoints({
+      ...base,
+      // One slot: x.example's first check waits 9 s for the slow one ahead of it, so it starts at +9s,
+      // and its second (slot +10s) would start 1 s later without the guard.
+      claimDue: async () => claimed(due('slow', 'https://slow.example/', at(0)), due('x1', 'https://x.example/1', at(0)), due('x2', 'https://x.example/2', at(10))),
+      check: async (t) => {
+        starts.push([t.url, (clock - T0.getTime()) / 1000]);
+        clock += t.url.includes('slow') ? 9_000 : 1_000;
+        return result(true);
+      },
+      concurrency: 1,
+      sleepUntil: async (until) => void (clock = Math.max(clock, until.getTime())),
+      now: () => clock,
+    });
+    expect(starts).toEqual([
+      ['https://slow.example/', 0],
+      ['https://x.example/1', 9],
+      ['https://x.example/2', 19],
+    ]);
+  });
+
+  it('carries over to the next run through the worker\'s map', async () => {
+    let clock = T0.getTime() + 55_000;
+    const hostStarts = new Map<string, number>();
+    const starts: number[] = [];
+    const run = (runAt: Date) =>
+      checkEndpoints({
+        ...base,
+        claimDue: async () => claimed(due('a', 'https://a.example/', runAt)),
+        check: async () => {
+          starts.push((clock - T0.getTime()) / 1000);
+          clock += 2_000;
+          return result(true);
+        },
+        sleepUntil: async (until) => void (clock = Math.max(clock, until.getTime())),
+        now: () => clock,
+        hostStarts,
+      });
+    await run(new Date(T0.getTime() + 40_000)); // its slot was +40s; it actually starts at +55s
+    clock = T0.getTime() + 60_000;
+    await run(new Date(T0.getTime() + 60_000)); // next run, slot +60s: held to +65s
+    expect(starts).toEqual([55, 65]);
+  });
+
+  it('forgets hosts once their last start is 10 s old', async () => {
+    const hostStarts = new Map([['old.example', T0.getTime() - 10_000], ['recent.example', T0.getTime() - 5_000]]);
+    await checkEndpoints({ ...base, claimDue: async () => claimed(), check: async () => result(true), now: () => T0.getTime(), hostStarts });
+    expect([...hostStarts.keys()]).toEqual(['recent.example']);
   });
 });
 
