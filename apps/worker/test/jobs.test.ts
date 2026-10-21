@@ -117,7 +117,7 @@ describe('checkEndpoints job', () => {
       concurrency: 1, // one slot: b and c only run if the webhook doesn't hold it
     });
     await new Promise((r) => setTimeout(r, 20));
-    expect(order).toEqual(['check https://a.example/', 'webhook started', 'check https://b.example/', 'check https://c.example/']);
+    expect(order).toEqual(['heartbeat', 'check https://a.example/', 'webhook started', 'check https://b.example/', 'check https://c.example/']);
     releaseWebhook();
     await run;
     expect(order.slice(-2)).toEqual(['webhook done', 'heartbeat']);
@@ -232,12 +232,21 @@ describe('checkEndpoints heartbeat', () => {
     notify: async () => true,
   };
 
-  it('records a heartbeat after every run, also when nothing is due', async () => {
+  it('records a heartbeat right after the claim and again after every run, also when nothing is due', async () => {
     const order: string[] = [];
     await checkEndpoints({ ...base, claimDue: async () => claimed(), heartbeat: async () => void order.push('heartbeat'), log: () => {} });
+    expect(order).toEqual(['heartbeat', 'heartbeat']);
+    order.length = 0;
     await checkEndpoints({
       ...base,
-      claimDue: async () => claimed(due('a')),
+      claimDue: async () => {
+        order.push('claim');
+        return claimed(due('a'));
+      },
+      check: async () => {
+        order.push('check');
+        return result(true);
+      },
       record: async () => {
         order.push('record');
         return { consecutiveFailures: 0, event: null };
@@ -245,23 +254,45 @@ describe('checkEndpoints heartbeat', () => {
       heartbeat: async () => void order.push('heartbeat'),
       log: () => {},
     });
-    expect(order).toEqual(['heartbeat', 'record', 'heartbeat']);
+    expect(order).toEqual(['claim', 'heartbeat', 'check', 'record', 'heartbeat']);
+  });
+
+  it('is alive while a long run of slow checks is still going', async () => {
+    let beats = 0;
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    const run = checkEndpoints({
+      ...base,
+      claimDue: async () => claimed(due('a'), due('b')),
+      check: async () => {
+        await slow;
+        return result(true);
+      },
+      heartbeat: async () => void beats++,
+      log: () => {},
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(beats).toBe(1); // written after the claim, before any check finished
+    release();
+    await run;
+    expect(beats).toBe(2);
   });
 
   it('records it even when an endpoint errors, but not when the claim fails', async () => {
     let beats = 0;
     const heartbeat = async () => void beats++;
     await checkEndpoints({ ...base, claimDue: async () => claimed(due('a')), check: async () => Promise.reject(new Error('boom')), heartbeat, log: () => {} });
-    expect(beats).toBe(1);
+    expect(beats).toBe(2);
     await expect(checkEndpoints({ ...base, claimDue: async () => Promise.reject(new Error('db down')), heartbeat, log: () => {} })).rejects.toThrow('db down');
-    expect(beats).toBe(1);
+    expect(beats).toBe(2);
   });
 
   it('logs a failed heartbeat write without failing the run', async () => {
     const logs: string[] = [];
     const summary = await checkEndpoints({ ...base, claimDue: async () => claimed(due('a')), heartbeat: async () => Promise.reject(new TypeError('x')), log: (m) => logs.push(m) });
     expect(summary.checked).toBe(1);
-    expect(logs).toEqual(['[check] heartbeat not recorded: TypeError']);
+    // Both writes failed and were logged; the checks ran anyway.
+    expect(logs).toEqual(['[check] heartbeat not recorded: TypeError', '[check] heartbeat not recorded: TypeError']);
   });
 });
 
