@@ -99,7 +99,7 @@ async function main(): Promise<void> {
     observed(CHECK_QUEUE, async () => {
       const summary = await checkEndpoints({
         claimDue: () => claimDueEndpoints(db),
-        countDue: (hostsAtCap) => countDueEndpoints(db, { hostsAtCap }),
+        countDue: (hostsAtCap, now) => countDueEndpoints(db, { now, hostsAtCap }),
         check: (target) => runCheck(target),
         record: (endpointId, outcome) => recordCheck(db, endpointId, outcome),
         notify: (url, payload) => sendWebhook(url, payload, { log }),

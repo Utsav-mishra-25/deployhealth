@@ -229,6 +229,8 @@ export interface ClaimResult {
    * leftovers wait by design and aren't a backlog (countDueEndpoints counts them apart).
    */
   hostsAtCap: string[];
+  /** The time the claim used: the database's clock, read once the claim lock was held. */
+  now: Date;
 }
 
 /**
@@ -240,15 +242,22 @@ export interface ClaimResult {
  * owner's second, and so on (oldest first within a turn). Claims run one at a time (advisory
  * lock), so two workers never claim the same endpoint or share a host slot. If a worker dies
  * mid-check, the endpoint is simply checked again one interval later. Also returns the hostnames
- * that hit the per-host cap (`hostsAtCap`).
+ * that hit the per-host cap (`hostsAtCap`) and the time it used (`now`).
+ *
+ * The time is the database's clock read after the lock (`clock_timestamp()`: `now()` would be when
+ * the transaction began, before any wait); tests pass `now`. The claim never waits on an endpoint
+ * row another transaction holds (the demo reseed replacing the demo's endpoints, a pause, a check
+ * being recorded): it skips it (SKIP LOCKED), so the row stays due and goes first next run, and
+ * only the rows it locked get start times.
  */
 export async function claimDueEndpoints(
   db: Db,
-  { now = new Date(), limit = 500, perOwner = MAX_CLAIM_PER_OWNER }: { now?: Date; limit?: number; perOwner?: number } = {},
+  { now: givenNow, limit = 500, perOwner = MAX_CLAIM_PER_OWNER }: { now?: Date; limit?: number; perOwner?: number } = {},
 ): Promise<ClaimResult> {
   const perHost = MAX_CHECKS_PER_HOST_PER_CLAIM;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${CLAIM_LOCK_KEY})`);
+    const now = givenNow ?? (await databaseClock(tx));
     const due = await tx.execute<{
       id: string;
       project_id: string;
@@ -277,12 +286,22 @@ export async function claimDueEndpoints(
       order by owner_turn, next_check_at, id
       limit ${limit}
     `);
-    if (due.rows.length === 0) return { endpoints: [], hostsAtCap: [] };
+    if (due.rows.length === 0) return { endpoints: [], hostsAtCap: [], now };
+
+    // Lock the candidates, skipping any row another transaction holds rather than waiting for it
+    // (with the claim lock held, a wait would stall every claim). Skipped rows stay due.
+    const locked = await tx
+      .select({ id: endpoints.id })
+      .from(endpoints)
+      .where(inArray(endpoints.id, due.rows.map((r) => r.id)))
+      .for('no key update', { skipLocked: true });
+    const lockedIds = new Set(locked.map((r) => r.id));
+    const rows = due.rows.filter((r) => lockedIds.has(r.id));
 
     const hostnames = [...new Set(due.rows.map((r) => r.hostname))];
     const reserved = await tx.select().from(checkHosts).where(inArray(checkHosts.hostname, hostnames));
     const { assigned, nextFree } = assignHostSlots(
-      due.rows.map((r) => ({
+      rows.map((r) => ({
         id: r.id,
         projectId: r.project_id,
         url: r.url,
@@ -298,10 +317,10 @@ export async function claimDueEndpoints(
     const taken = new Map<string, number>();
     for (const a of assigned) taken.set(a.hostname, (taken.get(a.hostname) ?? 0) + 1);
     const offered = new Map<string, number>();
-    for (const r of due.rows) offered.set(r.hostname, (offered.get(r.hostname) ?? 0) + 1);
+    for (const r of rows) offered.set(r.hostname, (offered.get(r.hostname) ?? 0) + 1);
     const hostDue = new Map(due.rows.map((r) => [r.hostname, Number(r.host_due)]));
-    const hostsAtCap = hostnames.filter((host) => hostDue.get(host)! > perHost || (taken.get(host) ?? 0) < offered.get(host)!);
-    if (assigned.length === 0) return { endpoints: [], hostsAtCap };
+    const hostsAtCap = hostnames.filter((host) => hostDue.get(host)! > perHost || (taken.get(host) ?? 0) < (offered.get(host) ?? 0));
+    if (assigned.length === 0) return { endpoints: [], hostsAtCap, now };
 
     const starts = sql.join(
       assigned.map((a) => sql`(${a.id}::uuid, ${a.runAt.toISOString()}::timestamptz)`),
@@ -317,8 +336,14 @@ export async function claimDueEndpoints(
       .insert(checkHosts)
       .values([...nextFree].map(([hostname, nextSlotAt]) => ({ hostname, nextSlotAt })))
       .onConflictDoUpdate({ target: checkHosts.hostname, set: { nextSlotAt: sql`excluded.next_slot_at` } });
-    return { endpoints: assigned, hostsAtCap };
+    return { endpoints: assigned, hostsAtCap, now };
   });
+}
+
+/** The database's current time (clock_timestamp(), not the transaction's start). */
+async function databaseClock(tx: Tx): Promise<Date> {
+  const result = await tx.execute<{ now: Date | string }>(sql`select clock_timestamp() as now`);
+  return new Date(result.rows[0]!.now);
 }
 
 export interface DueCount {
