@@ -1,7 +1,8 @@
-import type { AlertEvent, DueEndpoint } from '@deployhealth/db';
-import { describe, expect, it } from 'vitest';
+import { HOST_CHECK_SPACING_MS, MAX_CHECKS_PER_HOST_PER_CLAIM } from '@deployhealth/core';
+import { assignHostSlots, type AlertEvent, type DueEndpoint } from '@deployhealth/db';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CheckResult } from '../src/check';
-import { backlogBeyondSpacing, checkEndpoints, checkSummaryLine, checkSummaryWorthLogging, pruneOldChecks, reseedDemo, sendAlertWebhook } from '../src/jobs';
+import { backlogBeyondSpacing, CHECK_CONCURRENCY, checkEndpoints, checkSummaryLine, checkSummaryWorthLogging, pruneOldChecks, reseedDemo, sendAlertWebhook, WORKER_POOL_MAX } from '../src/jobs';
 import { createOperatorAlerts } from '../src/operator';
 
 const T0 = new Date('2026-09-28T12:00:00Z');
@@ -169,6 +170,57 @@ describe('checkEndpoints job', () => {
       log: () => {},
     });
     expect(summary).toEqual({ claimed: 0, checked: 0, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: null, dueWaitingOnHost: null, runMs: expect.any(Number) });
+  });
+});
+
+describe('check concurrency', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('runs 25 checks at a time, and the pool has a connection for each plus room beside them', () => {
+    expect(CHECK_CONCURRENCY).toBe(25);
+    expect(WORKER_POOL_MAX).toBe(30);
+    expect(WORKER_POOL_MAX).toBeGreaterThan(CHECK_CONCURRENCY);
+  });
+
+  it('keeps checks of one host at least 10 s apart at full concurrency, however slow the checks', async () => {
+    vi.useFakeTimers({ now: T0 });
+    // 30 hosts with 5 due endpoints each: the claim's own slot assignment spreads every host over
+    // five waves, 10 s apart, 30 checks per wave, more than the slots.
+    const hosts = Array.from({ length: 30 }, (_, h) => `host${h}.example`);
+    const dueRows = hosts.flatMap((host) => Array.from({ length: MAX_CHECKS_PER_HOST_PER_CLAIM }, (_, i) => ({ ...due(`${host}-${i}`, `https://${host}/${i}`), runAt: undefined })));
+    const { assigned } = assignHostSlots(dueRows, new Map(), T0);
+    expect(assigned).toHaveLength(150);
+
+    const starts = new Map<string, number[]>();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let n = 0;
+    const run = checkEndpoints({
+      heartbeat: async () => {},
+      claimDue: async () => claimed(...(assigned as DueEndpoint[])),
+      check: async (t) => {
+        const host = new URL(t.url).hostname;
+        starts.set(host, [...(starts.get(host) ?? []), Date.now()]);
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        // Slow and uneven: 2 s to the full 10 s budget.
+        await new Promise((resolve) => setTimeout(resolve, 2_000 + ((n++ * 7_919) % 8_001)));
+        inFlight--;
+        return result(true);
+      },
+      record: async () => ({ consecutiveFailures: 0, event: null }),
+      notify: async () => true,
+      log: () => {},
+    });
+    await vi.runAllTimersAsync();
+    const summary = await run;
+
+    expect(summary.checked).toBe(150);
+    expect(maxInFlight).toBe(CHECK_CONCURRENCY);
+    for (const host of hosts) {
+      const times = starts.get(host)!;
+      expect(times).toHaveLength(MAX_CHECKS_PER_HOST_PER_CLAIM);
+      for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(HOST_CHECK_SPACING_MS);
+    }
   });
 });
 

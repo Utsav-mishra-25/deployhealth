@@ -46,6 +46,7 @@ import {
   RESEED_QUEUE,
   reseedDemo,
   sendAlertWebhook,
+  WORKER_POOL_MAX,
 } from './jobs';
 import { createOperatorAlerts, HEARTBEAT_WATCH_INTERVAL_MS, NO_OPERATOR_ALERTS, observeJob, operatorWebhookUrl } from './operator';
 import { waitForMigrations } from './readiness';
@@ -78,7 +79,7 @@ async function main(): Promise<void> {
   // Every job: a failure is reported (Sentry) and counted (operator alerts), then thrown again.
   const observed = <T>(queue: string, run: () => Promise<T>) => observeJob(queue, run, { report: reportError, operator });
 
-  const handle = createDb(DATABASE_URL);
+  const handle = createDb(DATABASE_URL, { max: WORKER_POOL_MAX });
   const { db } = handle;
   // Web's pre-deploy step migrates the database, and this process can start first: work no queue
   // (and don't start pg-boss) until every migration this build ships is applied.

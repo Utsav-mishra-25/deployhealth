@@ -22,6 +22,19 @@ export const PRUNE_QUEUE = 'prune-checks';
 export const RESEED_QUEUE = 'reseed-demo';
 export { ALERT_WEBHOOK_QUEUE, PR_CHECK_QUEUE } from '@deployhealth/core';
 
+/**
+ * Checks run in parallel, up to this many at a time. Raised from 10: a wave of slow endpoints
+ * (each may take the full 10 s budget) holds a slot each, and the next wave waits for the slowest.
+ */
+export const CHECK_CONCURRENCY = 25;
+
+/**
+ * The worker's own Postgres pool (pg-boss keeps a separate one of 10): one connection per check
+ * slot for recordCheck, plus room for what runs beside the checks (the reseed, the prune, two pull
+ * request checks, an alert-webhook read and the heartbeat watch). Connection arithmetic: worker.md.
+ */
+export const WORKER_POOL_MAX = CHECK_CONCURRENCY + 5;
+
 export interface CheckEndpointsDeps {
   claimDue: () => Promise<ClaimResult>;
   /**
@@ -41,7 +54,7 @@ export interface CheckEndpointsDeps {
   log: (message: string) => void;
   /** One endpoint's processing error, for error reports (Sentry). Optional. */
   report?: (error: unknown) => void;
-  /** Checks run in parallel, up to this many at a time. */
+  /** Checks run in parallel, up to this many at a time (default CHECK_CONCURRENCY). */
   concurrency?: number;
   /** Resolves at `until` (or at once if it has passed). Tests pass a fake clock. */
   sleepUntil?: (until: Date) => Promise<void>;
@@ -159,7 +172,7 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   const sends: Array<Promise<unknown>> = [];
   for (const at of [...waves.keys()].sort((a, b) => a - b)) {
     await sleepUntil(new Date(at));
-    await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary, sends, pace));
+    await forEachLimited(waves.get(at)!, deps.concurrency ?? CHECK_CONCURRENCY, (endpoint) => checkOne(endpoint, deps, summary, sends, pace));
   }
   await Promise.allSettled(sends);
   await heartbeat(deps);
