@@ -380,11 +380,13 @@ contents: read` to the job and `package-manager-cache: false` to `actions/setup-
 - **`check-endpoints`** runs every minute on pg-boss (singleton, so runs never overlap). It claims
   the enabled endpoints whose `next_check_at` has passed and gives each a start time, so that **no
   hostname is checked more than once every 10 seconds**, whoever's endpoints point at it. Claimed
-  endpoints are checked in waves by start time, up to 10 at a time; one that didn't get a slot this
+  endpoints are checked in waves by start time, up to 25 at a time; one that didn't get a slot this
   minute goes first the next.
-  Every run ends with a heartbeat, so **`/api/health/worker`** answers 200 `{"ok":true}` while the
-  worker has finished a run in the last 3 minutes and 503 `{"ok":false}` otherwise (point an
-  external monitor at it; [docs/deploy-railway.md](docs/deploy-railway.md#9-external-monitors)).
+  Each run records a heartbeat right after its claim and again when it ends, so
+  **`/api/health/worker`** answers 200 `{"ok":true}` while the worker has claimed or finished a run
+  in the last 3 minutes (a long run of slow checks still counts as alive) and 503 `{"ok":false}`
+  otherwise (point an external monitor at it;
+  [docs/deploy-railway.md](docs/deploy-railway.md#9-external-monitors)).
   `/api/health` stays the database-free check Railway deploys on.
 - **A check** is one request (GET or HEAD) with a 10 s budget that follows up to 5 redirects. It's
   ok when the final status equals the expected status (default 200). Timeouts, DNS failures, TLS
@@ -430,7 +432,13 @@ deploy:
 - `Acme API started failing 4m after deploy b52952e, which introduced 2 new env vars no env file declares: REDIS_URL, STRIPE_KEY`
   (a scope with no env file has no MISSING rows, so there the new list is the variables that deploy
   newly references; scans from CLIs before 0.2.0 don't report scopes and correlate as before)
-- `Acme API started failing 4m after deploy b52952e, which changed no config`
+- `Acme API started failing 4m after deploy b52952e, which added 1 env var: STRIPE_KEY (check it's set on the host)`
+  (a variable the deploy newly references that nothing flags, because an env file declares it, yet
+  often never set on the host; after the other kinds it reads ", plus added …")
+- `Acme API started failing 4m after deploy b52952e, which added no env vars` (both scans were
+  compared and nothing new was referenced)
+- `Acme API started failing 4m after deploy b52952e` (the two scans can't be compared: no previous
+  scanned deploy, or a scan without a variable list)
 - `Acme API started failing; no deploy in the 30 minutes before the first failure`
 
 A message names up to 6 variables of each kind; above that it names 5 and "and N more" (`40
