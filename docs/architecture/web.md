@@ -156,8 +156,16 @@ And in core, for client components:
   repositories the App can see without a project are offered, pre-filled; when the user has an
   installation and a project's repository isn't covered, "N project(s) aren't covered by the App:
   <names>" links to `/github/installed#not-covered`), 3. Add a site (a URL to watch) (done: one
-  endpoint; links to the newest project's `#add-endpoint`), and "Optional: deploy history with
-  the Action" in a closed `<details>` (done: one deploy). Titles and bodies of steps 1, 3 and the
+  endpoint; links to the newest project's `#add-endpoint`), 4. Choose where alerts go ("Down
+  alerts go to Slack or Discord. Email is coming."; done: any project has an alert webhook; links
+  to `/projects/<id>/settings#client-alerts` of the oldest project with an endpoint and no webhook;
+  before any endpoint, "Alerts are for sites: add one first (step 3)."), and "Optional: deploy
+  history with the Action" in a closed `<details>` (done: one deploy). Step 4's data comes from
+  `lib/alert-destination.ts`, through the owner-scoped `getProjectForOwner` and
+  `listEndpointsForOwner` (no list query returns the webhook): only a boolean and a project id
+  reach the page, never the URL (`e2e/onboarding.spec.ts` checks /clients). A project's settings
+  page with endpoints and no webhook says "Alerts for this project have nowhere to go yet." at the
+  top. Titles and bodies of steps 1, 3 and the
   optional one are `HOW_IT_WORKS`'s, so the app and the landing page can't drift. With no
   clients, the home's heading is "Projects", there's no "New client" button and no "No client"
   group; after the first project a line offers "Group projects by client (optional)", and the
