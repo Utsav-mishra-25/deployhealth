@@ -1,5 +1,5 @@
 import { failingFor, LimitExceededError, MAX_CLAIM_PER_OWNER, type FindingRow } from '@deployhealth/core';
-import { eq, isNull } from 'drizzle-orm';
+import { eq, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   assignHostSlots,
@@ -96,6 +96,108 @@ describe('claimDueEndpoints (scheduling query)', () => {
 });
 
 const seconds = (n: number) => new Date(T0.getTime() + n * 1000);
+
+describe('claimDueEndpoints with rows another transaction holds (SKIP LOCKED) and the database clock', () => {
+  /** Hold a row lock on `ids` (as the demo reseed's delete or a recordCheck update does) until release(). */
+  async function holdRows(ids: string[]) {
+    const other = openTestDb();
+    const client = await other.pool.connect();
+    await client.query('begin');
+    await client.query('select id from endpoints where id = any($1::uuid[]) for update', [ids]);
+    return async () => {
+      await client.query('rollback');
+      client.release();
+      await other.close();
+    };
+  }
+  const nextCheckAt = async (id: string) => (await db.select().from(endpoints).where(eq(endpoints.id, id)))[0]!.nextCheckAt;
+
+  it('skips a held row without waiting, leaves it due, and claims it on the next run', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    const held = await makeEndpoint(db, p.id, { nextCheckAt: minutes(-2) });
+    const free = await makeEndpoint(db, p.id, { nextCheckAt: minutes(-1) });
+    const release = await holdRows([held.id]);
+    try {
+      const started = performance.now();
+      const claim = await claimDueEndpoints(db, { now: T0 });
+      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(claim.endpoints.map((e) => e.id)).toEqual([free.id]);
+      expect(await nextCheckAt(held.id)).toEqual(minutes(-2));
+      expect(await countDueEndpoints(db, { now: T0, hostsAtCap: claim.hostsAtCap })).toEqual({ due: 1, waitingOnHost: 0 });
+    } finally {
+      await release();
+    }
+    // 30 s later: the free one isn't due again (60 s interval); the skipped one still is.
+    const next = await claimDueEndpoints(db, { now: seconds(30) });
+    expect(next.endpoints.map((e) => e.id)).toEqual([held.id]);
+  });
+
+  it('gives a host\'s other rows consecutive slots when one is skipped, so spacing holds and no slot is wasted', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    const rows = [];
+    for (let i = 0; i < 3; i++) rows.push(await makeEndpoint(db, p.id, { url: `https://busy.example/${i}`, nextCheckAt: minutes(-3 + i) }));
+    const release = await holdRows([rows[0]!.id]);
+    try {
+      const claim = await claimDueEndpoints(db, { now: T0 });
+      expect(claim.endpoints.map((e) => [e.id, e.runAt])).toEqual([
+        [rows[1]!.id, seconds(0)],
+        [rows[2]!.id, seconds(10)],
+      ]);
+      expect(claim.hostsAtCap).toEqual([]);
+      const [host] = await db.select().from(checkHosts);
+      expect(host).toMatchObject({ hostname: 'busy.example', nextSlotAt: seconds(20) });
+    } finally {
+      await release();
+    }
+    // The next claim (at +5s) starts the host no earlier than its reserved +20s, on its own 10 s grid: +25s.
+    const next = await claimDueEndpoints(db, { now: seconds(5) });
+    expect(next.endpoints.map((e) => [e.id, e.runAt])).toEqual([[rows[0]!.id, seconds(25)]]);
+  });
+
+  it('never claims more than the per-owner cap, with some of the owner\'s rows skipped', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    const rows = [];
+    for (let i = 0; i < 6; i++) rows.push(await makeEndpoint(db, p.id, { nextCheckAt: minutes(-6 + i) }));
+    const release = await holdRows([rows[0]!.id]);
+    try {
+      // The cap is applied to the due rows first, so a skipped one isn't replaced: fewer, never more.
+      const claim = await claimDueEndpoints(db, { now: T0, perOwner: 3 });
+      expect(claim.endpoints.map((e) => e.id).sort()).toEqual([rows[1]!.id, rows[2]!.id].sort());
+    } finally {
+      await release();
+    }
+    const all = await claimDueEndpoints(db, { now: T0, perOwner: 3 });
+    expect(all.endpoints).toHaveLength(3);
+    expect(all.endpoints.length).toBeLessThanOrEqual(MAX_CLAIM_PER_OWNER);
+  });
+
+  it('takes its time from the database clock after the claim lock, not before it', async () => {
+    const user = await makeUser(db);
+    const p = await makeProject(db, user.id);
+    const [{ dbNow }] = (await db.execute<{ dbNow: string }>(sql`select clock_timestamp() as "dbNow"`)).rows as [{ dbNow: string }];
+    const endpoint = await makeEndpoint(db, p.id, { nextCheckAt: new Date(new Date(dbNow).getTime() - 1_000) });
+
+    // Another claimer holds the claim lock for 400 ms.
+    const other = openTestDb();
+    const client = await other.pool.connect();
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(4815162342)');
+    const claiming = claimDueEndpoints(db);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const [{ released }] = (await client.query<{ released: Date }>('select clock_timestamp() as released')).rows as [{ released: Date }];
+    await client.query('commit');
+    client.release();
+    await other.close();
+
+    const claim = await claiming;
+    expect(claim.now.getTime()).toBeGreaterThanOrEqual(released.getTime());
+    expect(claim.endpoints.map((e) => [e.id, e.runAt])).toEqual([[endpoint.id, claim.now]]);
+    expect(await nextCheckAt(endpoint.id)).toEqual(new Date(claim.now.getTime() + 60_000));
+  });
+});
 
 describe('countDueEndpoints and hostsAtCap (what a claim left, and why)', () => {
   it('counts enabled endpoints still due after the claim, and those on a host the claim left at its cap', async () => {

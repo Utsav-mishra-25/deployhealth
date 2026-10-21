@@ -18,7 +18,7 @@ const due = (id: string, url = `https://${id}.example/`, runAt = T0): DueEndpoin
 });
 
 /** A claim result with no host at the per-host cap. */
-const claimed = (...endpoints: DueEndpoint[]) => ({ endpoints, hostsAtCap: [] as string[] });
+const claimed = (...endpoints: DueEndpoint[]) => ({ endpoints, hostsAtCap: [] as string[], now: T0 });
 
 const result = (ok: boolean): CheckResult => ({
   checkedAt: new Date('2026-09-28T12:00:00Z'),
@@ -299,16 +299,21 @@ describe('checkEndpoints summary: claimed, due_but_unclaimed, run_ms', () => {
   it('counts what the claim took, what it left due (counted after the claim, with its hosts at the cap) and how long the run took', async () => {
     const order: string[] = [];
     const hostsSeen: string[][] = [];
+    const nowSeen: Date[] = [];
+    // The claim's time is the database's; counting with the worker's own clock could count at a
+    // different moment than the claim took.
+    const claimNow = new Date('2026-09-28T12:00:03.250Z');
     let t = 1_000;
     const summary = await checkEndpoints({
       ...base,
-      claimDue: async () => (order.push('claim'), { endpoints: [due('a'), due('b')], hostsAtCap: ['busy.example'] }),
-      countDue: async (hosts) => (order.push('count'), hostsSeen.push(hosts), { due: 7, waitingOnHost: 3 }),
+      claimDue: async () => (order.push('claim'), { endpoints: [due('a'), due('b')], hostsAtCap: ['busy.example'], now: claimNow }),
+      countDue: async (hosts, now) => (order.push('count'), hostsSeen.push(hosts), nowSeen.push(now), { due: 7, waitingOnHost: 3 }),
       check: async () => (order.push('check'), (t += 2_500), result(true)),
       clock: () => t,
     });
     expect(order).toEqual(['claim', 'count', 'check', 'check']);
     expect(hostsSeen).toEqual([['busy.example']]);
+    expect(nowSeen).toEqual([claimNow]);
     expect(summary).toEqual({ claimed: 2, checked: 2, failed: 0, opened: 0, resolved: 0, errors: 0, dueButUnclaimed: 7, dueWaitingOnHost: 3, runMs: 5_000 });
     expect(backlogBeyondSpacing(summary)).toBe(4);
   });
@@ -524,7 +529,7 @@ describe('the falling-behind alert never fires on per-host spacing (check-endpoi
     const operator = createOperatorAlerts({ send: async (text) => (sent.push(text), true), log: () => {}, now: () => 0 });
     for (const r of results) {
       const summary = await checkEndpoints({
-        claimDue: async () => ({ endpoints: Array.from({ length: r.claimed }, (_, i) => due(`e${i}`)), hostsAtCap: r.hostsAtCap }),
+        claimDue: async () => ({ endpoints: Array.from({ length: r.claimed }, (_, i) => due(`e${i}`)), hostsAtCap: r.hostsAtCap, now: T0 }),
         countDue: async () => ({ due: r.due, waitingOnHost: r.waitingOnHost }),
         check: async () => result(true),
         record: async () => ({ consecutiveFailures: 0, event: null }),

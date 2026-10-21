@@ -39,9 +39,10 @@ export interface CheckEndpointsDeps {
   claimDue: () => Promise<ClaimResult>;
   /**
    * Enabled endpoints still due right after the claim (left for a later run), and how many of
-   * them are on the hostnames the claim left at the per-host cap. Optional.
+   * them are on the hostnames the claim left at the per-host cap, at the claim's own time (`now`,
+   * the database's clock). Optional.
    */
-  countDue?: (hostsAtCap: string[]) => Promise<DueCount>;
+  countDue?: (hostsAtCap: string[], now: Date) => Promise<DueCount>;
   check: (target: CheckTarget) => Promise<CheckResult>;
   record: (endpointId: string, outcome: CheckOutcome) => Promise<RecordCheckResult>;
   notify: (webhookUrl: string, payload: { text: string }) => Promise<boolean>;
@@ -134,7 +135,7 @@ export function checkSummaryWorthLogging(s: CheckEndpointsSummary): boolean {
 export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEndpointsSummary> {
   const clock = deps.clock ?? (() => performance.now());
   const started = clock();
-  const { endpoints: due, hostsAtCap } = await deps.claimDue();
+  const { endpoints: due, hostsAtCap, now: claimedAt } = await deps.claimDue();
   // A claim that throws skips both heartbeats, so the deep health check sees a worker that can't
   // do its job; a claim that succeeds counts as alive at once, however long its checks then take.
   await heartbeat(deps);
@@ -154,7 +155,7 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   forgetOldStarts(pace);
   if (deps.countDue) {
     try {
-      const counted = await deps.countDue(hostsAtCap);
+      const counted = await deps.countDue(hostsAtCap, claimedAt);
       summary.dueButUnclaimed = counted.due;
       summary.dueWaitingOnHost = counted.waitingOnHost;
     } catch (error) {
