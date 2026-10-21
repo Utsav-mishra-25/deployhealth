@@ -92,6 +92,8 @@ async function main(): Promise<void> {
   // Every queue is created either way, so the web app's webhook can always enqueue pr-check.
   await registerQueues(boss, { demo });
 
+  // When this process last started a check of each hostname: keeps per-host spacing across runs.
+  const hostStarts = new Map<string, number>();
   await boss.work(CHECK_QUEUE, () =>
     observed(CHECK_QUEUE, async () => {
       const summary = await checkEndpoints({
@@ -103,6 +105,7 @@ async function main(): Promise<void> {
         heartbeat: () => recordHeartbeat(db),
         log,
         report: (error) => reportError(error, { queue: CHECK_QUEUE }),
+        hostStarts,
       });
       if (checkSummaryWorthLogging(summary)) log(checkSummaryLine(summary));
       const backlog = backlogBeyondSpacing(summary);

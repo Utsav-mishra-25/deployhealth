@@ -114,7 +114,7 @@ describe('the pull request check isolate', () => {
     // check-endpoints run on real timers with three waves 100 ms apart.
     const isolate = await openPrCheckIsolate({ limitMs: 1_000 });
     const t0 = Date.now() + 100;
-    const due = [0, 100, 200].map((offset, i) => ({ id: `e${i}`, runAt: new Date(t0 + offset) }) as unknown as DueEndpoint);
+    const due = [0, 100, 200].map((offset, i) => ({ id: `e${i}`, hostname: `e${i}.example`, runAt: new Date(t0 + offset) }) as unknown as DueEndpoint);
     const late: number[] = [];
     const endpointsRun = checkEndpoints({
       claimDue: async () => ({ endpoints: due, hostsAtCap: [] }),

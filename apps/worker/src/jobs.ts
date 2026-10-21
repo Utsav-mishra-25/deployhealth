@@ -1,4 +1,4 @@
-import { CHECK_RETENTION_DAYS, LimitExceededError, webhookPayload, type AlertWebhookJobData, type PrCheckJobData } from '@deployhealth/core';
+import { CHECK_RETENTION_DAYS, HOST_CHECK_SPACING_MS, LimitExceededError, webhookPayload, type AlertWebhookJobData, type PrCheckJobData } from '@deployhealth/core';
 import { ACCOUNT_DELETION_RECORD_DAYS, type CheckOutcome, type ClaimResult, type DueCount, type DueEndpoint, type NewPrCheck, type PrCheck, type PrCheckTarget, type RecordCheckResult } from '@deployhealth/db';
 import type { CheckResult, CheckTarget } from './check';
 import type { GithubApi } from './github/api';
@@ -47,6 +47,13 @@ export interface CheckEndpointsDeps {
   sleepUntil?: (until: Date) => Promise<void>;
   /** Monotonic milliseconds, for the run's duration. */
   clock?: () => number;
+  /** Wall-clock milliseconds, for when a check actually starts. Tests pass a fake clock. */
+  now?: () => number;
+  /**
+   * When this process last started a check of each hostname (wall-clock ms). The worker keeps one
+   * map for its lifetime, so the 10 s spacing holds across runs too; default: a fresh map.
+   */
+  hostStarts?: Map<string, number>;
 }
 
 const realSleepUntil = (until: Date) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, until.getTime() - Date.now())));
@@ -130,6 +137,8 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
     runMs: 0,
   };
   const sleepUntil = deps.sleepUntil ?? realSleepUntil;
+  const pace: Pace = { sleepUntil, now: deps.now ?? Date.now, hostStarts: deps.hostStarts ?? new Map() };
+  forgetOldStarts(pace);
   if (deps.countDue) {
     try {
       const counted = await deps.countDue(hostsAtCap);
@@ -150,7 +159,7 @@ export async function checkEndpoints(deps: CheckEndpointsDeps): Promise<CheckEnd
   const sends: Array<Promise<unknown>> = [];
   for (const at of [...waves.keys()].sort((a, b) => a - b)) {
     await sleepUntil(new Date(at));
-    await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary, sends));
+    await forEachLimited(waves.get(at)!, deps.concurrency ?? 10, (endpoint) => checkOne(endpoint, deps, summary, sends, pace));
   }
   await Promise.allSettled(sends);
   await heartbeat(deps);
@@ -167,8 +176,35 @@ async function heartbeat(deps: Pick<CheckEndpointsDeps, 'heartbeat' | 'log'>): P
   }
 }
 
+interface Pace {
+  sleepUntil: (until: Date) => Promise<void>;
+  now: () => number;
+  hostStarts: Map<string, number>;
+}
+
+/** Drop hosts whose last check started long enough ago that it can't hold anything back. */
+function forgetOldStarts(pace: Pace): void {
+  const cutoff = pace.now() - HOST_CHECK_SPACING_MS;
+  for (const [host, at] of pace.hostStarts) if (at <= cutoff) pace.hostStarts.delete(host);
+}
+
+/**
+ * Wait, if needed, so this check starts at least HOST_CHECK_SPACING_MS after the last one this
+ * process started on the same hostname. The claim spaces start times on paper; this keeps them
+ * spaced when checks actually start later (a wave with more endpoints than slots, a slow wave
+ * before it, or the previous run's late checks). It only ever delays. The start is reserved before
+ * waiting, so two checks of one host can never both pass.
+ */
+async function waitForHost(hostname: string, pace: Pace): Promise<void> {
+  const now = pace.now();
+  const startAt = Math.max(now, (pace.hostStarts.get(hostname) ?? -Infinity) + HOST_CHECK_SPACING_MS);
+  pace.hostStarts.set(hostname, startAt);
+  if (startAt > now) await pace.sleepUntil(new Date(startAt));
+}
+
 /** Check one endpoint, record the result, and start the webhook for an alert event, if any (into `sends`). */
-async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary: CheckEndpointsSummary, sends: Array<Promise<unknown>>): Promise<void> {
+async function checkOne(endpoint: DueEndpoint, deps: CheckEndpointsDeps, summary: CheckEndpointsSummary, sends: Array<Promise<unknown>>, pace: Pace): Promise<void> {
+  await waitForHost(endpoint.hostname, pace);
   try {
     const outcome = await deps.check(endpoint);
     const { event } = await deps.record(endpoint.id, outcome);
