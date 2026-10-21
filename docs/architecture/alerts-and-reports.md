@@ -48,12 +48,20 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   deploy's latest scan, and list only the MISSING vars that are **new**. Scopes with no env file
   have no MISSING rows, so for those (only when the scan has `env_scopes`, i.e. CLI 0.2.0+) the
   new list is the non-optional variables they reference that the previous scan didn't reference at
-  all (its variables plus its findings' names; no previous scan: all of them). The message is built
-  by `alertOpenedMessage()`: "…started failing 4m after deploy b52952e, which introduced 2 missing
-  env vars: …", "…which introduced 2 new env vars no env file declares: …" (both kinds joined by
-  ", plus"), "…which changed no config" (the deploy's config diff is empty), or "…no deploy in the
-  30 minutes before the first failure". Each kind lists every name up to 6, else 5 and "and N more"
-  (`listNames()`, `MAX_ALERT_NAMES`); counts stay exact. Webhooks reuse the message.
+  all (its variables plus its findings' names; no previous scan: all of them). A third list,
+  **added** (`newDeclaredVars()`, Phase 10.1), is every other non-optional variable the scan newly
+  references (declared in an env file, so nothing flags it, yet often never set on the host); it
+  is compared only when there is a previous scanned deploy and both scans reported a variable list
+  (`scans.variables_reported`), else it is null. The message is built by `alertOpenedMessage()`:
+  "…started failing 4m after deploy b52952e, which introduced 2 missing env vars: …", "…which
+  introduced 2 new env vars no env file declares: …" (both kinds joined by ", plus"), "…which
+  added 1 env var: STRIPE_KEY (check it's set on the host)" ("2 env vars: A, B (check they're set
+  on the host)"; after the other kinds as ", plus added …"), "…which added no env vars" (compared,
+  nothing new), just "…after deploy b52952e" (not compared, nothing missing or undeclared), or
+  "…no deploy in the 30 minutes before the first failure". Each kind lists every name up to 6,
+  else 5 and "and N more" (`listNames()`, `MAX_ALERT_NAMES`); counts stay exact. Webhooks, the
+  report's technical details and the handoff reuse the stored message, so alerts opened before
+  10.1 keep "which changed no config".
 - **Webhook:** if `projects.alert_webhook_url` is set, POST `{text}` on open and on resolve. Log
   and continue on failure; at most one retry. A pause happens in the web app, which makes no
   outbound HTTP: the save action queues `alert-webhook` (`{ projectId, type, message }`, never the
@@ -69,8 +77,9 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   failure). Both are exposed as `EndpointMonitoring.failingSince` and
   `ProjectListItem.failingSince`, and labelled by `failingFor()` in core.
 
-- **The deploy diff** behind the message (new MISSING, new undeclared) is `deployConfigChange()` in
-  db `deploy-config.ts`, which the monthly report also counts with. That module reads by project
+- **The deploy diff** behind the message (new MISSING, new undeclared, added) is `deployConfigChange()` in
+  db `deploy-config.ts`, which the monthly report also counts with (new MISSING and new undeclared
+  only: an added variable isn't a missing setting, so the summary says just "after a deploy"). That module reads by project
   and deploy id, so it isn't exported from the package; its callers scope first. A linked deploy's
   message is pinned byte for byte (`test/monitoring.test.ts`).
 
@@ -86,7 +95,10 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   most `MAX_CHECKS_PER_HOST_PER_CLAIM` (5) checks of a hostname. More than 5 endpoints on one
   hostname at "Every minute" are therefore checked less often than every minute. The endpoint
   form says so under Interval, and the timeout and redirects under URL; /security has the same
-  sentence; all built from those constants (core `limits.ts`, `constants.ts`).
+  sentence; all built from those constants (core `limits.ts`, `constants.ts`). The claim spaces
+  start times on paper; the worker also remembers when it last started a check of each hostname
+  and holds the next one until 10 s after that, so a check that started late (waiting for a slot,
+  or behind a slow wave or run) never brings the host's next one closer (worker.md).
 - **Falling behind:** each check-endpoints run logs `claimed`, `due_but_unclaimed` (enabled
   endpoints still due right after the claim, `countDueEndpoints()`), `due_waiting_on_host` (those
   on hostnames the claim left at the per-host cap) and `run_ms`. The operator alert fires after 5
@@ -124,7 +136,7 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   "12m (paused)" (`incidentDetailDuration()`), and so does the handoff's alert table
   (`alertDuration()`); the client-facing table and summary never do.
   `afterDeploy` is the alert's `related_deploy_id` (read within the project) and its
-  `deployConfigChange()` count (new MISSING plus new undeclared, as the message counted them; a
+  `deployConfigChange()` count (new MISSING plus new undeclared, not added; a
   re-scan of that deploy since can change it); null without a linked deploy.
 - **Deploys** are the month's deploys; each is diffed (`findingsDiff`, by kind + variable) against
   the previous scanned deploy (including one before the month): introduced ("new config issues" on
@@ -139,7 +151,8 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
   branch. Counts of things up to nine in words, durations in words with digits
   (`durationWords()`), dates as "16 Oct" (UTC); "So far in October" while the month runs. No
   endpoints: "no sites were monitored for <client>" and no outage sentence; endpoints without
-  checks: "no uptime data yet"; an open outage: "ongoing … so far", or "still ongoing at the end of
+  checks: "no uptime data yet" and no outage sentence ("There were no outages." needs an uptime
+  total); an open outage: "ongoing … so far", or "still ongoing at the end of
   the month"; more than `SUMMARY_MAX_OUTAGES` (5) outages: the first five by date, "and N more".
 
 ## The report page

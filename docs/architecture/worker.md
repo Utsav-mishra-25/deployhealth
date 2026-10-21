@@ -51,23 +51,32 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   never a message or the connection string), retry in 5 s; after 10 minutes it throws and the
   process exits 1 (Railway's `ALWAYS` restart).
 - **check-endpoints** (every minute): `claimDueEndpoints()` (one claimer at a time, advisory
-  lock) takes enabled endpoints with `next_check_at <= now`, at most 5 per hostname and 50 per
+  lock; `now` is the database's `clock_timestamp()` read once the lock is held, and the claim
+  returns it) takes enabled endpoints with `next_check_at <= now`, at most 5 per hostname and 50 per
   owner, owners taking turns (each owner's oldest, then each one's second, …), and gives each a start time with `assignHostSlots()`: checks of one hostname start at least
   10 s apart **across all users**, on a 10 s grid within the next 50 s. `check_hosts` stores each
-  hostname's next free slot; an endpoint that gets no slot stays due and goes first next run. Each
-  claimed endpoint's `next_check_at` becomes its start + interval. The job runs the claim in waves
-  by start time (never early), up to 10 checks at a time with `runCheck()`, stores each result
+  hostname's next free slot; an endpoint that gets no slot stays due and goes first next run. The
+  claim locks its candidates `FOR NO KEY UPDATE SKIP LOCKED`, so it never waits on a row another
+  transaction holds (the demo reseed replacing the demo's endpoints, a pause, a check being
+  recorded) while it holds the claim lock: that row stays due and goes first next run, and only
+  locked rows get slots (Phase 10.1; before, the reseed stalled the :00 and :30 claims for its
+  whole ~1 s transaction). Each claimed endpoint's `next_check_at` becomes its start + interval.
+  The job runs the claim in waves by start time (never early), up to `CHECK_CONCURRENCY` (25)
+  checks at a time with `runCheck()`; a check also waits until 10 s after the last check this
+  process started on its hostname (`hostStarts`, kept for the process's lifetime), so a check that
+  started late never brings the host's next one closer, within a run or across runs. It stores each result
   with `recordCheck()`, and starts the webhook for an alert event after the transaction commits,
   outside the check slots (the run awaits every send before the heartbeat). Failures log the
   endpoint's host and the error's name and code, never its URL or message. The claim also returns
   `hostsAtCap`: hostnames whose due endpoints it couldn't all take because of per-host spacing
   (more than `MAX_CHECKS_PER_HOST_PER_CLAIM` due, or the host's slots in the window ran out).
-  Right after the claim the job counts the enabled endpoints still due and, of those, the ones on
-  `hostsAtCap` (`countDueEndpoints()`); a run that claimed something, errored or left endpoints
+  Right after the claim the job records the heartbeat, then counts the enabled endpoints still due
+  at the claim's `now` and, of those, the ones on `hostsAtCap` (`countDueEndpoints()`); a run that claimed something, errored or left endpoints
   due logs one line, counts only:
-  `[check] {"claimed":5,"checked":5,"failed":0,"opened":0,"resolved":0,"errors":0,"due_but_unclaimed":3,"due_waiting_on_host":3,"run_ms":41230}`. Every
-  run ends with `recordHeartbeat()` (the `worker_heartbeats` row `check-endpoints`, `now()`), even
-  with nothing due; a claim that throws skips it, a failed write is logged. The deep health check
+  `[check] {"claimed":5,"checked":5,"failed":0,"opened":0,"resolved":0,"errors":0,"due_but_unclaimed":3,"due_waiting_on_host":3,"run_ms":41230}`. `recordHeartbeat()`
+  (the `worker_heartbeats` row `check-endpoints`, `now()`) runs right after every successful claim,
+  so a long run of slow checks never reads as a dead worker, and again when the run ends, even
+  with nothing due; a claim that throws skips both, a failed write is logged. The deep health check
   reads that row.
 - **prune-checks** (nightly, 03:17 UTC): first `rollupChecks()` writes one `endpoint_daily_stats`
   row per endpoint per complete UTC day (idempotent upsert), then `pruneChecks()` deletes raw checks
@@ -92,13 +101,32 @@ itself is in [github-app.md](github-app.md), SSRF and caps in [security.md](secu
   [github-app.md](github-app.md). The nightly prune also deletes webhook delivery ids
   older than 24 h.
 
+## Connections
+
+Postgres connections each service may open (pools open only what's in use and close idle ones
+after 10 s):
+
+| Service | Pool | Max |
+| --- | --- | --- |
+| web (2 replicas) | `createDb()` default, 10 each | 20 |
+| worker | `WORKER_POOL_MAX` = `CHECK_CONCURRENCY` (25) + 5 (reseed, prune, two pr-checks, an alert-webhook read, the heartbeat watch) | 30 |
+| worker | pg-boss's own pool (pg's default) | 10 |
+| backup (daily, minutes) | `createDb(…, { max: 2 })` | 2 |
+| **Total** | | **62** |
+
+Against Postgres's `max_connections` (100 on Railway's image by default, 3 reserved for
+superusers: 97; check with `show max_connections`), plus 1 for web's pre-deploy migration. During
+a worker redeploy the old and new worker overlap briefly: on paper 102, in practice far less, since
+the old one is draining and neither pool is full. Raising `CHECK_CONCURRENCY` raises the worker's
+pool with it: redo this table.
+
 ## Worker-only queries
 
 The web app calls only owner-scoped queries (security.md, "Authorization"). These take ids the
 worker already holds (from a claim, a job's data or its own rows) and are called only here:
 
 - `claimDueEndpoints(db, { now, limit, perOwner })`: due endpoints across all owners, with their
-  start times and `hostsAtCap`.
+  start times, `hostsAtCap` and the claim's `now` (the database clock unless a test passes one).
 - `recordCheck(db, endpointId, outcome)`: stores a check and applies the alert rule.
 - `countDueEndpoints(db, { now, hostsAtCap })`: counts of endpoints still due, never ids or URLs.
 - `alertWebhookTarget(db, projectId)`: a project's name and webhook URL for a queued
