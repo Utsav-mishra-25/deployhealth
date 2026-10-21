@@ -147,8 +147,8 @@ Applied in `recordCheck()` (one transaction per check) via `decideAlert()` in co
 `views/report-view.tsx`, the same for the owner, /demo and a share link:
 
 - **For the client, on top:** "Monthly report", the client and month, "Prepared by <name>", the
-  summary, four tiles (uptime, incidents, deploys, config issues fixed), then per project its uptime
-  per endpoint and its incidents (endpoint, opened, resolved, duration, "After a deploy": "Yes,
+  summary, four tiles ("uptime", "outage(s)", "deploy(s)", "config issue(s) fixed"), then per project
+  its uptime per endpoint and its outages (an "Outages" table: endpoint, opened, resolved, duration, "After a deploy": "Yes,
   missing 2 settings", "Yes" or "—"). No variable names, alert messages or commits there.
 - **Technical details** (an `h2`, printed): per project its repository, the deploys table
   (commit and branch as text, "New config issues", "Fixed", by kind and variable), the alerts as
