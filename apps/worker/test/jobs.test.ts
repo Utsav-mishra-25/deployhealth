@@ -285,6 +285,34 @@ describe('per-host spacing when checks start later than their slot', () => {
     await checkEndpoints({ ...base, claimDue: async () => claimed(), check: async () => result(true), now: () => T0.getTime(), hostStarts });
     expect([...hostStarts.keys()]).toEqual(['recent.example']);
   });
+
+  it('prunes old entries at the start of a run, so the map never grows, while a recent one still delays its host', async () => {
+    let clock = T0.getTime();
+    // Hosts checked long ago (one per minute over an hour) and one checked 4 s ago.
+    const hostStarts = new Map<string, number>(Array.from({ length: 60 }, (_, i) => [`old${i}.example`, clock - (i + 1) * 60_000]));
+    hostStarts.set('recent.example', clock - 4_000);
+    const starts: Array<[string, number]> = [];
+    await checkEndpoints({
+      ...base,
+      claimDue: async () => claimed(due('r', 'https://recent.example/', T0), due('o', 'https://old0.example/', T0)),
+      check: async (t) => {
+        starts.push([new URL(t.url).hostname, (clock - T0.getTime()) / 1000]);
+        return result(true);
+      },
+      concurrency: 1,
+      sleepUntil: async (until) => void (clock = Math.max(clock, until.getTime())),
+      now: () => clock,
+      hostStarts,
+    });
+    // The recent host waits until 10 s after its last start (+6s); the old one waits for nothing of
+    // its own (it starts right after, in the one slot).
+    expect(starts).toEqual([
+      ['recent.example', 6],
+      ['old0.example', 6],
+    ]);
+    // Only this run's hosts remain: the 59 untouched old entries are gone.
+    expect([...hostStarts.keys()].sort()).toEqual(['old0.example', 'recent.example']);
+  });
 });
 
 describe('checkEndpoints summary: claimed, due_but_unclaimed, run_ms', () => {
