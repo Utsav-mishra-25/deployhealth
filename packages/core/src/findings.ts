@@ -150,6 +150,19 @@ export function newUndeclaredVars(
   return [...new Set(names)].filter((name) => !previousNames?.has(name)).sort();
 }
 
+/**
+ * For the alert's "added" part: the variables a deploy's scan references, optional ones aside,
+ * that the previous scan didn't reference at all (`previousNames`: its variables plus its
+ * findings' names), leaving out `exclude` (the names already listed as new MISSING or new
+ * undeclared). Sorted. Only meaningful when both scans reported a variable list; the caller
+ * decides that.
+ */
+export function newDeclaredVars(variables: readonly RequiredVariable[], previousNames: ReadonlySet<string>, exclude: readonly string[] = []): string[] {
+  const skip = new Set(exclude);
+  const names = variables.filter((v) => !v.optional).map((v) => v.var_name);
+  return [...new Set(names)].filter((name) => !previousNames.has(name) && !skip.has(name)).sort();
+}
+
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

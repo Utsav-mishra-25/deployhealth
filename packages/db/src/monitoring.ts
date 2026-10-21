@@ -448,6 +448,7 @@ export async function recordCheck(db: Db, endpointId: string, outcome: CheckOutc
       deploy: link?.deploy ?? null,
       newMissing: link?.newMissing ?? [],
       newUndeclared: link?.newUndeclared ?? [],
+      newDeclared: link?.newDeclared ?? null,
     });
     const [alert] = await tx
       .insert(alerts)

@@ -1,4 +1,4 @@
-import { newMissingVars, newUndeclaredVars, type RequiredVariable } from '@deployhealth/core';
+import { newDeclaredVars, newMissingVars, newUndeclaredVars, type RequiredVariable } from '@deployhealth/core';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { deploys, findings, scans, scanVariables } from './schema';
@@ -15,13 +15,20 @@ export interface DeployConfigChange {
   newMissing: string[];
   /** Newly referenced in scopes with no env file (which have no MISSING rows); [] for older scans. */
   newUndeclared: string[];
+  /**
+   * Newly referenced, not optional, and in neither list above (declared, so nothing flags them).
+   * Null when the scans can't be compared: no previous scanned deploy, or either scan without a
+   * variable list (`variables_reported`).
+   */
+  newDeclared: string[] | null;
 }
 
 /**
  * The MISSING vars a deploy's latest scan has that the previous scanned deploy's latest scan
  * didn't, and, for scopes with no env file (CLI 0.2.0+ reports them), the variables it references
- * that the previous scan didn't. The alert message (linkDeploy) and the monthly report's "after a
- * deploy that was missing N settings" both count with this.
+ * that the previous scan didn't; and every other variable it newly references (newDeclared), when
+ * both scans reported a variable list. The alert message (linkDeploy) and the monthly report's
+ * "after a deploy that was missing N settings" (newMissing and newUndeclared only) count with this.
  */
 export async function deployConfigChange(
   tx: Queryable,
@@ -44,23 +51,27 @@ export async function deployConfigChange(
   const before = previous ? await latestScanOf(tx, previous.id) : null;
 
   const newMissing = newMissingVars(current.findings, before?.findings ?? null);
-  const undeclared = current.envScopes
-    ? newUndeclaredVars({ variables: await scanVariableRows(tx, current.scanId), envScopes: current.envScopes }, before ? await referencedNames(tx, before) : null)
-    : [];
-  return { newMissing, newUndeclared: undeclared.filter((name) => !newMissing.includes(name)) };
+  const variables = await scanVariableRows(tx, current.scanId);
+  const previousNames = before ? await referencedNames(tx, before) : null;
+  const undeclared = current.envScopes ? newUndeclaredVars({ variables, envScopes: current.envScopes }, previousNames) : [];
+  const newUndeclared = undeclared.filter((name) => !newMissing.includes(name));
+  // Comparable only with a previous scan and a variable list on both sides.
+  const newDeclared =
+    previousNames && before?.variablesReported && current.variablesReported ? newDeclaredVars(variables, previousNames, [...newMissing, ...newUndeclared]) : null;
+  return { newMissing, newUndeclared, newDeclared };
 }
 
-/** A deploy's latest scan: its id, env scopes (null from CLIs before 0.2.0) and findings. */
+/** A deploy's latest scan: its id, env scopes (null from CLIs before 0.2.0), whether it reported variables, and findings. */
 async function latestScanOf(tx: Queryable, deployId: string) {
   const [scan] = await tx
-    .select({ id: scans.id, envScopes: scans.envScopes })
+    .select({ id: scans.id, envScopes: scans.envScopes, variablesReported: scans.variablesReported })
     .from(scans)
     .where(eq(scans.deployId, deployId))
     .orderBy(desc(scans.createdAt))
     .limit(1);
-  if (!scan) return { scanId: null, envScopes: null, findings: [] };
+  if (!scan) return { scanId: null, envScopes: null, variablesReported: false, findings: [] };
   const rows = await tx.select({ kind: findings.kind, var_name: findings.varName }).from(findings).where(eq(findings.scanId, scan.id));
-  return { scanId: scan.id, envScopes: scan.envScopes, findings: rows };
+  return { scanId: scan.id, envScopes: scan.envScopes, variablesReported: scan.variablesReported, findings: rows };
 }
 
 async function scanVariableRows(tx: Queryable, scanId: string | null): Promise<RequiredVariable[]> {

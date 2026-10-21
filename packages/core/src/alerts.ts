@@ -87,6 +87,13 @@ export interface AlertOpenedInput {
    * rows, so nothing declares them anywhere): `newUndeclaredVars`. Empty for older scans.
    */
   newUndeclared?: readonly string[];
+  /**
+   * Variables that deploy newly references and that neither list above names (declared in an env
+   * file, so nothing flags them, yet often never set on the host): `newDeclaredVars`. Null (the
+   * default) when the two scans can't be compared: no previous scanned deploy, or a scan without
+   * a variable list. Then the message says nothing about added variables.
+   */
+  newDeclared?: readonly string[] | null;
 }
 
 /**
@@ -103,7 +110,13 @@ export function listNames(names: readonly string[]): string {
   return `${shown.join(', ')} and ${names.length - shown.length} more`;
 }
 
-export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissing, newUndeclared = [] }: AlertOpenedInput): string {
+/**
+ * "…after deploy b52952e, which introduced 2 missing env vars: A, B" (and ", plus" the undeclared
+ * ones), "…which added 1 env var: C (check it's set on the host)", both joined with ", plus added",
+ * "…which added no env vars" when the scans were compared and nothing was new, or just "…after
+ * deploy b52952e" when they couldn't be compared.
+ */
+export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissing, newUndeclared = [], newDeclared = null }: AlertOpenedInput): string {
   const label = endpointLabel(endpoint);
   if (!deploy) {
     return `${label} started failing; no deploy in the ${DEPLOY_LINK_WINDOW_MINUTES} minutes before the first failure`;
@@ -118,9 +131,14 @@ export function alertOpenedMessage({ endpoint, firstFailureAt, deploy, newMissin
     const noun = newUndeclared.length === 1 ? 'new env var' : 'new env vars';
     parts.push(`${newUndeclared.length} ${noun} no env file declares: ${listNames(newUndeclared)}`);
   }
-  // The deploy's config diff is empty: say so plainly, so the reader looks elsewhere.
-  if (parts.length === 0) return `${lead}, which changed no config`;
-  return `${lead}, which introduced ${parts.join(', plus ')}`;
+  const added =
+    newDeclared && newDeclared.length > 0
+      ? `added ${newDeclared.length} ${newDeclared.length === 1 ? 'env var' : 'env vars'}: ${listNames(newDeclared)} (check ${newDeclared.length === 1 ? "it's" : "they're"} set on the host)`
+      : null;
+  if (parts.length > 0) return `${lead}, which introduced ${parts.join(', plus ')}${added ? `, plus ${added}` : ''}`;
+  if (added) return `${lead}, which ${added}`;
+  // Compared and nothing new: say so plainly, so the reader looks elsewhere. Not compared: say nothing.
+  return newDeclared ? `${lead}, which added no env vars` : lead;
 }
 
 export function alertResolvedMessage({
