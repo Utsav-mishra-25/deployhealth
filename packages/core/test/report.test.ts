@@ -200,9 +200,19 @@ describe('reportSummary (the paragraph for the client)', () => {
     expect(reportSummary(report({ endpoints: [], deploys: [] }, DONE, 'Jones & Sons'))).toBe(
       'In October, no sites were monitored for Jones & Sons. No updates were deployed.',
     );
-    expect(reportSummary(report({ endpoints: [{ label: 'A', url: 'https://a', checks: 0, ok: 0, uptime: null }] }, DONE, 'Globex Labs'))).toMatch(
-      /^In October, there was no uptime data yet for Globex Labs' site\. There were no outages\./,
+  });
+
+  it('a month with no uptime data: says so, and never "There were no outages."', () => {
+    const noData = [
+      { label: 'A', url: 'https://a', checks: 0, ok: 0, uptime: null },
+      { label: 'B', url: 'https://b', checks: 0, ok: 0, uptime: null },
+    ];
+    expect(reportSummary(report({ endpoints: noData.slice(0, 1), deploys: [] }, DONE, 'Globex Labs'))).toBe(
+      "In October, there was no uptime data yet for Globex Labs' site. No updates were deployed.",
     );
+    const summary = reportSummary(report({ endpoints: noData }, DONE, 'Globex Labs'));
+    expect(summary).toMatch(/^In October, there was no uptime data yet for Globex Labs' sites\. 10 updates were deployed/);
+    expect(summary).not.toContain('outage');
   });
 
   it('one deploy, no fixes, one site', () => {

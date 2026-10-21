@@ -245,7 +245,8 @@ export function reportSummary(data: ReportData): string {
     const more = incidents.length - named.length;
     const list = more > 0 ? `${named.join(', ')} and ${more} more` : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
     sentences.push(`There were ${count(incidents.length, 'outage')}, ${durationWords(totals.incidentMs)} in total: ${list}.`);
-  } else if (endpoints.length > 0) {
+  } else if (totals.uptime !== null) {
+    // Only with uptime data: endpoints without checks yet can't vouch for "no outages".
     sentences.push('There were no outages.');
   }
 
